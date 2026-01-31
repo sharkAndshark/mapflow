@@ -7,7 +7,7 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
 1. 启动后自动监听3000端口
 2. 启动后自动在同目录寻找nodes.duckdb文件，若不存在则创建该文件，并load spatial extension
 3. 启动后自动在同目录寻找data文件夹，用来保存上传的文件，若不存在则创建
-4. 启动后自动在同目录寻找tmp文件夹，用来做一些临时操作，若不存在则创建。反思，这个文件夹有存在的必要马？
+4. 启动后自动在同目录寻找tmp文件夹，用来做一些临时操作，若不存在则创建。反思，这个文件夹有存在的必要吗？
 5. 启动后自动在同目录寻找config.json文件，若不存在，不创建。只在控制台提示没有找到config.json
 6. 有上传文件接口，允许用户上传shapefile(shapefile zip包），目前只允许shapefile zip类型。
 7. 考虑到有shapefile压缩包内没有.prj文件的情况（其他格式也一样可能存在未定义坐标系的情况其实），上传接口应该有可选参数srid。
@@ -36,7 +36,7 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
             "name": "shanghai_2026", // optional,允许人类更改，方便人类阅读记忆，允许重复
             "description": "shanghai POI", //optional,允许人类更改，方便人类阅读记忆，允许重复
             "file_path": ["/path/to/shanghai.shp"],// required,考虑到shapefile这种文件可能有多个文件，我们允许file_path是数组。未来增加geotiff也一样可能有这种情况，比如overlay文件. 由程序生成，禁止人类修改
-            "size": "9999", // required,单位是字节，程序生成，禁止人类修改
+            "size": 9999, // required,单位是字节，程序生成，禁止人类修改
             "create_timestamp": 1769874490, // required, 程序生成，禁止人类修改
             "hash": "", // required,哪种计算HASH的方式最快，我们应考虑最快的方法，不要担心碰撞，概率太小了？？xxHash? 程序生成，禁止人类修改
             "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式。
@@ -48,7 +48,7 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
             "name": "shanghai_2025", // optional,允许人类更改，方便人类阅读记忆，允许重复
             "description": "shanghai POI", //optional,允许人类更改，方便人类阅读记忆，允许重复
             "file_path": ["/path/to/shanghai_2025.shp"],// required,考虑到shapefile这种文件可能有多个文件，我们允许file_path是数组。未来增加geotiff也一样可能有这种情况，比如overlay文件. 由程序生成，禁止人类修改
-            "size": "8888", // required,单位是字节，程序生成，禁止人类修改
+            "size": 8888, // required,单位是字节，程序生成，禁止人类修改
             "create_timestamp": 1769871490, // required, 程序生成，禁止人类修改
             "hash": "", // required,哪种计算HASH的方式最快，我们应考虑最快的方法，不要担心碰撞，概率太小了？？xxHash? 程序生成，禁止人类修改
             "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式。
@@ -57,7 +57,7 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
     {
         "id": "6304FB8CBF7D84B547E39582B5BDD422", // required 程序生成，禁止人类修改
         "type":"auto_xyz_node", // required 程序生成，禁止人类修改 
-        "node_id_whitch_has_duckdb_table": "3E8F1D0220E9B0EE50D4347A46D18CBD", //required 
+        "node_id_which_has_duckdb_table": "3E8F1D0220E9B0EE50D4347A46D18CBD", //required 
         "create_timestamp": 1769874491, // required, 程序生成，禁止人类修改
         "name": "shanghai_2026", // optional,允许人类更改，方便人类阅读记忆，允许重复
         "description": "shanghai POI", //optional,允许人类更改，方便人类阅读记忆，允许重复
@@ -67,7 +67,7 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
         "schema" : "xyz", // optional, 程序生成，人类不可改。固定为xyz
         "fillzoom": 6, // optional, 程序生成，人类可改，默认为8
         "bounds" : [ -180, -85.05112877980659, 180, 85.0511287798066 ] , // OPTIONAL, 程序生成，人类可改。
-        "vectory_layers": [ // required 当用户修改了这里的字段时，会影响服务器提取tile的行为，服务器只用vector_layers中存在的字段来生成提取tile的sql,validate config.json时，这些字段要切实在duckdb table中存在
+        "vector_layers": [ // required 当用户修改了这里的字段时，会影响服务器提取tile的行为，服务器只用vector_layers中存在的字段来生成提取tile的sql,validate config.json时，这些字段要切实在duckdb table中存在
               {
                 "id": "telephone",// required, 程序生成，人类可改，默认与原始文件名相同，layers的id禁止重名
                 "fields": { // required, 程序生成，人类可改，默认提取对应duckdb表中所有的非geometry字段的属性
