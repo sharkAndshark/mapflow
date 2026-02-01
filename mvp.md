@@ -22,59 +22,72 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
 16. 用户可以右键单击，新增新的xyz节点。
 17. 首页有validate按钮，用户可以validate当前的网络节点
 18. 首页有apply按钮，用户可以应用当前网络节点
-
+19. 用户只允许创建data节点以及xyz节点，我们目前也只有这两种节点。文件是一种资源，不是节点。
 
 ## config.json核心定义
 
 ```jsonc
 {
     "version": "0.0.1",
-    "nodes": [
-    {
+    "resources": [
+        {
             "id": "3E8F1D0220E9B0EE50D4347A46D18CBD", // required,程序生成，禁止人类修改
-            "type": "shapefile_node", // required,程序生成，禁止人类修改，该类型node只能新增，删除，禁止更新，具有不变性
-            "name": "shanghai_2026", // optional,允许人类更改，方便人类阅读记忆，允许重复
-            "description": "shanghai POI", //optional,允许人类更改，方便人类阅读记忆，允许重复
-            "file_path": ["/path/to/shanghai.shp"],// required,考虑到shapefile这种文件可能有多个文件，我们允许file_path是数组。未来增加geotiff也一样可能有这种情况，比如overlay文件. 由程序生成，禁止人类修改
+            "type": "shapefile", // required,程序生成，禁止人类修改，该类型node只能新增，删除，禁止更新，具有不变性
+            "name": "shanghai_buildings", // optional,允许人类更改，方便人类阅读记忆，允许重复
+            "description": "shanghai_buildings", //optional,允许人类更改，方便人类阅读记忆，允许重复
+            "file_path": ["/path/to/shanghai_buildings.shp"],// required,考虑到shapefile这种文件可能有多个文件，我们允许file_path是数组。未来增加geotiff也一样可能有这种情况，比如overlay文件. 由程序生成，禁止人类修改
             "size": 9999, // required,单位是字节，程序生成，禁止人类修改
             "create_timestamp": 1769874490, // required, 程序生成，禁止人类修改
             "hash": "", // required,哪种计算HASH的方式最快，我们应考虑最快的方法，不要担心碰撞，概率太小了？？xxHash? 程序生成，禁止人类修改
-            "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式。
+            "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式，未来我们会支持自定义坐标系
             "duckdb_table_name": "shanghai_EB24274F4992232980E515AD2F977EFA", // required, 一个自动生成的guid，与该数据在上传时导入的table同名 程序生成，禁止人类修改
-    },
+        },
         {
             "id": "7297D7AEB16ADE5D9B6C478128BA3D27", // required,程序生成，禁止人类修改
-            "type": "shapefile_node", // required,程序生成，禁止人类修改，该类型node只能新增，删除，禁止更新，具有不变性
-            "name": "shanghai_2025", // optional,允许人类更改，方便人类阅读记忆，允许重复
-            "description": "shanghai POI", //optional,允许人类更改，方便人类阅读记忆，允许重复
-            "file_path": ["/path/to/shanghai_2025.shp"],// required,考虑到shapefile这种文件可能有多个文件，我们允许file_path是数组。未来增加geotiff也一样可能有这种情况，比如overlay文件. 由程序生成，禁止人类修改
+            "type": "shapefile", // required,程序生成，禁止人类修改，该类型node只能新增，删除，禁止更新，具有不变性
+            "name": "shanghai_coffees", // optional,允许人类更改，方便人类阅读记忆，允许重复
+            "description": "shanghai coffees", //optional,允许人类更改，方便人类阅读记忆，允许重复
+            "file_path": ["/path/to/shanghai_coffees.shp"],// required,考虑到shapefile这种文件可能有多个文件，我们允许file_path是数组。未来增加geotiff也一样可能有这种情况，比如overlay文件. 由程序生成，禁止人类修改
             "size": 8888, // required,单位是字节，程序生成，禁止人类修改
             "create_timestamp": 1769871490, // required, 程序生成，禁止人类修改
             "hash": "", // required,哪种计算HASH的方式最快，我们应考虑最快的方法，不要担心碰撞，概率太小了？？xxHash? 程序生成，禁止人类修改
             "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式。
             "duckdb_table_name": "shanghai_2025_EB24274F4992232980E515AD2F977EFA", // required, 一个自动生成的guid，与该数据在上传时导入的table同名 程序生成，禁止人类修改
     },
+    ],
+    "nodes": [
+        {
+            "id": "6A5FA5034DD93B89865F410C118FD4CC",
+            "type": "data_node",
+            "duckdb_table_name": "shanghai_2025_EB24274F4992232980E515AD2F977EFA",
+            "name": "shanghai_coffees", // default to a file name, a file who has a `duckdb_table_name` to this table
+            "description": "shanghai coffees",
+            "srid": "4326", //required
+            "fields": ["field1", "field2", "field3",] // default to the full fields, but could be pratial, eg, user could  select many of them
+        },        {
+            "id": "37DF92130D77B9770CEAD17A9008308F",
+            "type": "data_node",
+            "duckdb_table_name": "shanghai_EB24274F4992232980E515AD2F977EFA",
+            "name": "shanghai_buildings",// default to the file name, allow duplicated
+            "description": "shanghai buildings",
+            "srid": "4326",
+            "fields": ["field2", "field3",]// default to the full fields, but could be pratial, eg, user could  select many of them
+        },
     {
         "id": "6304FB8CBF7D84B547E39582B5BDD422", // required 程序生成，禁止人类修改
         "type":"auto_xyz_node", // required 程序生成，禁止人类修改 
-        "node_id_which_has_duckdb_table": "3E8F1D0220E9B0EE50D4347A46D18CBD", //required 
-        "create_timestamp": 1769874491, // required, 程序生成，禁止人类修改
-        "name": "shanghai_2026", // optional,允许人类更改，方便人类阅读记忆，允许重复
+        "name": "shanghai_pois", // optional,允许人类更改，方便人类阅读记忆，允许重复
         "description": "shanghai POI", //optional,允许人类更改，方便人类阅读记忆，允许重复
         "center": [-76.275329586789, 39.153492567373, 8], // OPTIONAL. Array. Default: null. The first value is the longitude, the second is latitude . the third value is the zoom level as an integer. Longitude and latitude MUST be within the specified bounds. The zoom level MUST be between minzoom and maxzoom  允许人类更改，但zoom必须满足要求
         "min_zoom": 8, // optional, 程序生成，人类可改,默认8
         "max_zoom": 10, // optional, 程序生成，人类可改,默认24
         "schema" : "xyz", // optional, 程序生成，人类不可改。固定为xyz
         "fillzoom": 6, // optional, 程序生成，人类可改，默认为8
+        "srid": "4326", // required, 
         "bounds" : [ -180, -85.05112877980659, 180, 85.0511287798066 ] , // OPTIONAL, 程序生成，人类可改。
-        "vector_layers": [ // required 当用户修改了这里的字段时，会影响服务器提取tile的行为，服务器只用vector_layers中存在的字段来生成提取tile的sql,validate config.json时，这些字段要切实在duckdb table中存在
-              {
-                "id": "telephone",// required, 程序生成，人类可改，默认与原始文件名相同，layers的id禁止重名
-                "fields": { // required, 程序生成，人类可改，默认提取对应duckdb表中所有的非geometry字段的属性
-                    "phone_number": "the phone number",
-                    "payment": "how to pay"
-            }
-        }
+        "data_nodes": [
+            "6A5FA5034DD93B89865F410C118FD4CC",
+            "37DF92130D77B9770CEAD17A9008308F",
         ]
     }
 ]
