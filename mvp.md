@@ -40,7 +40,9 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
             "create_timestamp": 1769874490, // required, 程序生成，禁止人类修改
             "hash": "", // required,哪种计算HASH的方式最快，我们应考虑最快的方法，不要担心碰撞，概率太小了？？xxHash? 程序生成，禁止人类修改
             "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式，未来我们会支持自定义坐标系
-            "duckdb_table_name": "shanghai_EB24274F4992232980E515AD2F977EFA", // required, 一个自动生成的guid，与该数据在上传时导入的table同名 程序生成，禁止人类修改
+            "duckdb_table_names": [ // required, 数组，支持一个资源对应多张表（如 geojson 导出多表）
+                "shanghai_EB24274F4992232980E515AD2F977EFA"
+            ]
         },
         {
             "id": "7297D7AEB16ADE5D9B6C478128BA3D27", // required,程序生成，禁止人类修改
@@ -52,26 +54,30 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
             "create_timestamp": 1769871490, // required, 程序生成，禁止人类修改
             "hash": "", // required,哪种计算HASH的方式最快，我们应考虑最快的方法，不要担心碰撞，概率太小了？？xxHash? 程序生成，禁止人类修改
             "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式。
-            "duckdb_table_name": "shanghai_2025_EB24274F4992232980E515AD2F977EFA", // required, 一个自动生成的guid，与该数据在上传时导入的table同名 程序生成，禁止人类修改
+            "duckdb_table_names": [ // required, 数组，支持一个资源对应多张表
+                "shanghai_2025_EB24274F4992232980E515AD2F977EFA"
+            ]
     },
     ],
     "nodes": [
         {
             "id": "6A5FA5034DD93B89865F410C118FD4CC",
             "type": "data_node",
-            "duckdb_table_name": "shanghai_2025_EB24274F4992232980E515AD2F977EFA",
-            "name": "shanghai_coffees", // default to a file name, a file who has a `duckdb_table_name` to this table
-            "description": "shanghai coffees",
-            "srid": "4326", //required
-            "fields": ["field1", "field2", "field3",] // default to the full fields, but could be pratial, eg, user could  select many of them
+            "source_resource_id": "7297D7AEB16ADE5D9B6C478128BA3D27", // required, 引用的 resource id
+            "duckdb_table_name": "shanghai_2025_EB24274F4992232980E515AD2F977EFA", // required, 从 resource 的 duckdb_table_names 中选择的具体表名
+            "name": "shanghai_coffees", // optional, 默认继承 resource 的 name
+            "description": "shanghai coffees", // optional, 默认继承 resource 的 description
+            "srid": "4326", // required, 继承自 resource，只读
+            "fields": ["field1", "field2", "field3"] // required, 字段选择，默认为全部字段
         },        {
             "id": "37DF92130D77B9770CEAD17A9008308F",
             "type": "data_node",
-            "duckdb_table_name": "shanghai_EB24274F4992232980E515AD2F977EFA",
-            "name": "shanghai_buildings",// default to the file name, allow duplicated
-            "description": "shanghai buildings",
-            "srid": "4326",
-            "fields": ["field2", "field3",]// default to the full fields, but could be pratial, eg, user could  select many of them
+            "source_resource_id": "3E8F1D0220E9B0EE50D4347A46D18CBD", // required, 引用的 resource id
+            "duckdb_table_name": "shanghai_EB24274F4992232980E515AD2F977EFA", // required, 从 resource 的 duckdb_table_names 中选择的具体表名
+            "name": "shanghai_buildings", // optional, 默认继承 resource 的 name
+            "description": "shanghai buildings", // optional, 默认继承 resource 的 description
+            "srid": "4326", // required, 继承自 resource，只读
+            "fields": ["field2", "field3"] // required, 字段选择，默认为全部字段
         },
     {
         "id": "6304FB8CBF7D84B547E39582B5BDD422", // required 程序生成，禁止人类修改
@@ -85,9 +91,19 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
         "fillzoom": 6, // optional, 程序生成，人类可改，默认为8
         "srid": "4326", // required, 
         "bounds" : [ -180, -85.05112877980659, 180, 85.0511287798066 ] , // OPTIONAL, 程序生成，人类可改。
-        "data_nodes": [
-            "6A5FA5034DD93B89865F410C118FD4CC",
-            "37DF92130D77B9770CEAD17A9008308F",
+        "layers": [
+            {
+                "id": "layer_buildings", // required, 图层唯一标识
+                "source_node_id": "37DF92130D77B9770CEAD17A9008308F", // required, 引用的 data_node id
+                "minzoom": 8, // optional, 该图层的最小缩放级别
+                "maxzoom": 14 // optional, 该图层的最大缩放级别
+            },
+            {
+                "id": "layer_coffees", // required, 图层唯一标识
+                "source_node_id": "6A5FA5034DD93B89865F410C118FD4CC", // required, 引用的 data_node id
+                "minzoom": 10, // optional, 该图层的最小缩放级别
+                "maxzoom": 18 // optional, 该图层的最大缩放级别
+            }
         ]
     }
 ]
