@@ -7,22 +7,21 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
 1. 启动后自动监听3000端口
 2. 启动后自动在同目录寻找nodes.duckdb文件，若不存在则创建该文件，并load spatial extension
 3. 启动后自动在同目录寻找data文件夹，用来保存上传的文件，若不存在则创建
-4. 启动后自动在同目录寻找tmp文件夹，用来做一些临时操作，若不存在则创建。反思，这个文件夹有存在的必要吗？
-5. 启动后自动在同目录寻找config.json文件，若不存在，不创建。只在控制台提示没有找到config.json
-6. 有上传文件接口，允许用户上传shapefile(shapefile zip包），目前只允许shapefile zip类型。
-7. 考虑到有shapefile压缩包内没有.prj文件的情况（其他格式也一样可能存在未定义坐标系的情况其实），上传接口应该有可选参数srid。
-8. 上传接口应该校验有没有valid的坐标系定义，没有则返回400？
-9. 上传时会导入到duckdb内的一个table,table名称格式为 文件名_guid
-10. 有get config.json的接口
-11. 有appLY config.json 的接口，该接口会校验，如果通过校验，则覆盖本地的json文件，并重启当前服务器
-12. 有verify config 接口，该接口会校验提供的config.json，帮助前端用户检验自己的托拖拽拽
-13. http://3000/ 是系统的首页，会呈现一个非常简单的react编写的页面。
-14. 首页会自动调取get config接口，然后渲染成节点连接成的网络结构。
-15. 用户可以通过上传shapefile的方式，创建新的shapefile节点。
-16. 用户可以右键单击，新增新的xyz节点。
-17. 首页有validate按钮，用户可以validate当前的网络节点
-18. 首页有apply按钮，用户可以应用当前网络节点
-19. 用户只允许创建data节点以及xyz节点，我们目前也只有这两种节点。文件是一种资源，不是节点。
+4. 启动后自动在同目录寻找config.json文件，若不存在，不创建。只在控制台提示没有找到config.json
+5. 有上传文件接口，允许用户上传shapefile(shapefile zip包），目前只允许shapefile zip类型。
+6. 考虑到有shapefile压缩包内没有.prj文件的情况（其他格式也一样可能存在未定义坐标系的情况其实），上传接口应该有可选参数srid。
+7. 上传接口应该校验有没有valid的坐标系定义，没有则返回 HTTP 400 错误
+8. 上传时会导入到duckdb内的一个table,table名称格式为 文件名_guid
+9. 有get config.json的接口
+10. 有appLY config.json 的接口，该接口会校验，如果通过校验，则覆盖本地的json文件，并重启当前服务器
+11. 有verify config 接口，该接口会校验提供的config.json，帮助前端用户检验自己的托拖拽拽
+12. http://3000/ 是系统的首页，会呈现一个非常简单的react编写的页面。
+13. 首页会自动调取get config接口，然后渲染成节点连接成的网络结构。
+14. 用户可以通过上传shapefile的方式，创建新的shapefile节点。
+15. 用户可以右键单击，新增新的xyz节点。
+16. 首页有validate按钮，用户可以validate当前的网络节点
+17. 首页有apply按钮，用户可以应用当前网络节点
+18. 用户只允许创建data节点以及xyz节点，我们目前也只有这两种节点。文件是一种资源，不是节点。
 
 ## config.json核心定义
 
@@ -85,10 +84,10 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
         "name": "shanghai_pois", // optional,允许人类更改，方便人类阅读记忆，允许重复
         "description": "shanghai POI", //optional,允许人类更改，方便人类阅读记忆，允许重复
         "center": [-76.275329586789, 39.153492567373, 8], // OPTIONAL. Array. Default: null. The first value is the longitude, the second is latitude . the third value is the zoom level as an integer. Longitude and latitude MUST be within the specified bounds. The zoom level MUST be between minzoom and maxzoom  允许人类更改，但zoom必须满足要求
-        "min_zoom": 8, // optional, 程序生成，人类可改,默认8
-        "max_zoom": 10, // optional, 程序生成，人类可改,默认24
+        "min_zoom": 0, // optional, 程序生成，人类可改,默认0
+        "max_zoom": 22, // optional, 程序生成，人类可改,默认22
         "schema" : "xyz", // optional, 程序生成，人类不可改。固定为xyz
-        "fillzoom": 6, // optional, 程序生成，人类可改，默认为8
+        "fillzoom": 12, // optional, 程序生成，人类可改，默认为12
         "srid": "4326", // required, 
         "bounds" : [ -180, -85.05112877980659, 180, 85.0511287798066 ] , // OPTIONAL, 程序生成，人类可改。
         "layers": [
