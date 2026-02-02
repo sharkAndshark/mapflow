@@ -17,98 +17,133 @@ Publishing your tiles serverice with simply draging! MapNodes是一个rust语言
 11. 有verify config 接口，该接口会校验提供的config.json，帮助前端用户检验自己的托拖拽拽
 12. http://3000/ 是系统的首页，会呈现一个非常简单的react编写的页面。
 13. 首页会自动调取get config接口，然后渲染成节点连接成的网络结构。
-14. 用户可以通过上传shapefile的方式，创建新的shapefile节点。
-15. 用户可以右键单击，新增新的xyz节点。
+14. 用户可以通过上传shapefile的方式，创建新的resource节点（只读）。
+15. 用户可以右键单击，新增新的xyz节点或layer节点。
 16. 首页有validate按钮，用户可以validate当前的网络节点
 17. 首页有apply按钮，用户可以应用当前网络节点
-18. 用户只允许创建data节点以及xyz节点，我们目前也只有这两种节点。文件是一种资源，不是节点。
+18. 系统有三种节点类型：resource节点（只读，上传shapefile创建）、layer节点（字段选择、缩放设置）、xyz节点（聚合layers）。通过edges连接节点。
 
 ## config.json核心定义
 
+**改造说明：** 架构简化为3种节点类型（resource、layer、xyz），通过edges数组显式连接，移除了独立的resources数组。
+
 ```jsonc
 {
-    "version": "0.0.1",
-    "resources": [
-        {
-            "id": "3E8F1D0220E9B0EE50D4347A46D18CBD", // required,程序生成，禁止人类修改
-            "type": "shapefile", // required,程序生成，禁止人类修改，该类型node只能新增，删除，禁止更新，具有不变性
-            "name": "shanghai_buildings", // optional,允许人类更改，方便人类阅读记忆，允许重复
-            "description": "shanghai_buildings", //optional,允许人类更改，方便人类阅读记忆，允许重复
-            "file_path": ["/path/to/shanghai_buildings.shp"],// required,考虑到shapefile这种文件可能有多个文件，我们允许file_path是数组。未来增加geotiff也一样可能有这种情况，比如overlay文件. 由程序生成，禁止人类修改
-            "size": 9999, // required,单位是字节，程序生成，禁止人类修改
-            "create_timestamp": 1769874490, // required, 程序生成，禁止人类修改
-            "hash": "", // required,哪种计算HASH的方式最快，我们应考虑最快的方法，不要担心碰撞，概率太小了？？xxHash? 程序生成，禁止人类修改
-            "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式，未来我们会支持自定义坐标系
-            "duckdb_table_names": [ // required, 数组，支持一个资源对应多张表（如 geojson 导出多表）
-                "shanghai_EB24274F4992232980E515AD2F977EFA"
-            ]
-        },
-        {
-            "id": "7297D7AEB16ADE5D9B6C478128BA3D27", // required,程序生成，禁止人类修改
-            "type": "shapefile", // required,程序生成，禁止人类修改，该类型node只能新增，删除，禁止更新，具有不变性
-            "name": "shanghai_coffees", // optional,允许人类更改，方便人类阅读记忆，允许重复
-            "description": "shanghai coffees", //optional,允许人类更改，方便人类阅读记忆，允许重复
-            "file_path": ["/path/to/shanghai_coffees.shp"],// required,考虑到shapefile这种文件可能有多个文件，我们允许file_path是数组。未来增加geotiff也一样可能有这种情况，比如overlay文件. 由程序生成，禁止人类修改
-            "size": 8888, // required,单位是字节，程序生成，禁止人类修改
-            "create_timestamp": 1769871490, // required, 程序生成，禁止人类修改
-            "hash": "", // required,哪种计算HASH的方式最快，我们应考虑最快的方法，不要担心碰撞，概率太小了？？xxHash? 程序生成，禁止人类修改
-            "srid": "4326",//  required, 程序生成，禁止人类修改,考虑到有可能出现用户自己定义的坐标系，eg, epsg没有对应的code,因此采用了字符串格式。
-            "duckdb_table_names": [ // required, 数组，支持一个资源对应多张表
-                "shanghai_2025_EB24274F4992232980E515AD2F977EFA"
-            ]
-    },
-    ],
+    "version": "0.1.0",
     "nodes": [
+        // Resource节点（只读，上传shapefile自动创建）
         {
-            "id": "6A5FA5034DD93B89865F410C118FD4CC",
-            "type": "data_node",
-            "source_resource_id": "7297D7AEB16ADE5D9B6C478128BA3D27", // required, 引用的 resource id
-            "duckdb_table_name": "shanghai_2025_EB24274F4992232980E515AD2F977EFA", // required, 从 resource 的 duckdb_table_names 中选择的具体表名
-            "name": "shanghai_coffees", // optional, 默认继承 resource 的 name
-            "description": "shanghai coffees", // optional, 默认继承 resource 的 description
-            "srid": "4326", // required, 继承自 resource，只读
-            "fields": ["field1", "field2", "field3"] // required, 字段选择，默认为全部字段
-        },        {
-            "id": "37DF92130D77B9770CEAD17A9008308F",
-            "type": "data_node",
-            "source_resource_id": "3E8F1D0220E9B0EE50D4347A46D18CBD", // required, 引用的 resource id
-            "duckdb_table_name": "shanghai_EB24274F4992232980E515AD2F977EFA", // required, 从 resource 的 duckdb_table_names 中选择的具体表名
-            "name": "shanghai_buildings", // optional, 默认继承 resource 的 name
-            "description": "shanghai buildings", // optional, 默认继承 resource 的 description
-            "srid": "4326", // required, 继承自 resource，只读
-            "fields": ["field2", "field3"] // required, 字段选择，默认为全部字段
+            "id": "RES_3E8F1D0220E9B0EE50D4347A46D18CBD",
+            "type": "resource",
+            "resource_type": "shapefile",
+            "name": "shanghai_buildings",
+            "description": "shanghai buildings",
+            "file_path": ["/path/to/shanghai_buildings.shp"],
+            "size": 9999,
+            "create_timestamp": 1769874490,
+            "hash": "xxhash_value",
+            "srid": "4326",
+            "duckdb_table_name": "shanghai_EB24274F4992232980E515AD2F977EFA",
+            "readonly": true
         },
-    {
-        "id": "6304FB8CBF7D84B547E39582B5BDD422", // required 程序生成，禁止人类修改
-        "type":"auto_xyz_node", // required 程序生成，禁止人类修改 
-        "name": "shanghai_pois", // optional,允许人类更改，方便人类阅读记忆，允许重复
-        "description": "shanghai POI", //optional,允许人类更改，方便人类阅读记忆，允许重复
-        "center": [-76.275329586789, 39.153492567373, 8], // OPTIONAL. Array. Default: null. The first value is the longitude, the second is latitude . the third value is the zoom level as an integer. Longitude and latitude MUST be within the specified bounds. The zoom level MUST be between minzoom and maxzoom  允许人类更改，但zoom必须满足要求
-        "min_zoom": 0, // optional, 程序生成，人类可改,默认0
-        "max_zoom": 22, // optional, 程序生成，人类可改,默认22
-        "schema" : "xyz", // optional, 程序生成，人类不可改。固定为xyz
-        "fillzoom": 12, // optional, 程序生成，人类可改，默认为12
-        "srid": "4326", // required, 
-        "bounds" : [ -180, -85.05112877980659, 180, 85.0511287798066 ] , // OPTIONAL, 程序生成，人类可改。
-        "layers": [
-            {
-                "id": "layer_buildings", // required, 图层唯一标识
-                "source_node_id": "37DF92130D77B9770CEAD17A9008308F", // required, 引用的 data_node id
-                "minzoom": 8, // optional, 该图层的最小缩放级别
-                "maxzoom": 14 // optional, 该图层的最大缩放级别
-            },
-            {
-                "id": "layer_coffees", // required, 图层唯一标识
-                "source_node_id": "6A5FA5034DD93B89865F410C118FD4CC", // required, 引用的 data_node id
-                "minzoom": 10, // optional, 该图层的最小缩放级别
-                "maxzoom": 18 // optional, 该图层的最大缩放级别
-            }
-        ]
-    }
-]
+        {
+            "id": "RES_7297D7AEB16ADE5D9B6C478128BA3D27",
+            "type": "resource",
+            "resource_type": "shapefile",
+            "name": "shanghai_coffees",
+            "description": "shanghai coffees",
+            "file_path": ["/path/to/shanghai_coffees.shp"],
+            "size": 8888,
+            "create_timestamp": 1769871490,
+            "hash": "xxhash_value",
+            "srid": "4326",
+            "duckdb_table_name": "shanghai_coffee_EB24274F4992232980E515AD2F977EFA",
+            "readonly": true
+        },
+        // Layer节点（可编辑）
+        {
+            "id": "LAYER_A1B2C3D4E5F6",
+            "type": "layer",
+            "source_resource_id": "RES_3E8F1D0220E9B0EE50D4347A46D18CBD",
+            "name": "buildings_layer",
+            "description": "building layer",
+            "fields": ["field1", "field2"],
+            "minzoom": 8,
+            "maxzoom": 14,
+            "readonly": false
+        },
+        {
+            "id": "LAYER_X9Y8Z7W6V5U4",
+            "type": "layer",
+            "source_resource_id": "RES_7297D7AEB16ADE5D9B6C478128BA3D27",
+            "name": "coffees_layer",
+            "description": "coffee layer",
+            "fields": ["field1", "field2", "field3"],
+            "minzoom": 10,
+            "maxzoom": 18,
+            "readonly": false
+        },
+        // XYZ节点（可编辑）
+        {
+            "id": "XYZ_1234567890ABC",
+            "type": "xyz",
+            "name": "shanghai_pois",
+            "description": "shanghai POI tiles",
+            "center": [-76.275, 39.153, 8],
+            "min_zoom": 0,
+            "max_zoom": 22,
+            "fillzoom": 12,
+            "bounds": [-180, -85.0511, 180, 85.0511],
+            "readonly": false,
+            "layers": [
+                {
+                    "id": "layer_buildings",
+                    "source_layer_id": "LAYER_A1B2C3D4E5F6"
+                },
+                {
+                    "id": "layer_coffees",
+                    "source_layer_id": "LAYER_X9Y8Z7W6V5U4"
+                }
+            ]
+        }
+    ],
+    "edges": [
+        {
+            "id": "EDGE_1",
+            "source": "RES_3E8F1D0220E9B0EE50D4347A46D18CBD",
+            "target": "LAYER_A1B2C3D4E5F6"
+        },
+        {
+            "id": "EDGE_2",
+            "source": "RES_7297D7AEB16ADE5D9B6C478128BA3D27",
+            "target": "LAYER_X9Y8Z7W6V5U4"
+        },
+        {
+            "id": "EDGE_3",
+            "source": "LAYER_A1B2C3D4E5F6",
+            "target": "XYZ_1234567890ABC"
+        },
+        {
+            "id": "EDGE_4",
+            "source": "LAYER_X9Y8Z7W6V5U4",
+            "target": "XYZ_1234567890ABC"
+        }
+    ]
 }
 ```
 
+
+## 关键变化总结
+
+| 变化项 | 修改前 | 修改后 |
+|--------|--------|--------|
+| 节点类型 | data_node、auto_xyz_node | resource、layer、xyz |
+| resources | 独立数组 | 作为节点类型 |
+| duckdb_table_names | 数组支持多表 | 单个table_name |
+| 连接方式 | 内嵌引用 | edges数组 |
+| 字段选择 | 在data_node | 在layer |
+| 缩放设置 | 在xyz的layers中 | 在layer节点 |
+| layer定义 | xyz的子属性 | 独立节点 |
 
 ## 关键文档链接
 
