@@ -1,0 +1,58 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Database
+*.duckdb
+*.duckdb.wal
+*.duckdb-shm
+nodes.duckdb
+
+# Configuration
+config.json
+
+# Data files
+data/
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.qpj
+*.zip
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / Frontend
+node_modules/
+dist/
+.npm/
+*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+output/
+
+# Test data
+tests/test_data/
+data/test_data/
+
+# Environment
+.env
+.env.local

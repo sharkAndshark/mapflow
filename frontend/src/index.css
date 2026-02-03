@@ -1,0 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  font-family: 'Space Grotesk', 'Avenir Next', sans-serif;
+  color: #0f172a;
+  background-color: #f5f1e9;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, rgba(125, 211, 252, 0.2), transparent 45%),
+    radial-gradient(circle at bottom right, rgba(253, 186, 116, 0.2), transparent 45%),
+    #f5f1e9;
+}
+
+#root {
+  height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
