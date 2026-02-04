@@ -24,6 +24,7 @@ data/
 *.zip
 uploads/
 !frontend/tests/fixtures/*.zip
+!testdata/osm_medium/shapefile/*.zip
 
 # Logs
 *.log
