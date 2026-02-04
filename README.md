@@ -1,234 +1,84 @@
-# MapFlow
+# MapFlow（探索版）
 
-MapFlow是一个基于Rust语言编写的高性能地图瓦片服务器，采用可视化节点编辑器来发布地图服务。
+## 目标（先从最容易的开始）
+让数据整理人员用**资源管理器式列表**上传并查看空间数据文件。
 
-## 文档入口
+## 本阶段范围（最小可用）
+- 仅支持**固定两种**空间数据格式的上传：`Shapefile`、`GeoJSON`（标准单文件，不支持按行分割/NDJSON）
+  - `Shapefile` 必须为**zip 压缩包**，且包含同名的 `.shp` / `.shx` / `.dbf`（`.prj` 可缺省）
+  - `GeoJSON` 仅接受 `.geojson` 文件扩展名
+  - 坐标系不限制；若无法识别则在元数据中记录为 `crs: null`
+- 单文件大小上限：`200MB`（硬限制）
+- 服务端口默认：`3000`
+- 上传目录默认：`./uploads`
+- 上传后在列表中展示文件（名称 / 类型 / 大小 / 时间）。
+- 能浏览“我上传了哪些文件”。
 
-- `ROADMAP.md`：唯一的演进与迭代计划（文档驱动开发）
-- `mvp.md`：原始MVP基线（冻结，不再更新）
+## 暂不做
+- 服务发布
+- 属性编辑
+- 地图预览
+- 节点/流程
 
-## 特性
+## 逐步探索计划（可随时迭代）
+- Step 1: 上传 + 文件列表（完成本阶段）
+- Step 2: 文件详情侧栏（只读）
+- Step 3: 最小化发布入口（可选）
 
-- **可视化节点编辑**：通过React前端界面进行节点拖拽和连接
-- **多种节点类型**：支持resource、layer、xyz三种节点类型
-- **Shapefile支持**：自动处理shapefile导入和坐标系统验证
-- **DuckDB存储**：高性能的地理空间数据存储
-- **实时验证**：配置验证和错误提示
-- **一键部署**：验证通过后快速应用配置
+## 最小界面（先落地最容易的）
+- 顶部：`上传`按钮（选择文件上传）
+- 列表列项：名称、类型、大小、上传时间、状态
+- 状态值：上传中、已上传、失败
+- 空状态：提示“暂未上传文件”
+- 列表点击：仅高亮选中（不做详情面板）
+- 本阶段使用**表格视图**；后期可选添加图标视图切换
 
-## 技术栈
+## 最小接口（仅覆盖本阶段）
+- `POST /api/uploads`
+  - 表单字段：`file`
+  - 仅接受 `zip`（Shapefile）或 `.geojson`（单文件）
+  - 失败返回清晰错误（格式不支持 / 超过 200MB）
+  - 成功返回：新文件的元数据（同 `GET /api/files` 单条结构）
+- `GET /api/files`
+  - 返回列表字段：`id`、`name`、`type`、`size`、`uploadedAt`、`status`、`crs`
 
-- **后端**：Rust + Axum
-- **前端**：React + React Flow
-- **数据库**：DuckDB with Spatial Extension
-- **瓦片格式**：MVT (Mapbox Vector Tiles)
+## 最小存储约定（文件系统）
+- 每个上传文件保存到：`./uploads/<id>/`
+- 列表元数据保存到：`./uploads/index.json`
+- 元数据字段（示例）：`id`、`name`、`type`、`size`、`uploadedAt`、`status`、`crs`、`path`、`error`
+- `crs`：若识别不到坐标系，则为 `null`
+- 状态流转：
+  - 上传开始：`uploading`（可选）
+  - 上传成功：`uploaded`
+  - 上传失败：`failed` + `error`
+- 服务重启：将残留 `uploading` 视为 `failed`（保证一致）
 
-## 快速开始
-
-### 环境要求
-
-- Rust 1.80+
-- Node.js 18+
-
-### 安装和运行
-
-```bash
-# 克隆项目
-git clone <repository-url>
-cd mapflow
-
-# 构建
-cargo build --release
-
-# 运行
-PORT=3000 cargo run
-
-# 访问
-# Web界面: http://localhost:3000
-# API文档: http://localhost:3000/config
-```
-
-### 开发说明（精简）
-
-- 后端：`cargo run`
-- 前端（开发模式）：
-  - `cd frontend`
-  - `npm run dev`
-
-## 使用流程
-
-### 1. 上传数据文件
-
-```bash
-curl -X POST http://localhost:3000/upload \
-  -F "file=@shapefile.zip"
-```
-
-系统会自动：
-- 验证坐标系定义
-- 导入数据到DuckDB
-- 创建resource节点
-
-### 2. 创建配置
-
-通过Web界面或API创建layer和xyz节点，配置连接关系。
-
-### 3. 验证和应用
-
-```bash
-# 验证配置
-curl -X POST http://localhost:3000/verify \
-  -H "Content-Type: application/json" \
-  -d @config.json
-
-# 应用配置
-curl -X POST http://localhost:3000/config \
-  -H "Content-Type: application/json" \
-  -d @config.json
-```
-
-### 4. 获取瓦片
-
-```bash
-# 获取指定坐标的瓦片
-curl http://localhost:3000/tiles/10/100/200.pbf --output tile.pbf
-```
-
-## API端点
-
-### 文件上传
-
-- `POST /upload` - 上传shapefile ZIP包
-  - 参数：`file` (ZIP文件), `srid` (可选，坐标系ID)
-  - 返回：创建的resource节点信息
-
-### 配置管理
-
-- `GET /config` - 获取当前配置
-- `POST /config` - 应用新配置
-- `POST /verify` - 验证配置
-
-### 瓦片服务
-
-- `GET /tiles/{z}/{x}/{y}.pbf` - 获取MVT格式瓦片
-- `GET /` - Web界面
-- `GET /resources/{id}/metadata` - 获取资源字段与边界信息
-
-## 错误码
-
-| 错误码 | 类型 | 说明 |
-|--------|------|------|
-| 4000 | 验证错误 | 配置验证失败 |
-| 4004 | 资源不存在 | 请求的资源未找到 |
-| 5000 | 数据库错误 | 数据库操作失败 |
-| 5001 | IO错误 | 文件操作失败 |
-| 5002 | 解析错误 | 数据解析失败 |
-| 5003 | 配置错误 | 配置管理错误 |
-| 5004 | 上传错误 | 文件上传失败 |
-| 5005 | 瓦片生成错误 | 瓦片生成失败 |
-| 5006 | 内部错误 | 服务器内部错误 |
-
-## 配置格式
-
-config.json包含nodes和edges数组：
-
+示例 `./uploads/index.json`：
 ```json
-{
-  "version": "0.1.0",
-  "nodes": [
-    {
-      "id": "RES_XXX",
-      "type": "resource",
-      "name": "shanghai_buildings",
-      "duckdb_table_name": "shanghai_XXX",
-      "srid": "4326",
-      "readonly": true
-    },
-    {
-      "id": "LAYER_XXX",
-      "type": "layer",
-      "name": "buildings_layer",
-      "source_resource_id": "RES_XXX",
-      "minzoom": 10,
-      "maxzoom": 18,
-      "readonly": false
-    },
-    {
-      "id": "XYZ_XXX",
-      "type": "xyz",
-      "name": "shanghai_tiles",
-      "center": [121.4737, 31.2304, 12.0],
-      "bounds": [-180.0, -85.0511, 180.0, 85.0511],
-      "min_zoom": 0,
-      "max_zoom": 22,
-      "layers": [
-        {
-          "id": "layer_buildings",
-          "source_layer_id": "LAYER_XXX"
-        }
-      ],
-      "readonly": false
-    }
-  ],
-  "edges": [
-    {
-      "id": "EDGE_1",
-      "source": "RES_XXX",
-      "target": "LAYER_XXX"
-    },
-    {
-      "id": "EDGE_2",
-      "source": "LAYER_XXX",
-      "target": "XYZ_XXX"
-    }
-  ]
-}
+[
+  {
+    "id": "f1a2b3",
+    "name": "roads",
+    "type": "shapefile",
+    "size": 12582912,
+    "uploadedAt": "2026-02-04T10:21:00Z",
+    "status": "uploaded",
+    "crs": null,
+    "path": "./uploads/f1a2b3/roads.zip"
+  },
+  {
+    "id": "c9d8e7",
+    "name": "parks",
+    "type": "geojson",
+    "size": 2097152,
+    "uploadedAt": "2026-02-04T10:30:00Z",
+    "status": "failed",
+    "crs": null,
+    "path": "./uploads/c9d8e7/parks.geojson",
+    "error": "Invalid GeoJSON"
+  }
+]
 ```
 
-## 开发
-
-### 运行测试
-
-```bash
-# 单元测试
-cargo test
-
-# 集成测试
-cargo test --test integration
-
-# 带输出的测试
-cargo test -- --nocapture
-```
-
-### 准备测试数据
-
-```bash
-bash scripts/prepare_test_data.sh
-```
-
-这会下载OSM数据并转换为shapefile格式。
-
-### 项目结构
-
-```
-mapflow/
-├── src/
-│   ├── main.rs          # 主程序和路由
-│   ├── db.rs            # DuckDB连接管理
-│   ├── models.rs        # 数据模型定义
-│   └── services/        # 服务层
-│       ├── config.rs    # 配置管理
-│       ├── upload.rs    # 文件上传
-│       └── tiles.rs     # 瓦片服务
-├── tests/
-│   └── integration/     # 集成测试
-├── scripts/
-│   └── prepare_test_data.sh
-├── data/               # 上传文件存储
-├── nodes.duckdb        # DuckDB数据库
-└── config.json         # 配置文件
-```
-
-## License
-
-MIT
+## 需要你确定的小点
+- 这一阶段不再扩展格式，先把上传与列表流程做顺。
