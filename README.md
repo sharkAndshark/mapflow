@@ -2,6 +2,11 @@
 
 MapFlow是一个基于Rust语言编写的高性能地图瓦片服务器，采用可视化节点编辑器来发布地图服务。
 
+## 文档入口
+
+- `ROADMAP.md`：唯一的演进与迭代计划（文档驱动开发）
+- `mvp.md`：原始MVP基线（冻结，不再更新）
+
 ## 特性
 
 - **可视化节点编辑**：通过React前端界面进行节点拖拽和连接
@@ -42,6 +47,13 @@ PORT=3000 cargo run
 # Web界面: http://localhost:3000
 # API文档: http://localhost:3000/config
 ```
+
+### 开发说明（精简）
+
+- 后端：`cargo run`
+- 前端（开发模式）：
+  - `cd frontend`
+  - `npm run dev`
 
 ## 使用流程
 
