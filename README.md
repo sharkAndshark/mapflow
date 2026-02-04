@@ -8,7 +8,7 @@
   - `Shapefile` 必须为**zip 压缩包**，且包含同名的 `.shp` / `.shx` / `.dbf`（`.prj` 可缺省）
   - `GeoJSON` 仅接受 `.geojson` 文件扩展名
   - 坐标系不限制；若无法识别则在元数据中记录为 `crs: null`
-- 单文件大小上限：`200MB`（硬限制）
+- 单文件大小上限：默认 `200MB`，可通过 `UPLOAD_MAX_SIZE_MB` 配置
 - 服务端口默认：`3000`
 - 上传目录默认：`./uploads`
 - 上传后在列表中展示文件（名称 / 类型 / 大小 / 时间）。
@@ -37,7 +37,7 @@
 - `POST /api/uploads`
   - 表单字段：`file`
   - 仅接受 `zip`（Shapefile）或 `.geojson`（单文件）
-  - 失败返回清晰错误（格式不支持 / 超过 200MB）
+  - 失败返回清晰错误（格式不支持 / 超过配置上限）
   - 成功返回：新文件的元数据（同 `GET /api/files` 单条结构）
 - `GET /api/files`
   - 返回列表字段：`id`、`name`、`type`、`size`、`uploadedAt`、`status`、`crs`
@@ -82,6 +82,16 @@
 
 ## 本地开发
 后端使用 Rust (axum)，前端使用 React + Vite。
+
+### 环境变量配置
+- `UPLOAD_MAX_SIZE_MB`：单文件大小上限（单位 MB，正整数），默认 `200`
+- `UPLOAD_DIR`：上传目录，默认 `./uploads`
+- `PORT`：服务端口，默认 `3000`
+
+示例（仅当前命令生效）：
+```bash
+UPLOAD_MAX_SIZE_MB=50 cargo run --manifest-path backend/Cargo.toml
+```
 
 ### 可选：使用 justfile
 如果你安装了 `just`，可以用以下命令快速编排：

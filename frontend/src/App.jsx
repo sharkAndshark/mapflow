@@ -128,7 +128,7 @@ export default function App() {
       <section className="panel">
         <div className="panel-header">
           <h2>上传文件</h2>
-          <span className="panel-meta">支持 .zip / .geojson，单文件最大 200MB</span>
+          <span className="panel-meta">支持 .zip / .geojson，单文件最大 200MB（可配置）</span>
         </div>
 
         {isLoading ? (

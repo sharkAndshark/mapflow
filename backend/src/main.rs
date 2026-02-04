@@ -20,7 +20,8 @@ use tokio::{
 use tower_http::{cors::{Any, CorsLayer}, services::ServeDir};
 use zip::ZipArchive;
 
-const MAX_SIZE: u64 = 200 * 1024 * 1024;
+const DEFAULT_MAX_SIZE_MB: u64 = 200;
+const BYTES_PER_MB: u64 = 1024 * 1024;
 
 #[derive(Clone)]
 struct AppState {
@@ -28,6 +29,7 @@ struct AppState {
     index_path: PathBuf,
     index_lock: Arc<Mutex<()>>,
     max_size: u64,
+    max_size_label: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -56,6 +58,7 @@ async fn main() {
     let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string());
     let upload_dir = PathBuf::from(upload_dir);
     let index_path = upload_dir.join("index.json");
+    let (max_size, max_size_label) = read_max_size_config();
 
     ensure_upload_dir(&upload_dir, &index_path).await;
     normalize_index_on_start(&index_path).await;
@@ -64,7 +67,8 @@ async fn main() {
         upload_dir,
         index_path,
         index_lock: Arc::new(Mutex::new(())),
-        max_size: MAX_SIZE,
+        max_size,
+        max_size_label,
     };
 
     let mut app = build_api_router(state.clone());
@@ -157,7 +161,8 @@ async fn upload_file(
         if size > state.max_size {
             drop(file);
             let _ = fs::remove_file(&file_path).await;
-            return Err(payload_too_large("File too large (max 200MB)"));
+            let message = format!("File too large (max {})", state.max_size_label);
+            return Err(payload_too_large(&message));
         }
         file.write_all(&chunk).await.map_err(internal_error)?;
     }
@@ -215,6 +220,32 @@ async fn upload_file(
     drop(_guard);
 
     Ok((StatusCode::CREATED, Json(meta)))
+}
+
+fn read_max_size_config() -> (u64, String) {
+    let max_size_mb = std::env::var("UPLOAD_MAX_SIZE_MB")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_MAX_SIZE_MB);
+    let bytes = max_size_mb.saturating_mul(BYTES_PER_MB);
+    (bytes, format_bytes(bytes))
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * 1024;
+    const GB: u64 = 1024 * 1024 * 1024;
+
+    if bytes >= GB && bytes % GB == 0 {
+        format!("{}GB", bytes / GB)
+    } else if bytes >= MB && bytes % MB == 0 {
+        format!("{}MB", bytes / MB)
+    } else if bytes >= KB && bytes % KB == 0 {
+        format!("{}KB", bytes / KB)
+    } else {
+        format!("{}B", bytes)
+    }
 }
 
 async fn ensure_upload_dir(upload_dir: &Path, index_path: &Path) {
@@ -379,10 +410,13 @@ mod tests {
     use axum::http::{header, Request};
     use http_body_util::BodyExt;
     use std::io::{Cursor, Write};
+    use std::sync::OnceLock;
     use tempfile::TempDir;
     use tower::util::ServiceExt;
     use zip::write::FileOptions;
     use zip::ZipWriter;
+
+    static ENV_LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
 
     async fn setup_state(max_size: u64) -> (AppState, TempDir) {
         let temp_dir = TempDir::new().expect("temp dir");
@@ -396,6 +430,7 @@ mod tests {
             index_path,
             index_lock: Arc::new(Mutex::new(())),
             max_size,
+            max_size_label: format_bytes(max_size),
         };
 
         (state, temp_dir)
@@ -624,6 +659,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
         let error: ErrorResponse = response_json(response).await;
         assert!(error.error.contains("File too large"));
+        assert!(error.error.contains("max 10B"));
     }
 
     #[tokio::test]
@@ -674,5 +710,34 @@ mod tests {
             .as_ref()
             .map(|msg| msg.contains("Upload interrupted"))
             .unwrap_or(false));
+    }
+
+    #[test]
+    fn read_max_size_config_default_and_custom() {
+        let _guard = ENV_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .expect("env lock");
+
+        std::env::remove_var("UPLOAD_MAX_SIZE_MB");
+        let (bytes, label) = read_max_size_config();
+        assert_eq!(bytes, DEFAULT_MAX_SIZE_MB * BYTES_PER_MB);
+        assert_eq!(label, "200MB");
+
+        std::env::set_var("UPLOAD_MAX_SIZE_MB", "12");
+        let (bytes, label) = read_max_size_config();
+        assert_eq!(bytes, 12 * BYTES_PER_MB);
+        assert_eq!(label, "12MB");
+
+        std::env::set_var("UPLOAD_MAX_SIZE_MB", "0");
+        let (bytes, label) = read_max_size_config();
+        assert_eq!(bytes, DEFAULT_MAX_SIZE_MB * BYTES_PER_MB);
+        assert_eq!(label, "200MB");
+
+        std::env::set_var("UPLOAD_MAX_SIZE_MB", "nope");
+        let (bytes, label) = read_max_size_config();
+        assert_eq!(bytes, DEFAULT_MAX_SIZE_MB * BYTES_PER_MB);
+        assert_eq!(label, "200MB");
+        std::env::remove_var("UPLOAD_MAX_SIZE_MB");
     }
 }
