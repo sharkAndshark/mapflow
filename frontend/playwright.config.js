@@ -7,17 +7,18 @@ export default defineConfig({
     timeout: 10_000
   },
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: `http://localhost:${process.env.TEST_PORT || 3000}`,
     trace: 'on-first-retry'
   },
   webServer: {
     command: 'cargo run --manifest-path backend/Cargo.toml',
     cwd: '..',
-    port: 3000,
+    port: Number(process.env.TEST_PORT || 3000),
     reuseExistingServer: !process.env.CI,
     env: {
       WEB_DIST: 'frontend/dist',
-      UPLOAD_DIR: 'tmp/test-uploads'
+      UPLOAD_DIR: 'tmp/test-uploads',
+      PORT: String(process.env.TEST_PORT || 3000)
     }
   }
 });

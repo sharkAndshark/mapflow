@@ -84,13 +84,46 @@
 后端使用 Rust (axum)，前端使用 React + Vite。
 
 ### 环境变量配置
+
+#### 后端配置
+- `PORT`：服务端口，默认 `3000`
 - `UPLOAD_MAX_SIZE_MB`：单文件大小上限（单位 MB，正整数），默认 `200`
 - `UPLOAD_DIR`：上传目录，默认 `./uploads`
-- `PORT`：服务端口，默认 `3000`
+
+#### 前端开发配置
+- `VITE_PORT`：前端开发服务器端口，默认 `5173`
+
+#### 测试配置
+- `TEST_PORT`：E2E 测试使用的端口，默认 `3000`
+
+### 使用 .env 文件
+
+1. 复制配置模板：`cp .env.example .env`
+2. 修改 `.env` 文件中的配置
+3. 启动服务（会自动读取 .env 文件）
 
 示例（仅当前命令生效）：
 ```bash
+# 后端
 UPLOAD_MAX_SIZE_MB=50 cargo run --manifest-path backend/Cargo.toml
+
+# 前端
+VITE_PORT=3001 npm run dev
+
+# 测试
+TEST_PORT=9999 npm run test:e2e
+```
+
+### 避免端口冲突
+
+如需同时运行开发服务器和测试，可使用不同端口：
+
+```bash
+# 终端 1：开发服务器使用 8080 端口
+PORT=8080 cargo run --manifest-path backend/Cargo.toml
+
+# 终端 2：E2E 测试使用 9999 端口（避免冲突）
+TEST_PORT=9999 npm run test:e2e
 ```
 
 ### 可选：使用 justfile
