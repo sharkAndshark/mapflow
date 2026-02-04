@@ -22,6 +22,8 @@ data/
 *.cpg
 *.qpj
 *.zip
+uploads/
+!frontend/tests/fixtures/*.zip
 
 # Logs
 *.log
@@ -42,6 +44,9 @@ node_modules/
 dist/
 .npm/
 *.local
+playwright-report/
+test-results/
+.just/
 
 # Temporary files
 tmp/

@@ -80,5 +80,37 @@
 ]
 ```
 
+## 本地开发
+后端使用 Rust (axum)，前端使用 React + Vite。
+
+### 可选：使用 justfile
+如果你安装了 `just`，可以用以下命令快速编排：
+- `just dev`：启动前后端（提示两个终端命令）
+- `just build`：前端打包 + 后端构建
+- `just backend-test`：后端测试
+- `just e2e`：前端行为测试
+- `just test`：全量测试
+
+### 安装依赖
+- 后端：`cargo build --manifest-path backend/Cargo.toml`
+- 前端：`cd frontend && npm install`
+
+### 启动开发环境
+1. 启动后端：`cargo run --manifest-path backend/Cargo.toml`
+2. 启动前端：`cd frontend && npm run dev`
+3. 打开 `http://localhost:5173`
+
+### 生产/测试（后端直出前端静态资源）
+1. 构建前端：`cd frontend && npm run build`
+2. 启动后端：`cargo run --manifest-path backend/Cargo.toml`
+3. 访问 `http://localhost:3000`
+
+### 行为测试（Playwright）
+1. 安装浏览器：`cd frontend && npx playwright install`
+2. 运行测试：`cd frontend && npm run test:e2e`
+
+## 行为测试清单
+行为测试的清单与约束记录在 `TESTS.md`，用于保持对外可观测行为的稳定契约。
+
 ## 需要你确定的小点
 - 这一阶段不再扩展格式，先把上传与列表流程做顺。
