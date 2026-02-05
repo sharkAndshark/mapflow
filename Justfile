@@ -9,35 +9,7 @@ start: dev
 
 # Run both backend and frontend in parallel (auto-selecting ports)
 dev:
-  @echo "Starting dev environment..."
-  @echo "---------------------------------------------------"
-  @echo "Backend will run at: http://localhost:3000"
-  @echo "Frontend will run at: http://localhost:5173"
-  @echo "---------------------------------------------------"
-  @# 1. Kill old backend if running
-  @if lsof -i:3000 -t >/dev/null; then \
-      echo "Killing existing backend on port 3000..."; \
-      kill $$(lsof -i:3000 -t) 2>/dev/null || true; \
-      sleep 1; \
-  fi
-  @# 2. Build first to ensure we run binary directly
-  @echo "Building backend..."
-  @cargo build --manifest-path backend/Cargo.toml
-  @# 3. Run binary directly (PID_BACKEND will be the actual process, not cargo wrapper)
-  @PORT=3000 ./backend/target/debug/backend & PID_BACKEND=$$!; \
-   echo "Backend PID: $$PID_BACKEND"; \
-   trap "kill $$PID_BACKEND 2>/dev/null || true" INT TERM EXIT; \
-   echo "Waiting for backend to be ready..."; \
-   count=0; \
-   while ! curl -s http://127.0.0.1:3000/api/files > /dev/null; do \
-     sleep 0.5; \
-     count=$$((count+1)); \
-     if [ $$count -ge 60 ]; then echo "Backend failed to start in 30s"; kill $$PID_BACKEND 2>/dev/null || true; exit 1; fi; \
-   done; \
-   echo "Backend is ready!"; \
-   PORT=3000 VITE_PORT=5173 npm --prefix frontend run dev -- --port 5173 --strictPort & PID_FRONTEND=$$!; \
-   trap "kill $$PID_BACKEND $$PID_FRONTEND 2>/dev/null || true" INT TERM EXIT; \
-   wait
+  ./scripts/dev.sh
 
 # Dev backend only
 dev-backend:
