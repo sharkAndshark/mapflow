@@ -15,6 +15,15 @@ dev:
   @echo "Frontend will run at: http://localhost:5173"
   @echo "---------------------------------------------------"
   PORT=3000 cargo run --manifest-path backend/Cargo.toml & PID_BACKEND=$!; \
+  trap "kill $PID_BACKEND 2>/dev/null || true" INT TERM EXIT; \
+  echo "Waiting for backend to be ready..."; \
+  count=0; \
+  while ! curl -s http://127.0.0.1:3000/api/files > /dev/null; do \
+    sleep 0.5; \
+    count=$((count+1)); \
+    if [ $count -ge 60 ]; then echo "Backend failed to start in 30s"; kill $PID_BACKEND 2>/dev/null || true; exit 1; fi; \
+  done; \
+  echo "Backend is ready!"; \
   PORT=3000 VITE_PORT=5173 npm --prefix frontend run dev -- --port 5173 --strictPort & PID_FRONTEND=$!; \
   trap "kill $PID_BACKEND $PID_FRONTEND 2>/dev/null || true" INT TERM EXIT; \
   wait
