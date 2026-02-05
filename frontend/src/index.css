@@ -163,14 +163,91 @@ h1 {
   color: #b21c1c;
 }
 
+/* New Action Column Styles */
+.row {
+  grid-template-columns: 1.8fr 1fr 1fr 1.3fr 0.8fr 100px; /* added 100px for actions */
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: #0080ff;
+  cursor: pointer;
+  font-size: inherit;
+  font-weight: 600;
+  padding: 0;
+}
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* Preview Page Styles */
+.preview-page {
+  background: #fff;
+}
+
+.preview-page.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-size: 18px;
+  color: #666;
+  gap: 12px;
+}
+
+.spinner {
+  border: 4px solid #eee;
+  border-left-color: #666;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.preview-page.error {
+  padding: 2rem;
+}
+
+.back-link {
+  text-decoration: none;
+  color: #1e1e1e;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.badge {
+  background: #eee;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #666;
+}
+
 @media (max-width: 900px) {
   .row {
-    grid-template-columns: 1.4fr 0.9fr 0.9fr 1.2fr;
+    grid-template-columns: 1.4fr 0.9fr 0.9fr 1.2fr 0.8fr; /* removed action col for mobile or let it wrap */
     grid-template-rows: auto auto;
   }
 
   .row > div:last-child {
     grid-column: 1 / -1;
+    justify-content: flex-start; /* Reset justify for mobile layout */
+    margin-top: 8px;
   }
 }
 

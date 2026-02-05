@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import { useNavigate } from 'react-router-dom';
+
 const STATUS_LABELS = {
   uploading: '上传中',
   uploaded: '已上传',
@@ -22,6 +24,7 @@ function parseType(fileName) {
 }
 
 export default function App() {
+  const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -145,10 +148,10 @@ export default function App() {
               <div>大小</div>
               <div>上传时间</div>
               <div>状态</div>
+              <div>操作</div>
             </div>
             {orderedFiles.map((item) => (
-              <button
-                type="button"
+              <div
                 key={item.id}
                 className={`row ${selectedId === item.id ? 'selected' : ''}`}
                 onClick={() => setSelectedId(item.id)}
@@ -162,7 +165,20 @@ export default function App() {
                 <div className={`status ${item.status || 'uploaded'}`}>
                   {STATUS_LABELS[item.status] || item.status}
                 </div>
-              </button>
+                <div className="actions">
+                   {item.status === 'uploaded' && (
+                     <button 
+                       className="btn-link"
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         navigate(`/preview/${item.id}`);
+                       }}
+                     >
+                       Preview
+                     </button>
+                   )}
+                </div>
+              </div>
             ))}
           </div>
         )}

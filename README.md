@@ -13,17 +13,33 @@
 - 上传目录默认：`./uploads`
 - 上传后在列表中展示文件（名称 / 类型 / 大小 / 时间）。
 - 能浏览“我上传了哪些文件”。
+- **地图预览（新开标签页）**：预览当前选中的数据集；后端动态生成 MVT。
 
 ## 暂不做
 - 服务发布
 - 属性编辑
-- 地图预览
 - 节点/流程
 
 ## 逐步探索计划（可随时迭代）
-- Step 1: 上传 + 文件列表（完成本阶段）
-- Step 2: 文件详情侧栏（只读）
-- Step 3: 最小化发布入口（可选）
+- Step 1: 上传 + 文件列表（完成）
+- Step 2: 地图预览（新开标签页）（完成本阶段）
+- Step 3: 文件详情侧栏（只读）
+- Step 4: 最小化发布入口（可选）
+
+## 地图预览：最小接口（草案）
+- `GET /api/files/:id/preview`
+  - 返回：`id`, `name`, `crs`, `bbox`（[minx, miny, maxx, maxy]，WGS84，用于初始定位）
+- `GET /api/files/:id/tiles/:z/:x/:y.mvt`
+  - 返回：`application/vnd.mapbox-vector-tile` 的二进制
+  - 参数：`id` 为 files.id；z/x/y 为 WebMercator 瓦片坐标
+
+## 地图预览：DuckDB Spatial 技术要点
+- CRS 识别：用 `ST_Read_Meta(path)` 读取 `layers[1].geometry_fields[1].crs.auth_name/auth_code`，写入 `files.crs`（如 `EPSG:4326`）
+- 重投影：用 `ST_Transform(geom, source_crs, 'EPSG:3857', always_xy := true|false)`
+  - 注意：EPSG:4326 在 PROJ 定义里轴顺序是 [lat, lon]；GeoJSON 常见是 [lon, lat]，需要 `always_xy := true`
+- 瓦片范围：`ST_TileEnvelope(z,x,y)` 返回 EPSG:3857 的 tile envelope
+- MVT 编码：`ST_AsMVTGeom` 先裁剪/缩放到 tile extent，再 `ST_AsMVT` 输出 tile blob
+- 参考文档（本机克隆）：`~/RiderProjects/duckdb-spatial/docs/functions.md`
 
 ## 最小界面（先落地最容易的）
 - 顶部：`上传`按钮（选择文件上传）
@@ -129,20 +145,22 @@ TEST_PORT=9999 npm run test:e2e
 
 ### 可选：使用 justfile
 如果你安装了 `just`，可以用以下命令快速编排：
-- `just dev`：启动前后端（提示两个终端命令）
-- `just build`：前端打包 + 后端构建
-- `just backend-test`：后端测试
-- `just e2e`：前端行为测试
+- `just start` 或 `just dev`：同时启动前后端（最快开发模式）
+- `just docker-up`：Docker 启动（不重新构建）
+- `just docker-up-build`：Docker 重新构建并启动
+- `just build`：本地打包前端 + 构建后端
+- `just check`：运行 fmt 和 clippy 检查
 - `just test`：全量测试
 
 ### 安装依赖
-- 后端：`cargo build --manifest-path backend/Cargo.toml`
-- 前端：`cd frontend && npm install`
+- `just install`：安装前端依赖
+- 后端依赖会在首次运行 cargo 时自动下载
 
 ### 启动开发环境
-1. 启动后端：`cargo run --manifest-path backend/Cargo.toml`
-2. 启动前端：`cd frontend && npm run dev`
-3. 打开 `http://localhost:5173`
+1. 快速启动：`just start`
+   - 系统会自动选择空闲端口（避免冲突）
+   - **请查看终端输出**获取实际访问地址（例如 `Frontend will run at: http://localhost:xxxx`）
+2. 后端 API 地址也会在终端显示
 
 ### 生产/测试（后端直出前端静态资源）
 1. 构建前端：`cd frontend && npm run build`
