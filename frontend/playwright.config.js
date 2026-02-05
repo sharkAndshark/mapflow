@@ -18,6 +18,7 @@ export default defineConfig({
     env: {
       WEB_DIST: 'frontend/dist',
       UPLOAD_DIR: 'tmp/test-uploads',
+      DB_PATH: 'tmp/test-mapflow.duckdb',
       PORT: String(process.env.TEST_PORT || 3000)
     }
   }

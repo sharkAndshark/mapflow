@@ -166,16 +166,19 @@ export default function App() {
                   {STATUS_LABELS[item.status] || item.status}
                 </div>
                 <div className="actions">
-                   {item.status === 'uploaded' && (
-                     <button 
-                       className="btn-link"
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         navigate(`/preview/${item.id}`);
-                       }}
-                     >
-                       Preview
-                     </button>
+                     {item.status === 'uploaded' && (
+                       <a 
+                         href={`/preview/${item.id}`}
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         className="btn-link"
+                         onClick={(e) => {
+                           e.stopPropagation();
+                         }}
+                         style={{ textDecoration: 'none' }}
+                       >
+                         Preview
+                       </a>
                    )}
                 </div>
               </div>
