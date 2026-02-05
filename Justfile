@@ -16,7 +16,7 @@ dev:
   @echo "---------------------------------------------------"
   PORT=3000 cargo run --manifest-path backend/Cargo.toml & PID_BACKEND=$!; \
   PORT=3000 VITE_PORT=5173 npm --prefix frontend run dev -- --port 5173 --strictPort & PID_FRONTEND=$!; \
-  trap "kill $PID_BACKEND $PID_FRONTEND" INT TERM EXIT; \
+  trap "kill $PID_BACKEND $PID_FRONTEND 2>/dev/null || true" INT TERM EXIT; \
   wait
 
 # Dev backend only
