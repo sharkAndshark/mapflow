@@ -1,0 +1,10 @@
+target/
+node_modules/
+.git/
+.just/
+uploads/
+data/
+testdata/
+tmp/
+.DS_Store
+.env

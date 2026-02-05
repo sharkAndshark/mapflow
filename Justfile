@@ -1,29 +1,27 @@
 set shell := ["zsh", "-cu"]
 
-# Start backend and frontend dev servers in two terminals
-# Usage: just dev
-
-dev:
-  echo "Run in two terminals:"
-  echo "  1) cargo run --manifest-path backend/Cargo.toml"
-  echo "  2) cd frontend && npm run dev"
-
-# Build frontend and start backend + frontend in background
+# Build and start the container in detached mode
 start:
-  mkdir -p .just
-  cd frontend && npm run build
-  nohup cargo run --manifest-path backend/Cargo.toml > .just/backend.log 2>&1 & echo $! > .just/backend.pid
-  nohup sh -c "cd frontend && npm run dev" > .just/frontend.log 2>&1 & echo $! > .just/frontend.pid
-  echo "Started backend PID: $(cat .just/backend.pid)"
-  echo "Started frontend PID: $(cat .just/frontend.pid)"
+  docker compose up -d --build
+  @echo "MapFlow started at http://localhost:3000"
 
-# Stop background services started by `just start`
+# Stop the container
 stop:
-  if [ -f .just/backend.pid ]; then kill $(cat .just/backend.pid) || true; rm -f .just/backend.pid; fi
-  if [ -f .just/frontend.pid ]; then kill $(cat .just/frontend.pid) || true; rm -f .just/frontend.pid; fi
-  echo "Stopped background services"
+  docker compose down
 
-# Build frontend and backend for production-like run
+# Show logs
+logs:
+  docker compose logs -f
+
+# Check status
+ps:
+  docker compose ps
+
+# Enter container shell
+shell:
+  docker compose exec mapflow /bin/bash
+
+# Build frontend and backend locally (for non-docker runs)
 build:
   cd frontend && npm run build
   cargo build --manifest-path backend/Cargo.toml
@@ -37,6 +35,5 @@ e2e:
   cd frontend && npm run test:e2e
 
 # Full test suite
-
 test: backend-test e2e
   echo "All tests complete"

@@ -1,0 +1,14 @@
+services:
+  mapflow:
+    build: .
+    image: mapflow:latest
+    container_name: mapflow
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+    environment:
+      - PORT=3000
+      - UPLOAD_MAX_SIZE_MB=${UPLOAD_MAX_SIZE_MB:-200}

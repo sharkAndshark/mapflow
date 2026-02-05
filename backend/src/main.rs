@@ -34,8 +34,8 @@ fn init_database(db_path: &Path) -> duckdb::Connection {
 
     let conn = duckdb::Connection::open(db_path).expect("Failed to open database");
 
-    conn.execute_batch("LOAD spatial;")
-        .expect("Failed to load spatial extension");
+    conn.execute_batch("INSTALL spatial; LOAD spatial;")
+        .expect("Failed to install and load spatial extension");
 
     conn.execute_batch(
         r"
@@ -380,11 +380,11 @@ fn format_bytes(bytes: u64) -> String {
     const MB: u64 = 1024 * 1024;
     const GB: u64 = 1024 * 1024 * 1024;
 
-    if bytes >= GB && bytes.is_multiple_of(GB) {
+    if bytes >= GB && bytes % GB == 0 {
         format!("{}GB", bytes / GB)
-    } else if bytes >= MB && bytes.is_multiple_of(MB) {
+    } else if bytes >= MB && bytes % MB == 0 {
         format!("{}MB", bytes / MB)
-    } else if bytes >= KB && bytes.is_multiple_of(KB) {
+    } else if bytes >= KB && bytes % KB == 0 {
         format!("{}KB", bytes / KB)
     } else {
         format!("{}B", bytes)
