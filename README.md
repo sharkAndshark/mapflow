@@ -89,6 +89,7 @@
 - `PORT`：服务端口，默认 `3000`
 - `UPLOAD_MAX_SIZE_MB`：单文件大小上限（单位 MB，正整数），默认 `200`
 - `UPLOAD_DIR`：上传目录，默认 `./uploads`
+- `DB_PATH`：DuckDB 数据库文件路径，默认 `./data/mapflow.duckdb`
 
 #### 前端开发配置
 - `VITE_PORT`：前端开发服务器端口，默认 `5173`

@@ -14,6 +14,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rand = "0.8"
 zip = "0.6"
 hex = "0.4"
+duckdb = { version = "1.4.4", features = ["bundled", "chrono"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

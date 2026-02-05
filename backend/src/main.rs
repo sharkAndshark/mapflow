@@ -22,12 +22,58 @@ use zip::ZipArchive;
 
 const DEFAULT_MAX_SIZE_MB: u64 = 200;
 const BYTES_PER_MB: u64 = 1024 * 1024;
+const DEFAULT_DB_PATH: &str = "./data/mapflow.duckdb";
+
+fn init_database(db_path: &Path) -> duckdb::Connection {
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent)
+            .expect("Failed to create database directory");
+    }
+    
+    let conn = duckdb::Connection::open(db_path)
+        .expect("Failed to open database");
+    
+    conn.execute_batch("LOAD spatial;")
+        .expect("Failed to load spatial extension");
+    
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS files (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            type VARCHAR NOT NULL,
+            size BIGINT NOT NULL,
+            uploaded_at TIMESTAMP NOT NULL,
+            status VARCHAR NOT NULL,
+            crs VARCHAR,
+            path VARCHAR NOT NULL,
+            error VARCHAR
+        );
+        "
+    ).expect("Failed to create files table");
+    
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS spatial_data (
+            id INTEGER PRIMARY KEY,
+            source_id VARCHAR NOT NULL,
+            geom GEOMETRY,
+            properties JSON,
+            FOREIGN KEY (source_id) REFERENCES files(id)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_spatial_data_source 
+            ON spatial_data(source_id);
+        "
+    ).expect("Failed to create spatial_data table");
+    
+    conn
+}
 
 #[derive(Clone)]
 struct AppState {
     upload_dir: PathBuf,
-    index_path: PathBuf,
-    index_lock: Arc<Mutex<()>>,
+    db: Arc<Mutex<duckdb::Connection>>,
     max_size: u64,
     max_size_label: String,
 }
@@ -55,18 +101,20 @@ struct ErrorResponse {
 
 #[tokio::main]
 async fn main() {
+    let db_path = std::env::var("DB_PATH")
+        .unwrap_or_else(|_| DEFAULT_DB_PATH.to_string());
+    let db_path = PathBuf::from(db_path);
+    let conn = init_database(&db_path);
+    
     let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string());
     let upload_dir = PathBuf::from(upload_dir);
-    let index_path = upload_dir.join("index.json");
+    let _ = fs::create_dir_all(&upload_dir).await;
+    
     let (max_size, max_size_label) = read_max_size_config();
-
-    ensure_upload_dir(&upload_dir, &index_path).await;
-    normalize_index_on_start(&index_path).await;
 
     let state = AppState {
         upload_dir,
-        index_path,
-        index_lock: Arc::new(Mutex::new(())),
+        db: Arc::new(Mutex::new(conn)),
         max_size,
         max_size_label,
     };
@@ -103,9 +151,35 @@ fn build_api_router(state: AppState) -> Router {
 }
 
 async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
-    let _guard = with_index_lock(&state).await;
-    let items = load_index(&state.index_path).await;
-    drop(_guard);
+    let conn = state.db.lock().await;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, type, size, uploaded_at, status, crs, path, error 
+         FROM files ORDER BY uploaded_at DESC"
+    ).unwrap();
+    
+    let items: Vec<FileItem> = stmt
+        .query_map([], |row| {
+             let error: Option<String> = row.get(8)?;
+             Ok(FileItem {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                file_type: row.get(2)?,
+                size: row.get(3)?,
+                uploaded_at: {
+                    let ts: chrono::NaiveDateTime = row.get(4)?;
+                    ts.and_utc().to_rfc3339()
+                },
+                status: row.get(5)?,
+                crs: row.get(6)?,
+                path: row.get(7)?,
+                error,
+            })
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    
+    drop(conn);
     Json(items)
 }
 
@@ -182,44 +256,106 @@ async fn upload_file(
 
     let uploaded_at = Utc::now().to_rfc3339();
 
-    let _guard = with_index_lock(&state).await;
-    let mut index = load_index(&state.index_path).await;
+    // Calculate relative path for storage
+    let relative = file_path
+        .strip_prefix(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+        .unwrap_or(&file_path)
+        .to_path_buf();
+    let mut rel_string = relative.to_string_lossy().replace('\\', "/");
+    if !rel_string.starts_with('.') {
+        rel_string = format!("./{rel_string}");
+    }
+
+    let conn = state.db.lock().await;
 
     if let Err(message) = validation {
-        let failed = build_metadata(
+        let size_i64 = size as i64;
+        conn.execute(
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            duckdb::params![
+                &upload_id,
+                &base_name,
+                file_type,
+                size_i64,
+                &uploaded_at,
+                "failed",
+                &None::<String>,
+                &rel_string,
+                &Some(message.clone()),
+            ],
+        ).map_err(internal_error)?;
+
+        drop(conn);
+        return Err(bad_request(&message));
+    }
+    
+    let size_i64 = size as i64;
+    conn.execute(
+        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, error)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        duckdb::params![
             &upload_id,
             &base_name,
             file_type,
-            size,
+            size_i64,
             &uploaded_at,
-            "failed",
-            None,
-            &file_path,
-            Some(message.clone()),
-        );
-        index.push(failed);
-        save_index(&state.index_path, &index).await;
-        drop(_guard);
-        return Err(bad_request(&message));
-    }
+            "uploaded",
+            &None::<String>,
+            &rel_string,
+            &None::<String>,
+        ],
+    ).map_err(internal_error)?;
 
-    let meta = build_metadata(
-        &upload_id,
-        &base_name,
-        file_type,
+    drop(conn);
+
+    let db = state.db.clone();
+    let upload_id_clone = upload_id.clone();
+    let file_path_clone = file_path.clone();
+    let file_type_str = file_type.to_string();
+    tokio::spawn(async move {
+        if let Err(e) = import_spatial_data(&db, &upload_id_clone, &file_path_clone, &file_type_str).await {
+            eprintln!("Failed to import spatial data for {}: {}", upload_id_clone, e);
+        }
+    });
+
+    let meta = FileItem {
+        id: upload_id,
+        name: base_name,
+        file_type: file_type.to_string(),
         size,
-        &uploaded_at,
-        "uploaded",
-        None,
-        &file_path,
-        None,
-    );
-
-    index.push(meta.clone());
-    save_index(&state.index_path, &index).await;
-    drop(_guard);
+        uploaded_at,
+        status: "uploaded".to_string(),
+        crs: None,
+        path: rel_string,
+        error: None,
+    };
 
     Ok((StatusCode::CREATED, Json(meta)))
+}
+
+async fn import_spatial_data(
+    db: &Arc<Mutex<duckdb::Connection>>,
+    source_id: &str,
+    file_path: &Path,
+    _file_type: &str,
+) -> Result<(), String> {
+    let abs_path = std::fs::canonicalize(file_path)
+        .map_err(|_| "Cannot resolve file path".to_string())?
+        .to_string_lossy()
+        .to_string();
+    
+    let sql = format!(
+        "INSERT INTO spatial_data (source_id, geom, properties) 
+         SELECT '{source_id}', geom, try_cast(properties as JSON) as properties 
+         FROM ST_Read('{abs_path}')"
+    );
+    
+    let conn = db.lock().await;
+    conn.execute(&sql, [])
+        .map_err(|e| format!("Spatial import failed: {}", e))?;
+    
+    Ok(())
 }
 
 fn read_max_size_config() -> (u64, String) {
@@ -245,80 +381,6 @@ fn format_bytes(bytes: u64) -> String {
         format!("{}KB", bytes / KB)
     } else {
         format!("{}B", bytes)
-    }
-}
-
-async fn ensure_upload_dir(upload_dir: &Path, index_path: &Path) {
-    let _ = fs::create_dir_all(upload_dir).await;
-    if fs::metadata(index_path).await.is_err() {
-        let _ = fs::write(index_path, "[]").await;
-    }
-}
-
-async fn normalize_index_on_start(index_path: &Path) {
-    let mut items = load_index(index_path).await;
-    let mut changed = false;
-    for item in &mut items {
-        if item.status == "uploading" {
-            item.status = "failed".to_string();
-            item.error.get_or_insert_with(|| {
-                "Upload interrupted by server restart".to_string()
-            });
-            changed = true;
-        }
-    }
-    if changed {
-        save_index(index_path, &items).await;
-    }
-}
-
-async fn load_index(index_path: &Path) -> Vec<FileItem> {
-    match fs::read_to_string(index_path).await {
-        Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
-        Err(_) => Vec::new(),
-    }
-}
-
-async fn save_index(index_path: &Path, items: &[FileItem]) {
-    if let Ok(json) = serde_json::to_string_pretty(items) {
-        let _ = fs::write(index_path, json).await;
-    }
-}
-
-async fn with_index_lock(state: &AppState) -> tokio::sync::MutexGuard<'_, ()> {
-    state.index_lock.lock().await
-}
-
-fn build_metadata(
-    id: &str,
-    name: &str,
-    file_type: &str,
-    size: u64,
-    uploaded_at: &str,
-    status: &str,
-    crs: Option<String>,
-    file_path: &Path,
-    error: Option<String>,
-) -> FileItem {
-    let relative = file_path
-        .strip_prefix(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .unwrap_or(file_path)
-        .to_path_buf();
-    let mut rel_string = relative.to_string_lossy().replace('\\', "/");
-    if !rel_string.starts_with('.') {
-        rel_string = format!("./{rel_string}");
-    }
-
-    FileItem {
-        id: id.to_string(),
-        name: name.to_string(),
-        file_type: file_type.to_string(),
-        size,
-        uploaded_at: uploaded_at.to_string(),
-        status: status.to_string(),
-        crs,
-        path: rel_string,
-        error,
     }
 }
 
@@ -421,14 +483,39 @@ mod tests {
     async fn setup_state(max_size: u64) -> (AppState, TempDir) {
         let temp_dir = TempDir::new().expect("temp dir");
         let upload_dir = temp_dir.path().join("uploads");
-        let index_path = upload_dir.join("index.json");
+        fs::create_dir_all(&upload_dir).await.ok();
 
-        ensure_upload_dir(&upload_dir, &index_path).await;
+        let conn = duckdb::Connection::open_in_memory()
+            .expect("Failed to create test database");
+        conn.execute_batch("LOAD spatial;").unwrap();
+
+        conn.execute_batch(
+            r"
+        CREATE TABLE files (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            type VARCHAR NOT NULL,
+            size BIGINT NOT NULL,
+            uploaded_at TIMESTAMP NOT NULL,
+            status VARCHAR NOT NULL,
+            crs VARCHAR,
+            path VARCHAR NOT NULL,
+            error VARCHAR
+        );
+
+        CREATE TABLE spatial_data (
+            id INTEGER PRIMARY KEY,
+            source_id VARCHAR NOT NULL,
+            geom GEOMETRY,
+            properties JSON,
+            FOREIGN KEY (source_id) REFERENCES files(id)
+        );
+        "
+        ).unwrap();
 
         let state = AppState {
             upload_dir,
-            index_path,
-            index_lock: Arc::new(Mutex::new(())),
+            db: Arc::new(Mutex::new(conn)),
             max_size,
             max_size_label: format_bytes(max_size),
         };
@@ -482,18 +569,36 @@ mod tests {
         let (state, _temp_dir) = setup_state(1024).await;
         let uploaded_at = "2026-02-04T10:00:00Z";
         let file_path = state.upload_dir.join("seed-1").join("existing.geojson");
-        let item = build_metadata(
-            "seed-1",
-            "existing",
-            "geojson",
-            42,
-            uploaded_at,
-            "uploaded",
-            None,
-            &file_path,
-            None,
-        );
-        save_index(&state.index_path, &[item]).await;
+        let item = FileItem {
+            id: "seed-1".to_string(),
+            name: "existing".to_string(),
+            file_type: "geojson".to_string(),
+            size: 42,
+            uploaded_at: uploaded_at.to_string(),
+            status: "uploaded".to_string(),
+            crs: None,
+            path: file_path.to_string_lossy().to_string(),
+            error: None,
+        };
+        
+        let conn = state.db.lock().await;
+        let size = item.size as i64;
+        conn.execute(
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            duckdb::params![
+                &item.id,
+                &item.name,
+                &item.file_type,
+                size,
+                &item.uploaded_at,
+                &item.status,
+                &item.crs,
+                &item.path,
+                &item.error,
+            ],
+        ).unwrap();
+        drop(conn);
 
         let app = build_api_router(state);
         let response = app
@@ -506,6 +611,29 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "existing");
         assert_eq!(items[0].status, "uploaded");
+    }
+
+    async fn get_files_from_db(state: &AppState) -> Vec<FileItem> {
+        let conn = state.db.lock().await;
+        let mut stmt = conn.prepare("SELECT id, name, type, size, uploaded_at, status, crs, path, error FROM files").unwrap();
+        let items = stmt.query_map([], |row| {
+             let error: Option<String> = row.get(8)?;
+            Ok(FileItem {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                file_type: row.get(2)?,
+                size: row.get(3)?,
+                uploaded_at: {
+                    let ts: chrono::NaiveDateTime = row.get(4)?;
+                    ts.and_utc().to_rfc3339()
+                },
+                status: row.get(5)?,
+                crs: row.get(6)?,
+                path: row.get(7)?,
+                error,
+            })
+        }).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        items
     }
 
     #[tokio::test]
@@ -540,7 +668,7 @@ mod tests {
         assert_eq!(item.file_type, "geojson");
         assert_eq!(item.status, "uploaded");
 
-        let index = load_index(&state.index_path).await;
+        let index = get_files_from_db(&state).await;
         assert_eq!(index.len(), 1);
         assert_eq!(index[0].status, "uploaded");
     }
@@ -571,7 +699,7 @@ mod tests {
         let error: ErrorResponse = response_json(response).await;
         assert!(error.error.contains("Invalid GeoJSON"));
 
-        let index = load_index(&state.index_path).await;
+        let index = get_files_from_db(&state).await;
         assert_eq!(index.len(), 1);
         assert_eq!(index[0].status, "failed");
     }
@@ -602,7 +730,7 @@ mod tests {
         let error: ErrorResponse = response_json(response).await;
         assert!(error.error.contains(".shp/.shx/.dbf"));
 
-        let index = load_index(&state.index_path).await;
+        let index = get_files_from_db(&state).await;
         assert_eq!(index.len(), 1);
         assert_eq!(index[0].status, "failed");
     }
@@ -634,7 +762,7 @@ mod tests {
         assert!(error.error.contains("Unsupported file type"));
     }
 
-    #[tokio::test]
+#[tokio::test]
     async fn upload_too_large() {
         let (state, _temp_dir) = setup_state(10).await;
         let app = build_api_router(state);
@@ -660,56 +788,6 @@ mod tests {
         let error: ErrorResponse = response_json(response).await;
         assert!(error.error.contains("File too large"));
         assert!(error.error.contains("max 10B"));
-    }
-
-    #[tokio::test]
-    async fn restart_marks_uploading_failed_and_keeps_uploaded() {
-        let (state, _temp_dir) = setup_state(1024).await;
-        let uploaded_at = "2026-02-04T10:00:00Z";
-        let uploaded_path = state.upload_dir.join("ok-1").join("ok.geojson");
-        let uploading_path = state.upload_dir.join("stuck-1").join("stuck.geojson");
-        let uploaded = build_metadata(
-            "ok-1",
-            "ok",
-            "geojson",
-            1,
-            uploaded_at,
-            "uploaded",
-            None,
-            &uploaded_path,
-            None,
-        );
-        let uploading = build_metadata(
-            "stuck-1",
-            "stuck",
-            "geojson",
-            1,
-            uploaded_at,
-            "uploading",
-            None,
-            &uploading_path,
-            None,
-        );
-        save_index(&state.index_path, &[uploaded, uploading]).await;
-
-        normalize_index_on_start(&state.index_path).await;
-
-        let app = build_api_router(state);
-        let response = app
-            .oneshot(Request::builder().uri("/api/files").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let items: Vec<FileItem> = response_json(response).await;
-        assert_eq!(items.len(), 2);
-        let stuck = items.iter().find(|item| item.id == "stuck-1").unwrap();
-        assert_eq!(stuck.status, "failed");
-        assert!(stuck
-            .error
-            .as_ref()
-            .map(|msg| msg.contains("Upload interrupted"))
-            .unwrap_or(false));
     }
 
     #[test]
