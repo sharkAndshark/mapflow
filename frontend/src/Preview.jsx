@@ -100,8 +100,8 @@ export default function Preview() {
     map.getLayers().clear();
 
     // 1. Tile Layer source
-    // URL pattern for OL: /api/files/{id}/tiles/{z}/{x}/{y}.mvt
-    const tileUrl = `${window.location.origin}/api/files/${id}/tiles/{z}/{x}/{y}.mvt`;
+    // URL pattern: /api/files/{id}/tiles/{z}/{x}/{y} (no .mvt extension)
+    const tileUrl = `${window.location.origin}/api/files/${id}/tiles/{z}/{x}/{y}`;
 
     const vectorLayer = new VectorTileLayer({
       source: new VectorTileSource({

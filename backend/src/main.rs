@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Multipart, Path as AxumPath, State},
+    extract::{DefaultBodyLimit, Multipart, Path as AxumPath, State},
     http::{header, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -56,8 +56,10 @@ fn init_database(db_path: &Path) -> duckdb::Connection {
 
     conn.execute_batch(
         r"
+        CREATE SEQUENCE IF NOT EXISTS spatial_data_seq;
+        
         CREATE TABLE IF NOT EXISTS spatial_data (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY DEFAULT nextval('spatial_data_seq'),
             source_id VARCHAR NOT NULL,
             geom GEOMETRY,
             properties JSON,
@@ -157,7 +159,8 @@ fn build_api_router(state: AppState) -> Router {
         .route("/api/files", get(list_files))
         .route("/api/uploads", post(upload_file))
         .route("/api/files/:id/preview", get(get_preview_meta))
-        .route("/api/files/:id/tiles/:z/:x/:y.mvt", get(get_tile))
+        .route("/api/files/:id/tiles/:z/:x/:y", get(get_tile))
+        .layer(DefaultBodyLimit::disable()) // Disable default 2MB limit
         .with_state(state)
         .layer(cors)
 }
@@ -259,6 +262,7 @@ async fn get_tile(
     State(state): State<AppState>,
     AxumPath((id, z, x, y)): AxumPath<(String, i32, i32, i32)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    println!("Received tile request: id={}, z={}, x={}, y={}", id, z, x, y);
     let conn = state.db.lock().await;
 
     // 1. Get CRS for the file
@@ -281,7 +285,7 @@ async fn get_tile(
             SELECT {{
                 'geom': ST_AsMVTGeom(
                     ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),
-                    ST_TileEnvelope(?, ?, ?),
+                    ST_Extent(ST_TileEnvelope(?, ?, ?)),
                     4096, 256, true
                 ),
                 'properties': properties
@@ -295,12 +299,24 @@ async fn get_tile(
         )"
     );
 
+    println!("Executing SQL for tile z={z} x={x} y={y} id={id}");
+    println!("SQL: {}", select_sql);
+
     // Params: z, x, y, source_id, z, x, y
-    let mvt_blob: Option<Vec<u8>> = conn.query_row(
+    let mvt_blob: Option<Vec<u8>> = match conn.query_row(
         &select_sql,
         duckdb::params![z, x, y, id, z, x, y],
         |row| row.get(0)
-    ).ok();
+    ) {
+        Ok(blob) => Some(blob),
+        Err(e) => {
+            eprintln!("Tile Error (z={z}, x={x}, y={y}): {:?}", e);
+            eprintln!("SQL that failed: {}", select_sql);
+            None
+        }
+    };
+
+    println!("Tile Request: z={z}, x={x}, y={y}, Blob Size: {:?}", mvt_blob.as_ref().map(|v| v.len()));
 
     match mvt_blob {
         Some(blob) if !blob.is_empty() => {
@@ -374,6 +390,8 @@ async fn upload_file(
         file.write_all(&chunk).await.map_err(internal_error)?;
     }
     file.flush().await.map_err(internal_error)?;
+    drop(file); // Explicitly close file to release lock
+
 
     let base_name = Path::new(&safe_name)
         .file_stem()
@@ -481,9 +499,16 @@ async fn import_spatial_data(
     _file_type: &str,
 ) -> Result<(), String> {
     let abs_path = std::fs::canonicalize(file_path)
-        .map_err(|_| "Cannot resolve file path".to_string())?
+        .map_err(|e| format!("Cannot resolve file path {:?}: {}", file_path, e))?
         .to_string_lossy()
         .to_string();
+
+    let abs_path = if file_path.extension().and_then(|e| e.to_str()) == Some("zip") {
+        // Use /vsizip/ prefix for GDAL to read directly from zip
+        format!("/vsizip/{}", abs_path)
+    } else {
+        abs_path
+    };
 
     let conn = db.lock().await;
 
@@ -508,7 +533,7 @@ async fn import_spatial_data(
     // 2. Import Data
     let sql = format!(
         "INSERT INTO spatial_data (source_id, geom, properties) 
-         SELECT '{source_id}', geom, try_cast(properties as JSON) as properties 
+         SELECT '{source_id}', geom, NULL 
          FROM ST_Read('{abs_path}')"
     );
 
@@ -616,7 +641,8 @@ fn payload_too_large(message: &str) -> (StatusCode, Json<ErrorResponse>) {
     )
 }
 
-fn internal_error<E: std::fmt::Debug>(_error: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Debug>(error: E) -> (StatusCode, Json<ErrorResponse>) {
+    eprintln!("Internal Error: {:?}", error);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse {
