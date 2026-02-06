@@ -86,7 +86,7 @@ test: test-backend test-e2e
 
 # Remove DuckDB file(s) (respects DB_PATH)
 clean-db:
-  rm -f "{{DB_PATH}}" "{{DB_PATH}}.wal" "{{DB_PATH}}.tmp"
+  rm -f "{{DB_PATH}}" "{{DB_PATH}}.wal" "{{DB_PATH}}.tmp" "{{DB_PATH}}.shm" "{{DB_PATH}}-wal" "{{DB_PATH}}-shm"
 
 # Remove uploads directory (respects UPLOAD_DIR)
 clean-uploads:
@@ -94,3 +94,26 @@ clean-uploads:
 
 # Clean local dev state (db + uploads)
 clean: clean-db clean-uploads
+
+# Remove frontend build output
+clean-web:
+  rm -rf "frontend/dist"
+
+# Remove local test artifacts (Playwright output)
+clean-test-artifacts:
+  rm -rf "frontend/playwright-report" "frontend/test-results" "playwright-report" "test-results"
+
+# Remove local tmp state (keeps tmp/osm_samples and other ad-hoc scratch)
+clean-tmp:
+  rm -rf tmp/worker-* tmp/test-* tmp/release-* tmp/release-uploads tmp/test-uploads
+
+# Clean typical local dev state (db + uploads + tmp + test artifacts + built web)
+clean-all: clean clean-web clean-test-artifacts clean-tmp
+
+# Optional: remove Node install caches (slow to rebuild)
+clean-node:
+  rm -rf "node_modules" "frontend/node_modules"
+
+# Optional: remove Rust build cache (slow to rebuild)
+clean-target:
+  cargo clean

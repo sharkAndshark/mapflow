@@ -44,6 +44,21 @@ Copy the template: `cp .env.example .env`
 - `just check`: Run code quality checks (fmt + clippy).
 - `just test`: Run all tests.
 
+### Cleanup (Local State)
+
+Local development can accumulate state in `data/`, `uploads/`, `tmp/`, and test output directories.
+
+- `just clean-all`: Remove typical local state (DB + uploads + tmp workers + test artifacts + built web).
+- `just clean`: Remove DB + uploads only.
+- `just clean-db`: Remove the DuckDB file for the configured `DB_PATH` (and related WAL/SHM files).
+- `just clean-uploads`: Remove the configured `UPLOAD_DIR`.
+- `just clean-web`: Remove `frontend/dist`.
+- `just clean-test-artifacts`: Remove Playwright output (`playwright-report/`, `test-results/`).
+
+Optional (slower to rebuild):
+- `just clean-node`: Remove `node_modules/` (root + `frontend/`).
+- `just clean-target`: Run `cargo clean`.
+
 **Manual Start:**
 1. **Backend:** `cargo run --manifest-path backend/Cargo.toml`
 2. **Frontend:** `cd frontend && npm run dev`
