@@ -21,68 +21,13 @@ use tokio::{
 use tower_http::cors::{Any, CorsLayer};
 use zip::ZipArchive;
 
-const DEFAULT_MAX_SIZE_MB: u64 = 200;
-const BYTES_PER_MB: u64 = 1024 * 1024;
-pub const DEFAULT_DB_PATH: &str = "./data/mapflow.duckdb";
-pub const PROCESSING_RECONCILIATION_ERROR: &str = "Server restarted during processing";
+mod config;
+mod db;
 
-pub async fn reconcile_processing_files(
-    db: &Arc<Mutex<duckdb::Connection>>,
-) -> Result<usize, duckdb::Error> {
-    let conn = db.lock().await;
-    conn.execute(
-        "UPDATE files SET status = 'failed', error = ? WHERE status = 'processing'",
-        duckdb::params![PROCESSING_RECONCILIATION_ERROR],
-    )
-}
-
-pub fn init_database(db_path: &Path) -> duckdb::Connection {
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent).expect("Failed to create database directory");
-    }
-
-    let conn = duckdb::Connection::open(db_path).expect("Failed to open database");
-
-    conn.execute_batch("INSTALL spatial; LOAD spatial;")
-        .expect("Failed to install and load spatial extension");
-
-    conn.execute_batch(
-        r"
-        CREATE TABLE IF NOT EXISTS files (
-            id VARCHAR PRIMARY KEY,
-            name VARCHAR NOT NULL,
-            type VARCHAR NOT NULL,
-            size BIGINT NOT NULL,
-            uploaded_at TIMESTAMP NOT NULL,
-            status VARCHAR NOT NULL,
-            crs VARCHAR,
-            path VARCHAR NOT NULL,
-            table_name VARCHAR,
-            error VARCHAR
-        );
-        ",
-    )
-    .expect("Failed to create files table");
-
-    conn.execute_batch(
-        r"
-        CREATE TABLE IF NOT EXISTS dataset_columns (
-            source_id VARCHAR NOT NULL,
-            normalized_name VARCHAR NOT NULL,
-            original_name VARCHAR NOT NULL,
-            ordinal BIGINT NOT NULL,
-            mvt_type VARCHAR NOT NULL,
-            PRIMARY KEY (source_id, normalized_name)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_dataset_columns_source 
-            ON dataset_columns(source_id);
-        ",
-    )
-    .expect("Failed to create dataset metadata tables");
-
-    conn
-}
+pub use config::{format_bytes, read_max_size_config};
+pub use db::{
+    init_database, reconcile_processing_files, DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -869,32 +814,6 @@ async fn import_spatial_data(
     Ok(())
 }
 
-pub fn read_max_size_config() -> (u64, String) {
-    let max_size_mb = std::env::var("UPLOAD_MAX_SIZE_MB")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_MAX_SIZE_MB);
-    let bytes = max_size_mb.saturating_mul(BYTES_PER_MB);
-    (bytes, format_bytes(bytes))
-}
-
-pub fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = 1024 * 1024;
-    const GB: u64 = 1024 * 1024 * 1024;
-
-    if bytes >= GB && bytes.is_multiple_of(GB) {
-        format!("{}GB", bytes / GB)
-    } else if bytes >= MB && bytes.is_multiple_of(MB) {
-        format!("{}MB", bytes / MB)
-    } else if bytes >= KB && bytes.is_multiple_of(KB) {
-        format!("{}KB", bytes / KB)
-    } else {
-        format!("{}B", bytes)
-    }
-}
-
 fn normalize_column_name(name: &str) -> Option<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -1154,24 +1073,27 @@ mod tests {
             .lock()
             .expect("env lock");
 
+        let default_mb: u64 = 200;
+        let bytes_per_mb: u64 = 1024 * 1024;
+
         std::env::remove_var("UPLOAD_MAX_SIZE_MB");
         let (bytes, label) = read_max_size_config();
-        assert_eq!(bytes, DEFAULT_MAX_SIZE_MB * BYTES_PER_MB);
+        assert_eq!(bytes, default_mb * bytes_per_mb);
         assert_eq!(label, "200MB");
 
         std::env::set_var("UPLOAD_MAX_SIZE_MB", "12");
         let (bytes, label) = read_max_size_config();
-        assert_eq!(bytes, 12 * BYTES_PER_MB);
+        assert_eq!(bytes, 12 * bytes_per_mb);
         assert_eq!(label, "12MB");
 
         std::env::set_var("UPLOAD_MAX_SIZE_MB", "0");
         let (bytes, label) = read_max_size_config();
-        assert_eq!(bytes, DEFAULT_MAX_SIZE_MB * BYTES_PER_MB);
+        assert_eq!(bytes, default_mb * bytes_per_mb);
         assert_eq!(label, "200MB");
 
         std::env::set_var("UPLOAD_MAX_SIZE_MB", "nope");
         let (bytes, label) = read_max_size_config();
-        assert_eq!(bytes, DEFAULT_MAX_SIZE_MB * BYTES_PER_MB);
+        assert_eq!(bytes, default_mb * bytes_per_mb);
         assert_eq!(label, "200MB");
         std::env::remove_var("UPLOAD_MAX_SIZE_MB");
     }
