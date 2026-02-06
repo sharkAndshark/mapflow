@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom';
 
 const STATUS_LABELS = {
   uploading: '上传中',
-  uploaded: '已上传',
+  uploaded: '等待处理',
+  processing: '处理中',
+  ready: '已就绪',
   failed: '失败'
 };
 
@@ -166,7 +168,7 @@ export default function App() {
                   {STATUS_LABELS[item.status] || item.status}
                 </div>
                 <div className="actions">
-                     {item.status === 'uploaded' && (
+                     {(item.status === 'ready' || item.status === 'uploaded') && (
                        <a 
                          href={`/preview/${item.id}`}
                          target="_blank"

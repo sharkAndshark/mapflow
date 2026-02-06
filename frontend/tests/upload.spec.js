@@ -30,15 +30,13 @@ test('persistence: upload then reload shows file', async ({ page }) => {
   await page.goto('/');
   await uploadFile(page, geojsonPath);
   
-  // Wait specifically for the uploaded status to avoid matching the "uploading" state row if it lingers
-  // or duplicate rows if optimistic UI isn't cleared fast enough (though it should be replaced).
-  // Ideally, target by filename AND status.
-  const uploadedRow = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已上传' });
+  // Wait specifically for the uploaded status
+  const uploadedRow = page.locator('.row', { hasText: 'sample' }).filter({ hasText: /已就绪|等待处理/ }).first();
   await expect(uploadedRow).toBeVisible();
   
   await page.reload();
   
-  const reloadedRow = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已上传' });
+  const reloadedRow = page.locator('.row', { hasText: 'sample' }).filter({ hasText: /已就绪|等待处理/ }).first();
   await expect(reloadedRow).toBeVisible();
   await expect(reloadedRow.getByText('geojson')).toBeVisible();
 });
@@ -60,7 +58,7 @@ test('upload geojson and show in list', async ({ page }) => {
 
   await uploadFile(page, geojsonPath);
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已上传' });
+  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: /已就绪|等待处理/ }).first();
   await expect(row).toBeVisible();
   await expect(row.getByText('geojson')).toBeVisible();
 });
@@ -70,8 +68,8 @@ test('upload shapefile zip and show in list', async ({ page }) => {
 
   await uploadFile(page, shapefileZip);
 
-  // Use locator specific to the row AND status to filter out optimistic 'uploading' row if it exists
-  const row = page.locator('.row', { hasText: 'roads' }).filter({ hasText: '已上传' });
+  // Use locator specific to the row AND status
+  const row = page.locator('.row', { hasText: 'roads' }).filter({ hasText: /已就绪|等待处理/ });
   await expect(row).toBeVisible();
   await expect(row.getByText('shapefile')).toBeVisible();
 });

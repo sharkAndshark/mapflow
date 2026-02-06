@@ -453,7 +453,7 @@ async fn upload_file(
             file_type,
             size_i64,
             &uploaded_at,
-            "uploaded",
+            "uploaded", // Initial status: uploaded (processing happens in background)
             &None::<String>,
             &rel_string,
             &None::<String>,
@@ -468,10 +468,23 @@ async fn upload_file(
     let file_path_clone = file_path.clone();
     let file_type_str = file_type.to_string();
     tokio::spawn(async move {
+        // Set status to processing
+        {
+            let conn = db.lock().await;
+            let _ = conn.execute(
+                "UPDATE files SET status = 'processing' WHERE id = ?",
+                duckdb::params![upload_id_clone],
+            );
+        }
+
         match import_spatial_data(&db, &upload_id_clone, &file_path_clone, &file_type_str).await {
             Ok(_) => {
                 println!("Successfully imported spatial data for {}", upload_id_clone);
-                // Status is already "uploaded", but we could change it to "ready" or "processed" if we had that state
+                let conn = db.lock().await;
+                let _ = conn.execute(
+                    "UPDATE files SET status = 'ready' WHERE id = ?",
+                    duckdb::params![upload_id_clone],
+                );
             }
             Err(e) => {
                 eprintln!("Failed to import spatial data for {}: {}", upload_id_clone, e);
@@ -491,7 +504,7 @@ async fn upload_file(
         file_type: file_type.to_string(),
         size,
         uploaded_at,
-        status: "uploaded".to_string(),
+        status: "uploaded".to_string(), // Keep consistent with DB initial state
         crs: None,
         path: rel_string,
         error: None,

@@ -29,6 +29,7 @@
 ## 地图预览：最小接口（草案）
 - `GET /api/files/:id/preview`
   - 返回：`id`, `name`, `crs`, `bbox`（[minx, miny, maxx, maxy]，WGS84，用于初始定位）
+  - 备注：`bbox` 依赖后端空间索引，若文件处于 `processing` 或 `failed` 状态，可能返回 `null`。
 - `GET /api/files/:id/tiles/:z/:x/:y` (no .mvt extension)
   - 返回：`application/vnd.mapbox-vector-tile` 的二进制
   - 参数：`id` 为 files.id；z/x/y 为 WebMercator 瓦片坐标
@@ -61,43 +62,19 @@
 - `GET /api/files`
   - 返回列表字段：`id`、`name`、`type`、`size`、`uploadedAt`、`status`、`crs`
 
-## 最小存储约定（文件系统）
-- 每个上传文件保存到：`./uploads/<id>/`
-- 列表元数据保存到：`./uploads/index.json`
+## 最小存储约定（DuckDB + 文件系统）
+- 原始文件保存到：`./uploads/<id>/`
+- 元数据存储：DuckDB `files` 表
+- 空间数据存储：DuckDB `spatial_data` 表
 - 元数据字段（示例）：`id`、`name`、`type`、`size`、`uploadedAt`、`status`、`crs`、`path`、`error`
 - `crs`：若识别不到坐标系，则为 `null`
-- 状态流转：
-  - 上传开始：`uploading`（可选）
-  - 上传成功：`uploaded`
-  - 上传失败：`failed` + `error`
-- 服务重启：将残留 `uploading` 视为 `failed`（保证一致）
-
-示例 `./uploads/index.json`：
-```json
-[
-  {
-    "id": "f1a2b3",
-    "name": "roads",
-    "type": "shapefile",
-    "size": 12582912,
-    "uploadedAt": "2026-02-04T10:21:00Z",
-    "status": "uploaded",
-    "crs": null,
-    "path": "./uploads/f1a2b3/roads.zip"
-  },
-  {
-    "id": "c9d8e7",
-    "name": "parks",
-    "type": "geojson",
-    "size": 2097152,
-    "uploadedAt": "2026-02-04T10:30:00Z",
-    "status": "failed",
-    "crs": null,
-    "path": "./uploads/c9d8e7/parks.geojson",
-    "error": "Invalid GeoJSON"
-  }
-]
-```
+- 状态流转（Status Lifecycle）：
+  - `uploading`：前端乐观状态（文件上传中）
+  - `uploaded`：后端已接收文件并落盘，等待后台处理
+  - `processing`：后台正在导入空间数据
+  - `ready`：空间数据导入完成，可预览
+  - `failed`：上传或导入失败（查看 error 字段）
+- 服务重启：将残留 `uploading`/`processing` 视为 `failed`（保证一致性）
 
 ## 本地开发
 后端使用 Rust (axum)，前端使用 React + Vite。

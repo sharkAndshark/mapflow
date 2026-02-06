@@ -26,8 +26,9 @@ test('click preview opens new tab with map', async ({ page }) => {
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonPath);
 
-  // Wait for upload to complete
-  await expect(page.getByText('已上传')).toBeVisible();
+  // Wait for upload to complete (could be '已就绪' or '等待处理' depending on timing)
+  // We accept either, but ideally we want '已就绪' to ensure processing is done for preview
+  await expect(page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/)).toBeVisible();
 
   // 2. Click preview link and wait for new page
   const row = page.locator('.row', { hasText: 'sample' });
