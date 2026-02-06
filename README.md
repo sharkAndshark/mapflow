@@ -22,16 +22,19 @@
 
 ## 逐步探索计划（可随时迭代）
 - Step 1: 上传 + 文件列表（完成）
-- Step 2: 地图预览（新开标签页）（完成本阶段）
-- Step 3: 文件详情侧栏（只读）
+- Step 2: 地图预览（新开标签页）（完成）
+- Step 3: 文件详情侧栏（只读）（开发中）
 - Step 4: 最小化发布入口（可选）
 
 ## 地图预览：最小接口（草案）
 - `GET /api/files/:id/preview`
   - 返回：`id`, `name`, `crs`, `bbox`（[minx, miny, maxx, maxy]，WGS84，用于初始定位）
-- `GET /api/files/:id/tiles/:z/:x/:y.mvt`
+- `GET /api/files/:id/tiles/:z/:x/:y` (no .mvt extension)
   - 返回：`application/vnd.mapbox-vector-tile` 的二进制
   - 参数：`id` 为 files.id；z/x/y 为 WebMercator 瓦片坐标
+  - 备注：当前瓦片不包含 `properties` 字段（仅几何），以保证性能和避免 NULL 类型问题。
+- `GET /api/files/:id/feature/:fid` (计划中)
+  - 返回：单个 Feature 的完整 GeoJSON（含属性）
 
 ## 地图预览：DuckDB Spatial 技术要点
 - CRS 识别：用 `ST_Read_Meta(path)` 读取 `layers[1].geometry_fields[1].crs.auth_name/auth_code`，写入 `files.crs`（如 `EPSG:4326`）
