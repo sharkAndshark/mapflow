@@ -6,3 +6,4 @@
 6. 对 duckdb spatial 的使用，务必参考 `/Users/zhangyijun/RiderProjects/duckdb-spatial/docs` 文件下的内容，尤其是空间函数如 `st_asmvt` `st_transform` 等。
 7. 永远不需要考虑用户更新版本和历史数据迁移的问题，当前软件还未发布，这些问题不存在。
 8. 做正确的决策，不要折衷，不要最小改动。当前软件还未发布，我们不要欠技术债。
+9. commit前运行测试
