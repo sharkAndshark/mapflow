@@ -7,15 +7,10 @@ use axum::{
 };
 use chrono::Utc;
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
 use tokio::{
     fs,
     io::{AsyncWriteExt, BufWriter},
-    sync::Mutex,
 };
 use tower_http::cors::{Any, CorsLayer};
 
@@ -23,6 +18,7 @@ mod config;
 mod db;
 mod http_errors;
 mod import;
+mod models;
 mod test_routes;
 mod tiles;
 mod validation;
@@ -33,48 +29,10 @@ pub use db::{
 };
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
+pub use models::{AppState, ErrorResponse, FileItem, PreviewMeta};
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
-
-#[derive(Clone)]
-pub struct AppState {
-    pub upload_dir: PathBuf,
-    pub db: Arc<Mutex<duckdb::Connection>>,
-    pub max_size: u64,
-    pub max_size_label: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct FileItem {
-    pub id: String,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub file_type: String,
-    pub size: u64,
-    #[serde(rename = "uploadedAt")]
-    pub uploaded_at: String,
-    pub status: String,
-    pub crs: Option<String>,
-    pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub table_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ErrorResponse {
-    pub error: String,
-}
-
-#[derive(Serialize)]
-pub struct PreviewMeta {
-    pub id: String,
-    pub name: String,
-    pub crs: Option<String>,
-    pub bbox: Option<[f64; 4]>, // minx, miny, maxx, maxy in WGS84
-}
 
 pub fn build_api_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
@@ -491,8 +449,10 @@ mod tests {
     use axum::body::Body;
     use axum::http::Request;
     use http_body_util::BodyExt;
+    use std::sync::Arc;
     use std::sync::OnceLock;
     use tempfile::TempDir;
+    use tokio::sync::Mutex;
     use tower::util::ServiceExt;
 
     static ENV_LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
