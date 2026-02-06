@@ -75,6 +75,8 @@ These specific behaviors should be verified by the most efficient means possible
 - **Command:** `npm --prefix frontend run test:e2e`
 - **Environment:** Each worker uses a distinct `PORT` and `DB_PATH`.
 
+Note: The frontend currently relies on Playwright E2E as its only automated test layer (no unit/component harness yet). Treat that as technical debt: new fast test layers should pull coverage down from E2E over time.
+
 ### Integration Tests (Rust, HTTP/API)
 *Focus: HTTP Contracts, DB State, File Processing, Validation.*
 - **Location:** `backend/tests/` (Integration) or `backend/src/**` (Unit)
@@ -96,6 +98,6 @@ These specific behaviors should be verified by the most efficient means possible
 
 - Before committing, run at least one test suite relevant to the change.
   - Backend-only refactors: `just test-backend`
-  - Frontend-only changes: run the fastest relevant tests available; at minimum `npm --prefix frontend run build`. Run E2E when changing critical user journeys.
+  - Frontend-only changes: run `npm --prefix frontend run format:check` + `npm --prefix frontend run build`. Run E2E when changing critical user journeys (`npm --prefix frontend run test:e2e`).
   - Cross-cutting / uncertain impact: `just test`
 - Note: repository pre-commit hooks already gate formatting and clippy/biome checks, but they are not a substitute for executing tests.

@@ -28,9 +28,22 @@ This document defines the technical contracts, API specifications, and storage c
 ### Map Preview (Draft)
 - `GET /api/files/:id/preview`
   - **Returns:** `id`, `name`, `crs`, `bbox` ([minx, miny, maxx, maxy], WGS84).
+  - **Response (Error):**
+    - 404 Not Found when `:id` does not exist.
+    - 409 Conflict when the file is not ready for preview (e.g. `uploaded`, `processing`, `failed`).
+      - Body: `{ "error": "File is not ready for preview" }`.
 - `GET /api/files/:id/tiles/:z/:x/:y`
   - **Returns:** `application/vnd.mapbox-vector-tile` (MVT).
   - **Logic:** Includes feature properties (tags) in addition to geometry.
+  - **Constraints:**
+    - `z` must be within `[0, 22]`.
+    - `x` and `y` must be within `[0, 2^z - 1]`.
+  - **Response (Error):**
+    - 400 Bad Request when tile coordinates are invalid.
+      - Body: `{ "error": "Invalid tile coordinates" }`.
+    - 404 Not Found when `:id` does not exist.
+    - 409 Conflict when the file is not ready for preview.
+      - Body: `{ "error": "File is not ready for preview" }`.
 
 ### Testing Endpoints (Debug Only)
 - `POST /api/test/reset`
