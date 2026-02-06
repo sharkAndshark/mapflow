@@ -1,5 +1,4 @@
 import { test, expect } from './fixtures';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -9,7 +8,7 @@ test.beforeEach(async ({ workerServer }) => {
   await workerServer.reset();
 });
 
-test('click preview opens new tab with map', async ({ page, request }) => {
+test('click preview opens new tab with map', async ({ page, workerServer }) => {
   // 1. Upload a file via UI (since we can't easily seed DuckDB from here without a tool)
   const fixturesDir = path.join(__dirname, 'fixtures');
   const geojsonPath = path.join(fixturesDir, 'sample.geojson');
@@ -23,6 +22,9 @@ test('click preview opens new tab with map', async ({ page, request }) => {
   // Wait for upload to complete (could be '已就绪' or '等待处理' depending on timing)
   // We accept either, but ideally we want '已就绪' to ensure processing is done for preview
   await expect(page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/)).toBeVisible();
+
+  // Ensure backend processing completes before opening preview.
+  await workerServer.waitForFileReady('sample');
 
   // 2. Click row to select it (to open sidebar)
   const row = page.locator('.row', { hasText: 'sample' });

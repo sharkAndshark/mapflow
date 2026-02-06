@@ -24,6 +24,8 @@ const waitForPort = async (port, timeout = 30000) => {
   return false;
 };
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // Extend base test with our custom fixture
 export const test = base.extend({
   // Override baseURL to point to our worker-specific server
@@ -108,6 +110,31 @@ export const test = base.extend({
       reset: async () => {
         // Helper to reset state via API
         await fetch(`${serverUrl}/api/test/reset`, { method: 'POST' });
+      },
+      waitForFileReady: async (fileName, timeoutMs = 60000) => {
+        const start = Date.now();
+        let last = null;
+        while (Date.now() - start < timeoutMs) {
+          const res = await fetch(`${serverUrl}/api/files`);
+          if (!res.ok) {
+            await sleep(200);
+            continue;
+          }
+          const files = await res.json();
+          const f = files.find((x) => x.name === fileName);
+          if (f) {
+            last = f;
+            if (f.status === 'ready') return f;
+            if (f.status === 'failed') {
+              throw new Error(`File processing failed: ${f.error || 'unknown error'}`);
+            }
+          }
+          await sleep(250);
+        }
+
+        throw new Error(
+          `Timeout waiting for file to be ready: ${fileName} (last=${last ? JSON.stringify(last) : 'null'})`
+        );
       }
     });
 

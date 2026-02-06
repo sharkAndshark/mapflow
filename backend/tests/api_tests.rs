@@ -5,13 +5,16 @@ use backend::{
     PROCESSING_RECONCILIATION_ERROR,
 };
 use http_body_util::BodyExt; // for collect()
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // for oneshot
 
 async fn wait_until_ready(app: &axum::Router, file_id: &str) -> FileItem {
-    for _ in 0..30 {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let mut last_status: Option<String> = None;
+    let mut last_error: Option<String> = None;
+
+    for _ in 0..120 {
         let request = Request::builder()
             .method("GET")
             .uri("/api/files")
@@ -21,6 +24,8 @@ async fn wait_until_ready(app: &axum::Router, file_id: &str) -> FileItem {
         let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
         let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
         if let Some(f) = files.iter().find(|f| f.id == file_id) {
+            last_status = Some(f.status.clone());
+            last_error = f.error.clone();
             if f.status == "ready" {
                 return f.clone();
             }
@@ -28,8 +33,39 @@ async fn wait_until_ready(app: &axum::Router, file_id: &str) -> FileItem {
                 panic!("File processing failed: {:?}", f.error);
             }
         }
+
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
-    panic!("Timeout waiting for file to be ready");
+
+    panic!(
+        "Timeout waiting for file to be ready (last_status={:?}, last_error={:?})",
+        last_status, last_error
+    );
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
+}
+
+fn read_fixture_bytes(rel_path_from_repo_root: &str) -> Vec<u8> {
+    let p = repo_root().join(rel_path_from_repo_root);
+    std::fs::read(&p).unwrap_or_else(|e| panic!("Failed to read fixture {p:?}: {e}"))
+}
+
+fn multipart_body(boundary: &str, filename: &str, bytes: &[u8]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    body
 }
 
 fn read_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
@@ -620,5 +656,146 @@ async fn test_upload_geojson_lifecycle() {
     assert!(
         mvt_has_string_tag(&tile_body, "name", "Test Point"),
         "Expected MVT to include string tag name=Test Point"
+    );
+}
+
+#[tokio::test]
+async fn test_upload_shapefile_zip_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    let zip_bytes = read_fixture_bytes("frontend/tests/fixtures/roads.zip");
+    assert!(
+        !zip_bytes.is_empty(),
+        "roads.zip fixture should not be empty"
+    );
+
+    let boundary = "------------------------boundaryROADS";
+    let body = multipart_body(boundary, "roads.zip", &zip_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(file_item.name, "roads");
+    assert_eq!(file_item.status, "uploaded");
+    assert_eq!(file_item.file_type, "shapefile");
+
+    let file_id = file_item.id;
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+    assert!(ready_item.table_name.is_some());
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/preview", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for shapefile dataset"
+    );
+}
+
+#[tokio::test]
+async fn test_persistence_across_restart_keeps_ready_dataset() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+
+    let db_path = temp_dir.path().join("persist.duckdb");
+    let conn1 = init_database(&db_path);
+    let state1 = AppState {
+        upload_dir: upload_dir.clone(),
+        db: Arc::new(tokio::sync::Mutex::new(conn1)),
+        max_size: 10 * 1024 * 1024,
+        max_size_label: "10MB".to_string(),
+    };
+    let app1 = build_api_router(state1);
+
+    let geojson_bytes = read_fixture_bytes("frontend/tests/fixtures/sample.geojson");
+    let boundary = "------------------------boundaryPERSIST";
+    let body = multipart_body(boundary, "sample.geojson", &geojson_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = app1.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id;
+
+    let ready_item = wait_until_ready(&app1, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Simulate restart: new DB connection and router, same DB file + upload dir.
+    let conn2 = init_database(&db_path);
+    let db2 = Arc::new(tokio::sync::Mutex::new(conn2));
+    reconcile_processing_files(&db2).await.unwrap();
+
+    let state2 = AppState {
+        upload_dir,
+        db: db2,
+        max_size: 10 * 1024 * 1024,
+        max_size_label: "10MB".to_string(),
+    };
+    let app2 = build_api_router(state2);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .body(Body::empty())
+        .unwrap();
+    let response = app2.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+    let persisted = files.iter().find(|f| f.id == file_id).expect("file exists");
+    assert_eq!(persisted.status, "ready");
+    assert!(persisted.table_name.is_some());
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let response = app2.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
     );
 }

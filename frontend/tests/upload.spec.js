@@ -1,5 +1,4 @@
 import { test, expect } from './fixtures'; // Use custom fixtures
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
