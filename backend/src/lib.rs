@@ -22,12 +22,14 @@ use tower_http::cors::{Any, CorsLayer};
 
 mod config;
 mod db;
+mod tiles;
 mod validation;
 
 pub use config::{format_bytes, read_max_size_config};
 pub use db::{
     init_database, reconcile_processing_files, DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
 };
+use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
 
 #[derive(Clone)]
@@ -323,43 +325,8 @@ async fn get_tile(
     // 2a. Build property struct keys based on captured column metadata.
     // We keep property keys as original names for UX.
     // Note: We exclude fid + geom.
-    let mut props_stmt = conn
-        .prepare(
-            "SELECT normalized_name, original_name\n             FROM dataset_columns\n             WHERE source_id = ?\n             ORDER BY ordinal",
-        )
-        .map_err(internal_error)?;
-    let props_iter = props_stmt
-        .query_map(duckdb::params![id.clone()], |row| {
-            let normalized: String = row.get(0)?;
-            let original: String = row.get(1)?;
-            Ok((normalized, original))
-        })
-        .map_err(internal_error)?;
-
-    let mut struct_fields = Vec::new();
-    struct_fields.push(format!(
-        "geom := ST_AsMVTGeom(\n                    ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),\n                    ST_Extent(ST_TileEnvelope(?, ?, ?)),\n                    4096, 256, true\n                )"
-    ));
-    struct_fields.push("fid := fid".to_string());
-
-    for entry in props_iter {
-        let (normalized, original) = entry.map_err(internal_error)?;
-
-        // Use the original column name as the MVT property key.
-        // DuckDB `struct_pack` uses identifier keys; quoted identifiers allow spaces/symbols.
-        // Escape embedded double quotes per SQL identifier rules.
-        let key = original.replace('"', "\"\"");
-        struct_fields.push(format!("\"{key}\" := \"{normalized}\""));
-    }
-
-    let struct_expr = format!(
-        "struct_pack(\n                {}\n            )",
-        struct_fields.join(",\n                ")
-    );
-
-    let select_sql = format!(
-        "SELECT ST_AsMVT(feature, 'layer', 4096, 'geom', 'fid') FROM (\n            SELECT {struct_expr} as feature\n            FROM \"{table_name}\"\n            WHERE ST_Intersects(\n                ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),\n                ST_TileEnvelope(?, ?, ?)\n            )\n        )"
-    );
+    let select_sql =
+        build_mvt_select_sql(&conn, &id, &table_name, source_crs).map_err(internal_error)?;
 
     println!("Executing SQL for tile z={z} x={x} y={y} id={id}");
 
