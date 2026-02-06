@@ -1,5 +1,5 @@
 # Stage 1: Build Frontend
-FROM node:18-alpine AS frontend-builder
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
@@ -14,15 +14,12 @@ RUN apt-get update && apt-get install -y pkg-config libssl-dev g++ && rm -rf /va
 COPY Cargo.toml ./
 COPY backend/Cargo.toml ./backend/
 COPY Cargo.lock ./
-# Create dummy main to cache dependencies
-RUN mkdir -p backend/src && echo "fn main() {}" > backend/src/main.rs
-RUN cargo update -p time --precise 0.3.37 --manifest-path backend/Cargo.toml
-RUN cargo build --release --manifest-path backend/Cargo.toml
-# Build actual backend
+# Pre-fetch deps for reproducible builds
+RUN cargo fetch --locked --manifest-path backend/Cargo.toml
+
+# Build actual backend (locked)
 COPY backend/src ./backend/src
-# Touch main.rs to force rebuild
-RUN touch backend/src/main.rs
-RUN cargo build --release --manifest-path backend/Cargo.toml
+RUN cargo build --release --locked --manifest-path backend/Cargo.toml
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
