@@ -173,3 +173,13 @@ TEST_PORT=9999 npm run test:e2e
 
 ## 需要你确定的小点
 - 这一阶段不再扩展格式，先把上传与列表流程做顺。
+
+## TODO（下一步）
+- 将“release 构建不包含测试接口 `/api/test/reset`”的验证步骤写入测试/发布约束（文档化并尽量自动化）
+- 加速 E2E：Playwright worker 后端启动从 `cargo run` 优化为“预编译一次后直接运行二进制”（减少用例启动耗时）
+
+## Release 安全约束（测试接口）
+- 测试专用接口：`POST /api/test/reset`
+  - 仅在 debug 构建且设置 `MAPFLOW_TEST_MODE=1` 时注册
+  - release 构建永不包含该接口（即使设置了 `MAPFLOW_TEST_MODE=1`）
+- CI 会对 release 二进制做一次探测：启动后请求 `POST /api/test/reset`，期望返回非 2xx（通常为 404/405）

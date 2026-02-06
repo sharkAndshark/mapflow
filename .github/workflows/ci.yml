@@ -29,6 +29,60 @@ jobs:
       - name: Backend tests
         run: cargo test --manifest-path backend/Cargo.toml
 
+      - name: Backend release forbids test reset API
+        run: |
+          set -euo pipefail
+
+          cargo build --release --manifest-path backend/Cargo.toml
+
+          BIN="./target/release/backend"
+          if [ ! -x "$BIN" ]; then
+            echo "Release binary not found/executable at $BIN"
+            ls -la ./target/release || true
+            exit 1
+          fi
+
+          PORT=3999
+          TEST_ROOT="$(mktemp -d)"
+          DB_PATH="$TEST_ROOT/mapflow.duckdb"
+          UPLOAD_DIR="$TEST_ROOT/uploads"
+          mkdir -p "$UPLOAD_DIR"
+
+          cleanup() {
+            if [ -n "${PID:-}" ]; then
+              kill "$PID" 2>/dev/null || true
+              wait "$PID" 2>/dev/null || true
+            fi
+            rm -rf "$TEST_ROOT" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          MAPFLOW_TEST_MODE=1 PORT="$PORT" DB_PATH="$DB_PATH" UPLOAD_DIR="$UPLOAD_DIR" "$BIN" &
+          PID=$!
+
+          for _ in $(seq 1 120); do
+            if curl -sf "http://127.0.0.1:$PORT/api/files" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 0.25
+          done
+
+          curl -sf "http://127.0.0.1:$PORT/api/files" >/dev/null
+
+          code="$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/api/test/reset" || true)"
+          echo "POST /api/test/reset -> $code"
+          if [ -z "$code" ]; then
+            echo "Failed to get HTTP status code"
+            exit 1
+          fi
+
+          # In release builds the reset API must not be reachable. Depending on routing/static
+          # fallback, this can show up as 404 (Not Found) or 405 (Method Not Allowed).
+          if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+            echo "Expected /api/test/reset to be unavailable in release (non-2xx). Got: $code"
+            exit 1
+          fi
+
       - name: Frontend install
         working-directory: frontend
         run: npm ci

@@ -32,3 +32,6 @@
 ## 测试注意事项
 - E2E 测试为每个 Playwright worker 启动独立后端进程，使用独立的 `PORT/DB_PATH/UPLOAD_DIR`，避免并发时 DB 锁与文件串扰
 - 测试专用接口：`POST /api/test/reset` 仅在 debug 构建且设置 `MAPFLOW_TEST_MODE=1` 时注册；release 构建永不包含该接口
+
+## CI 安全门禁
+- CI 会构建并启动 release 二进制，然后请求 `POST /api/test/reset`，期望返回非 2xx（通常为 404/405）
