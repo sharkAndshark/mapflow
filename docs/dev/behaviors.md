@@ -16,11 +16,14 @@ This document defines the technical contracts, API specifications, and storage c
   - **Body:** `multipart/form-data` with `file` field.
   - **Constraints:** Max size defined by `UPLOAD_MAX_SIZE_MB`.
   - **Response (Success):** JSON with file metadata.
-  - **Response (Error):** 400 Bad Request for invalid formats or size limit.
+  - **Response (Error):**
+    - 400 Bad Request for invalid formats/structure.
+    - 413 Payload Too Large when exceeding size limit.
+    - Body: `{ "error": "..." }`.
 
 ### File Management
 - `GET /api/files`
-  - **Returns:** List of files with `id`, `name`, `type`, `size`, `uploadedAt`, `status`, `crs`.
+  - **Returns:** List of files with `id`, `name`, `type`, `size`, `uploadedAt`, `status`, `crs`, `path` and optional `error`.
 
 ### Map Preview (Draft)
 - `GET /api/files/:id/preview`
@@ -50,6 +53,8 @@ This document defines the technical contracts, API specifications, and storage c
 4. `ready`: Import complete, available for preview.
 5. `failed`: Error occurred (details in `error` column).
    - **Recovery:** On server startup, any `processing` tasks are marked `failed`.
+
+Note: Backend currently persists `uploaded`, `processing`, `ready`, `failed`. The `uploading` state exists only on the frontend.
 
 ## Technical Implementation Details
 

@@ -45,6 +45,7 @@ These specific behaviors should be verified by the most efficient means possible
 ### API / Integration Tests (Rust)
 *Focus: HTTP Contracts, DB State, File Processing, Validation.*
 - **Location:** `backend/tests/` (Integration) or `backend/src/**` (Unit)
+- **Note:** `backend/tests/` is the canonical place for HTTP/API contract tests; `backend/src/**` unit tests are for pure helpers.
 - **Command:** `cargo test`
 
 ### Release Safety Gate
