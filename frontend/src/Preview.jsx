@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 
 import 'ol/ol.css';
-import Map from 'ol/Map';
+import OLMap from 'ol/Map';
 import View from 'ol/View';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
@@ -19,28 +19,42 @@ export default function Preview() {
   const [popupContent, setPopupContent] = useState(null);
   const popupRef = useRef(null);
 
-  // Default Style
-  const defaultStyle = new Style({
-    fill: new Fill({
-      color: 'rgba(0, 128, 255, 0.6)',
-    }),
-    stroke: new Stroke({
-      color: '#0080ff',
-      width: 2,
-    }),
-    image: new CircleStyle({
-      radius: 6,
-      fill: new Fill({ color: '#ff0040' }),
-      stroke: new Stroke({ color: '#fff', width: 1 }),
-    }),
-  });
+  const defaultStyle = useMemo(
+    () =>
+      new Style({
+        fill: new Fill({
+          color: 'rgba(0, 128, 255, 0.6)',
+        }),
+        stroke: new Stroke({
+          color: '#0080ff',
+          width: 2,
+        }),
+        image: new CircleStyle({
+          radius: 6,
+          fill: new Fill({ color: '#ff0040' }),
+          stroke: new Stroke({ color: '#fff', width: 1 }),
+        }),
+      }),
+    [],
+  );
 
   // Fetch Metadata
   useEffect(() => {
     async function fetchMeta() {
       try {
         const res = await fetch(`/api/files/${id}/preview`);
-        if (!res.ok) throw new Error('Failed to load preview metadata');
+        if (!res.ok) {
+          let message = 'Failed to load preview metadata';
+          try {
+            const data = await res.json();
+            if (data && typeof data.error === 'string') {
+              message = data.error;
+            }
+          } catch (_) {
+            // ignore JSON parse errors
+          }
+          throw new Error(message);
+        }
         const data = await res.json();
         setMeta(data);
       } catch (err) {
@@ -54,7 +68,7 @@ export default function Preview() {
   useEffect(() => {
     if (!mapElement.current || mapRef.current) return;
 
-    const map = new Map({
+    const olMap = new OLMap({
       target: mapElement.current,
       view: new View({
         center: fromLonLat([0, 0]),
@@ -63,11 +77,11 @@ export default function Preview() {
       layers: [], // We'll add layers later
     });
 
-    mapRef.current = map;
+    mapRef.current = olMap;
 
     // Click handler for features
-    map.on('click', (evt) => {
-      const feature = map.forEachFeatureAtPixel(evt.pixel, (feature) => feature);
+    olMap.on('click', (evt) => {
+      const feature = olMap.forEachFeatureAtPixel(evt.pixel, (feature) => feature);
       if (feature) {
         const properties = feature.getProperties();
         // Remove geometry from properties to avoid cluttering popup
@@ -79,7 +93,7 @@ export default function Preview() {
     });
 
     return () => {
-      map.setTarget(null);
+      olMap.setTarget(null);
       mapRef.current = null;
     };
   }, []);
@@ -119,7 +133,7 @@ export default function Preview() {
         maxZoom: 14, // Don't zoom in too close for single points
       });
     }
-  }, [meta, id]);
+  }, [meta, id, defaultStyle]);
 
   return (
     <div
@@ -209,6 +223,7 @@ export default function Preview() {
               <h4 style={{ margin: 0 }}>Feature Properties</h4>
               <button
                 onClick={() => setPopupContent(null)}
+                type="button"
                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}
               >
                 ×

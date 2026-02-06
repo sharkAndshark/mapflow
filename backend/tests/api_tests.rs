@@ -1,5 +1,9 @@
-use axum::{body::Body, http::Request};
-use backend::{build_api_router, init_database, AppState, FileItem};
+use axum::body::Body;
+use axum::http::Request;
+use backend::{
+    build_api_router, init_database, reconcile_processing_files, AppState, FileItem,
+    PROCESSING_RECONCILIATION_ERROR,
+};
 use http_body_util::BodyExt; // for collect()
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -23,6 +27,100 @@ async fn setup_app() -> (axum::Router, TempDir) {
 
     let router = build_api_router(state);
     (router, temp_dir)
+}
+
+#[tokio::test]
+async fn test_upload_empty_body_returns_400() {
+    let (app, _temp) = setup_app().await;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header("content-type", "multipart/form-data; boundary=boundary")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid multipart form"));
+}
+
+#[tokio::test]
+async fn test_upload_missing_file_field_returns_400() {
+    let (app, _temp) = setup_app().await;
+
+    let boundary = "------------------------boundaryNOFILE";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"note\"\r\n\r\nhello\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body_json["error"], "No file uploaded");
+}
+
+#[tokio::test]
+async fn test_upload_missing_filename_returns_400() {
+    let (app, _temp) = setup_app().await;
+
+    let boundary = "------------------------boundaryNOFILENAME";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"\r\n\r\n{{}}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body_json["error"], "Missing file name");
+}
+
+#[tokio::test]
+async fn test_preview_nonexistent_id_returns_404() {
+    let (app, _temp) = setup_app().await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files/no-such-id/preview")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body_json["error"], "File not found");
 }
 
 #[tokio::test]
@@ -150,16 +248,7 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
         .unwrap();
     }
 
-    // Apply the same reconciliation logic as backend/src/main.rs on startup.
-    {
-        let conn = state.db.lock().await;
-        conn.execute(
-            "UPDATE files SET status = 'failed', error = 'Server restarted during processing' \
-             WHERE status = 'processing'",
-            [],
-        )
-        .unwrap();
-    }
+    reconcile_processing_files(&state.db).await.unwrap();
 
     let app = build_api_router(state);
     let request = Request::builder()
@@ -174,10 +263,7 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
     let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
     let item = files.iter().find(|f| f.id == "seed-processing").unwrap();
     assert_eq!(item.status, "failed");
-    assert_eq!(
-        item.error.as_deref(),
-        Some("Server restarted during processing")
-    );
+    assert_eq!(item.error.as_deref(), Some(PROCESSING_RECONCILIATION_ERROR));
 }
 
 #[tokio::test]

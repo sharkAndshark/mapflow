@@ -23,6 +23,17 @@ use zip::ZipArchive;
 const DEFAULT_MAX_SIZE_MB: u64 = 200;
 const BYTES_PER_MB: u64 = 1024 * 1024;
 pub const DEFAULT_DB_PATH: &str = "./data/mapflow.duckdb";
+pub const PROCESSING_RECONCILIATION_ERROR: &str = "Server restarted during processing";
+
+pub async fn reconcile_processing_files(
+    db: &Arc<Mutex<duckdb::Connection>>,
+) -> Result<usize, duckdb::Error> {
+    let conn = db.lock().await;
+    conn.execute(
+        "UPDATE files SET status = 'failed', error = ? WHERE status = 'processing'",
+        duckdb::params![PROCESSING_RECONCILIATION_ERROR],
+    )
+}
 
 pub fn init_database(db_path: &Path) -> duckdb::Connection {
     if let Some(parent) = db_path.parent() {
@@ -389,7 +400,10 @@ async fn upload_file(
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let mut field = loop {
-        let next = multipart.next_field().await.map_err(internal_error)?;
+        let next = multipart.next_field().await.map_err(|e| {
+            let message = format!("Invalid multipart form: {e}");
+            bad_request(&message)
+        })?;
         match next {
             Some(field) if field.name() == Some("file") => break field,
             Some(_) => continue,

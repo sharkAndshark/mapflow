@@ -22,13 +22,7 @@ async fn main() {
     };
 
     // Reconciliation: Mark any 'processing' files as 'failed' on startup
-    {
-        let conn = state.db.lock().await;
-        let _ = conn.execute(
-            "UPDATE files SET status = 'failed', error = 'Server restarted during processing' WHERE status = 'processing'",
-            [],
-        );
-    }
+    let _ = backend::reconcile_processing_files(&state.db).await;
 
     let mut app = backend::build_api_router(state.clone());
 
