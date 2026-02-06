@@ -58,3 +58,11 @@ These specific behaviors should be verified by the most efficient means possible
 | :--- | :--- |
 | **Rust** | `cargo fmt -- --check` && `cargo clippy -- -D warnings` |
 | **Frontend** | `biome format .` (or `npm run format:check`) |
+
+## Working Agreement (Local)
+
+- Before committing, run at least one test suite relevant to the change.
+  - Backend-only refactors: `just test-backend`
+  - Frontend-only changes: `just test-e2e` (or at minimum `npm --prefix frontend run build`)
+  - Cross-cutting / uncertain impact: `just test`
+- Note: repository pre-commit hooks already gate formatting and clippy/biome checks, but they are not a substitute for executing tests.

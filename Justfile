@@ -29,6 +29,7 @@ install:
 check:
   cargo fmt --manifest-path backend/Cargo.toml -- --check
   cargo clippy --manifest-path backend/Cargo.toml -- -D warnings
+  npm --prefix frontend run format:check
 
 # Fix code quality issues
 fix:
