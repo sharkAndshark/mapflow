@@ -1,4 +1,20 @@
 {
   "type": "FeatureCollection",
-  "features": []
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Demo Road",
+        "class": "primary",
+        "speed_limit": 30
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [0, 0],
+          [0.1, 0.1]
+        ]
+      }
+    }
+  ]
 }

@@ -59,7 +59,7 @@ test('click preview opens new tab with map', async ({ page, request }) => {
   );
   
   expect(tileResponse.headers()['content-type']).toBe('application/vnd.mapbox-vector-tile');
-  // Optional: check body size > 0 if we are sure the sample covers the view
-  // const body = await tileResponse.body();
-  // expect(body.length).toBeGreaterThan(0);
+  // Now that the fixture has a small feature near (0,0), we expect at least one non-empty tile.
+  const body = await tileResponse.body();
+  expect(body.length).toBeGreaterThan(0);
 });

@@ -9,6 +9,7 @@ use chrono::Utc;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -56,6 +57,7 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             status VARCHAR NOT NULL,
             crs VARCHAR,
             path VARCHAR NOT NULL,
+            table_name VARCHAR,
             error VARCHAR
         );
         ",
@@ -64,21 +66,20 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
 
     conn.execute_batch(
         r"
-        CREATE SEQUENCE IF NOT EXISTS spatial_data_seq;
-        
-        CREATE TABLE IF NOT EXISTS spatial_data (
-            id INTEGER PRIMARY KEY DEFAULT nextval('spatial_data_seq'),
+        CREATE TABLE IF NOT EXISTS dataset_columns (
             source_id VARCHAR NOT NULL,
-            geom GEOMETRY,
-            properties JSON,
-            FOREIGN KEY (source_id) REFERENCES files(id)
+            normalized_name VARCHAR NOT NULL,
+            original_name VARCHAR NOT NULL,
+            ordinal BIGINT NOT NULL,
+            mvt_type VARCHAR NOT NULL,
+            PRIMARY KEY (source_id, normalized_name)
         );
-        
-        CREATE INDEX IF NOT EXISTS idx_spatial_data_source 
-            ON spatial_data(source_id);
+
+        CREATE INDEX IF NOT EXISTS idx_dataset_columns_source 
+            ON dataset_columns(source_id);
         ",
     )
-    .expect("Failed to create spatial_data table");
+    .expect("Failed to create dataset metadata tables");
 
     conn
 }
@@ -103,6 +104,8 @@ pub struct FileItem {
     pub status: String,
     pub crs: Option<String>,
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -159,7 +162,19 @@ fn add_test_routes(router: Router<AppState>) -> Router<AppState> {
 async fn reset_test_state(State(state): State<AppState>) -> impl IntoResponse {
     let conn = state.db.lock().await;
 
-    if let Err(e) = conn.execute_batch("DELETE FROM spatial_data;\nDELETE FROM files;") {
+    // Drop per-dataset tables.
+    // We use files.table_name as the source of truth.
+    if let Ok(mut stmt) = conn.prepare("SELECT table_name FROM files WHERE table_name IS NOT NULL")
+    {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, Option<String>>(0)) {
+            for table in rows.flatten().flatten() {
+                // table is normalized/safe, but quote anyway.
+                let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{table}\""), []);
+            }
+        }
+    }
+
+    if let Err(e) = conn.execute_batch("DELETE FROM dataset_columns;\nDELETE FROM files;") {
         eprintln!("Test Reset DB Error: {:?}", e);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -207,14 +222,15 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, type, size, uploaded_at, status, crs, path, error 
+            "SELECT id, name, type, size, uploaded_at, status, crs, path, table_name, error 
          FROM files ORDER BY uploaded_at DESC",
         )
         .unwrap();
 
     let items: Vec<FileItem> = stmt
         .query_map([], |row| {
-            let error: Option<String> = row.get(8)?;
+            let table_name: Option<String> = row.get(8)?;
+            let error: Option<String> = row.get(9)?;
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -227,6 +243,7 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
                 status: row.get(5)?,
                 crs: row.get(6)?,
                 path: row.get(7)?,
+                table_name,
                 error,
             })
         })
@@ -246,16 +263,16 @@ async fn get_preview_meta(
 
     // Check if file exists and get meta
     let mut stmt = conn
-        .prepare("SELECT name, crs, path FROM files WHERE id = ?")
+        .prepare("SELECT name, crs, path, table_name FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
-    let meta: Option<(String, Option<String>, String)> = stmt
+    let meta: Option<(String, Option<String>, String, Option<String>)> = stmt
         .query_row(duckdb::params![id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
         })
         .ok();
 
-    let (name, crs, _path) = match meta {
+    let (name, crs, _path, table_name) = match meta {
         Some(m) => m,
         None => {
             return Err((
@@ -267,6 +284,15 @@ async fn get_preview_meta(
         }
     };
 
+    let table_name = table_name.ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready for preview".to_string(),
+            }),
+        )
+    })?;
+
     // Calculate BBOX in WGS84
     // Note: If CRS is missing/null, we assume EPSG:4326 and always_xy=true (lon/lat) for simplicity
 
@@ -274,13 +300,13 @@ async fn get_preview_meta(
     let bbox_components_query = format!(
         "SELECT ST_XMin(b), ST_YMin(b), ST_XMax(b), ST_YMax(b) FROM (
             SELECT ST_Extent(ST_Transform(geom, '{}', 'EPSG:4326', always_xy := true)) as b
-            FROM spatial_data WHERE source_id = ?
+            FROM \"{table_name}\"
         )",
         crs.as_deref().unwrap_or("EPSG:4326")
     );
 
     let bbox_values: Option<[f64; 4]> = conn
-        .query_row(&bbox_components_query, duckdb::params![id], |row| {
+        .query_row(&bbox_components_query, [], |row| {
             let minx: Option<f64> = row.get(0).ok();
             let miny: Option<f64> = row.get(1).ok();
             let maxx: Option<f64> = row.get(2).ok();
@@ -313,12 +339,12 @@ async fn get_tile(
     );
     let conn = state.db.lock().await;
 
-    // 1. Get CRS for the file
-    let crs: Option<String> = conn
+    // 1. Get CRS and table for the file
+    let (crs, table_name): (Option<String>, Option<String>) = conn
         .query_row(
-            "SELECT crs FROM files WHERE id = ?",
+            "SELECT crs, table_name FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|_| {
             (
@@ -328,6 +354,15 @@ async fn get_tile(
                 }),
             )
         })?;
+
+    let table_name = table_name.ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready for preview".to_string(),
+            }),
+        )
+    })?;
 
     let source_crs = crs.as_deref().unwrap_or("EPSG:4326");
 
@@ -339,29 +374,52 @@ async fn get_tile(
     //  - ST_AsMVTGeom(geom_3857, tile_env) to clip/transform to tile coords
     //  - ST_AsMVT(...) to encode
 
+    // 2a. Build property struct keys based on captured column metadata.
+    // We keep property keys as original names for UX.
+    // Note: We exclude fid + geom.
+    let mut props_stmt = conn
+        .prepare(
+            "SELECT normalized_name, original_name\n             FROM dataset_columns\n             WHERE source_id = ?\n             ORDER BY ordinal",
+        )
+        .map_err(internal_error)?;
+    let props_iter = props_stmt
+        .query_map(duckdb::params![id.clone()], |row| {
+            let normalized: String = row.get(0)?;
+            let original: String = row.get(1)?;
+            Ok((normalized, original))
+        })
+        .map_err(internal_error)?;
+
+    let mut struct_fields = Vec::new();
+    struct_fields.push(format!(
+        "geom := ST_AsMVTGeom(\n                    ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),\n                    ST_Extent(ST_TileEnvelope(?, ?, ?)),\n                    4096, 256, true\n                )"
+    ));
+    struct_fields.push("fid := fid".to_string());
+
+    for entry in props_iter {
+        let (normalized, original) = entry.map_err(internal_error)?;
+
+        // Use the original column name as the MVT property key.
+        // DuckDB `struct_pack` uses identifier keys; quoted identifiers allow spaces/symbols.
+        // Escape embedded double quotes per SQL identifier rules.
+        let key = original.replace('"', "\"\"");
+        struct_fields.push(format!("\"{key}\" := \"{normalized}\""));
+    }
+
+    let struct_expr = format!(
+        "struct_pack(\n                {}\n            )",
+        struct_fields.join(",\n                ")
+    );
+
     let select_sql = format!(
-        "SELECT ST_AsMVT(feature) FROM (
-            SELECT {{
-                'geom': ST_AsMVTGeom(
-                    ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),
-                    ST_Extent(ST_TileEnvelope(?, ?, ?)),
-                    4096, 256, true
-                )
-            }} as feature
-            FROM spatial_data
-            WHERE source_id = ? 
-              AND ST_Intersects(
-                  ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),
-                  ST_TileEnvelope(?, ?, ?)
-              )
-        )"
+        "SELECT ST_AsMVT(feature, 'layer', 4096, 'geom', 'fid') FROM (\n            SELECT {struct_expr} as feature\n            FROM \"{table_name}\"\n            WHERE ST_Intersects(\n                ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),\n                ST_TileEnvelope(?, ?, ?)\n            )\n        )"
     );
 
     println!("Executing SQL for tile z={z} x={x} y={y} id={id}");
 
-    // Params: z, x, y, source_id, z, x, y
+    // Params: z, x, y (for AsMVTGeom bounds), z, x, y (for intersects)
     let mvt_blob: Option<Vec<u8>> =
-        match conn.query_row(&select_sql, duckdb::params![z, x, y, id, z, x, y], |row| {
+        match conn.query_row(&select_sql, duckdb::params![z, x, y, z, x, y], |row| {
             row.get(0)
         }) {
             Ok(blob) => Some(blob),
@@ -483,8 +541,8 @@ async fn upload_file(
     if let Err(message) = validation {
         let size_i64 = size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             duckdb::params![
                 &upload_id,
                 &base_name,
@@ -494,6 +552,7 @@ async fn upload_file(
                 "failed",
                 &None::<String>,
                 &rel_string,
+                &None::<String>,
                 &Some(message.clone()),
             ],
         )
@@ -505,8 +564,8 @@ async fn upload_file(
 
     let size_i64 = size as i64;
     conn.execute(
-        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, error)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         duckdb::params![
             &upload_id,
             &base_name,
@@ -516,6 +575,7 @@ async fn upload_file(
             "uploaded", // Initial status: uploaded (processing happens in background)
             &None::<String>,
             &rel_string,
+            &None::<String>,
             &None::<String>,
         ],
     )
@@ -570,6 +630,7 @@ async fn upload_file(
         status: "uploaded".to_string(), // Keep consistent with DB initial state
         crs: None,
         path: rel_string,
+        table_name: None,
         error: None,
     };
 
@@ -617,15 +678,193 @@ async fn import_spatial_data(
         );
     }
 
-    // 2. Import Data
-    let sql = format!(
-        "INSERT INTO spatial_data (source_id, geom, properties) 
-         SELECT '{source_id}', geom, NULL 
-         FROM ST_Read('{abs_path}')"
+    // 2. Import Data into a per-dataset table (layer_<id>) so we can preserve columns.
+    // We keep a stable feature id column (fid) for MVT feature ids.
+    let table_name = format!("layer_{}", source_id);
+    let safe_table_name =
+        normalize_column_name(&table_name).unwrap_or_else(|| format!("layer_{}", source_id));
+
+    // Drop if exists (id collision should be impossible, but keep idempotent).
+    let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{safe_table_name}\""), []);
+
+    let create_sql = format!(
+        "CREATE TABLE \"{safe_table_name}\" AS\n         SELECT row_number() OVER ()::BIGINT AS fid, *\n         FROM ST_Read('{abs_path}')"
     );
 
-    conn.execute(&sql, [])
+    conn.execute(&create_sql, [])
         .map_err(|e| format!("Spatial import failed: {}", e))?;
+
+    // Record table name on the file record.
+    let _ = conn.execute(
+        "UPDATE files SET table_name = ? WHERE id = ?",
+        duckdb::params![safe_table_name.as_str(), source_id],
+    );
+
+    // 3. Normalize/rename columns when needed and capture metadata.
+    // DuckDB is case-insensitive for identifiers, so we treat case-only differences as conflicts.
+    // Strategy:
+    // - Keep original name if it is already a safe identifier and unique (case-insensitive)
+    // - Otherwise normalize (lowercase + non [a-z0-9_] -> '_' + trim)
+    // - If still conflicts, suffix _2, _3...
+    // - Ensure reserved columns fid + geom stay as-is.
+    let mut columns_stmt = conn
+        .prepare(
+            "SELECT column_name, data_type, ordinal_position\n             FROM information_schema.columns\n             WHERE table_schema = 'main' AND table_name = ?\n             ORDER BY ordinal_position",
+        )
+        .map_err(|e| format!("Metadata query failed: {}", e))?;
+
+    let columns_iter = columns_stmt
+        .query_map(duckdb::params![safe_table_name.as_str()], |row| {
+            let name: String = row.get(0)?;
+            let data_type: String = row.get(1)?;
+            let ordinal: i64 = row.get(2)?;
+            Ok((name, data_type, ordinal))
+        })
+        .map_err(|e| format!("Metadata query failed: {}", e))?;
+
+    let mut columns: Vec<(String, String, i64)> = Vec::new();
+    for col in columns_iter {
+        columns.push(col.map_err(|e| format!("Metadata query failed: {}", e))?);
+    }
+
+    // Clear any prior metadata.
+    let _ = conn.execute(
+        "DELETE FROM dataset_columns WHERE source_id = ?",
+        duckdb::params![source_id],
+    );
+
+    let mut used: HashSet<String> = HashSet::new();
+    used.insert("fid".to_string());
+
+    // Ensure geometry column is named `geom` for downstream queries.
+    // Most drivers already use `geom`, but don't rely on it.
+    // If we find a GEOMETRY column that isn't named `geom`, rename it.
+    for (name, data_type, _ordinal) in &columns {
+        if data_type.eq_ignore_ascii_case("GEOMETRY") && name != "geom" {
+            let alter =
+                format!("ALTER TABLE \"{safe_table_name}\" RENAME COLUMN \"{name}\" TO geom");
+            conn.execute(&alter, [])
+                .map_err(|e| format!("Failed to normalize geometry column: {}", e))?;
+        }
+    }
+
+    // Refresh columns after potential geom rename.
+    let mut refresh_stmt = conn
+        .prepare(
+            "SELECT column_name, data_type, ordinal_position\n             FROM information_schema.columns\n             WHERE table_schema = 'main' AND table_name = ?\n             ORDER BY ordinal_position",
+        )
+        .map_err(|e| format!("Metadata query failed: {}", e))?;
+
+    let columns_iter = refresh_stmt
+        .query_map(duckdb::params![safe_table_name.as_str()], |row| {
+            let name: String = row.get(0)?;
+            let data_type: String = row.get(1)?;
+            let ordinal: i64 = row.get(2)?;
+            Ok((name, data_type, ordinal))
+        })
+        .map_err(|e| format!("Metadata query failed: {}", e))?;
+    let mut columns: Vec<(String, String, i64)> = Vec::new();
+    for col in columns_iter {
+        columns.push(col.map_err(|e| format!("Metadata query failed: {}", e))?);
+    }
+
+    for (name, data_type, ordinal) in &columns {
+        let lower = name.to_ascii_lowercase();
+        let is_reserved = lower == "fid" || lower == "geom";
+
+        // Determine normalized name.
+        let mut normalized = if is_reserved {
+            lower.clone()
+        } else if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && (name
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_alphabetic() || c == '_')
+                .unwrap_or(false))
+        {
+            // Keep as-is but lowercase to match DuckDB identifier behavior.
+            lower.clone()
+        } else {
+            normalize_column_name(name).unwrap_or_else(|| format!("col_{ordinal}"))
+        };
+
+        if is_reserved {
+            used.insert(normalized.clone());
+        } else {
+            if normalized.is_empty() {
+                normalized = format!("col_{ordinal}");
+            }
+            let mut candidate = normalized.clone();
+            let mut suffix = 2;
+            while used.contains(&candidate) {
+                candidate = format!("{normalized}_{suffix}");
+                suffix += 1;
+            }
+            normalized = candidate;
+            used.insert(normalized.clone());
+
+            if normalized != lower {
+                let alter = format!(
+                    "ALTER TABLE \"{safe_table_name}\" RENAME COLUMN \"{name}\" TO \"{normalized}\""
+                );
+                conn.execute(&alter, [])
+                    .map_err(|e| format!("Failed to normalize column name: {}", e))?;
+            }
+        }
+
+        // Coerce unsupported property types to VARCHAR so they can be included in MVT.
+        // Keep GEOMETRY as-is.
+        let mvt_type = if lower == "geom" {
+            "GEOMETRY".to_string()
+        } else if lower == "fid" {
+            "BIGINT".to_string()
+        } else {
+            match data_type.as_str() {
+                "VARCHAR" | "BOOLEAN" | "DOUBLE" | "FLOAT" | "BIGINT" | "INTEGER" => {
+                    data_type.clone()
+                }
+                "SMALLINT" | "TINYINT" => {
+                    let alter = format!(
+                        "ALTER TABLE \"{safe_table_name}\" ALTER COLUMN \"{normalized}\" SET DATA TYPE INTEGER"
+                    );
+                    conn.execute(&alter, [])
+                        .map_err(|e| format!("Failed to coerce column type: {}", e))?;
+                    "INTEGER".to_string()
+                }
+                "UBIGINT" | "UINTEGER" | "USMALLINT" | "UTINYINT" => {
+                    let alter = format!(
+                        "ALTER TABLE \"{safe_table_name}\" ALTER COLUMN \"{normalized}\" SET DATA TYPE BIGINT"
+                    );
+                    conn.execute(&alter, [])
+                        .map_err(|e| format!("Failed to coerce column type: {}", e))?;
+                    "BIGINT".to_string()
+                }
+                _ => {
+                    // Cast to VARCHAR in-place.
+                    let alter = format!(
+                        "ALTER TABLE \"{safe_table_name}\" ALTER COLUMN \"{normalized}\" SET DATA TYPE VARCHAR"
+                    );
+                    conn.execute(&alter, [])
+                        .map_err(|e| format!("Failed to coerce column type: {}", e))?;
+                    "VARCHAR".to_string()
+                }
+            }
+        };
+
+        if lower != "geom" && lower != "fid" {
+            // Record property columns (exclude geom + fid).
+            let _ = conn.execute(
+                "INSERT INTO dataset_columns (source_id, normalized_name, original_name, ordinal, mvt_type)\n                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                duckdb::params![
+                    source_id,
+                    normalized.as_str(),
+                    name.as_str(),
+                    *ordinal,
+                    mvt_type.as_str()
+                ],
+            );
+        }
+    }
 
     Ok(())
 }
@@ -654,6 +893,49 @@ pub fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{}B", bytes)
     }
+}
+
+fn normalize_column_name(name: &str) -> Option<String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut out = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+
+    while out.contains("__") {
+        out = out.replace("__", "_");
+    }
+
+    let out = out.trim_matches('_').to_string();
+    if out.is_empty() {
+        return None;
+    }
+
+    let first = out.chars().next().unwrap();
+    let mut out = if first.is_ascii_alphabetic() || first == '_' {
+        out
+    } else {
+        format!("col_{out}")
+    };
+
+    // Avoid a small set of very common keywords.
+    // DuckDB has more, but we mainly want to dodge obvious foot-guns.
+    const KEYWORDS: [&str; 10] = [
+        "select", "from", "where", "group", "order", "by", "limit", "offset", "join", "table",
+    ];
+    if KEYWORDS.contains(&out.as_str()) {
+        out = format!("col_{out}");
+    }
+
+    Some(out)
 }
 
 fn create_id() -> String {
@@ -770,15 +1052,17 @@ mod tests {
             status VARCHAR NOT NULL,
             crs VARCHAR,
             path VARCHAR NOT NULL,
+            table_name VARCHAR,
             error VARCHAR
         );
 
-        CREATE TABLE spatial_data (
-            id INTEGER PRIMARY KEY,
+        CREATE TABLE dataset_columns (
             source_id VARCHAR NOT NULL,
-            geom GEOMETRY,
-            properties JSON,
-            FOREIGN KEY (source_id) REFERENCES files(id)
+            normalized_name VARCHAR NOT NULL,
+            original_name VARCHAR NOT NULL,
+            ordinal BIGINT NOT NULL,
+            mvt_type VARCHAR NOT NULL,
+            PRIMARY KEY (source_id, normalized_name)
         );
         ",
         )
@@ -820,14 +1104,15 @@ mod tests {
             status: "uploaded".to_string(),
             crs: None,
             path: file_path.to_string_lossy().to_string(),
+            table_name: None,
             error: None,
         };
 
         let conn = state.db.lock().await;
         let size = item.size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             duckdb::params![
                 &item.id,
                 &item.name,
@@ -837,6 +1122,7 @@ mod tests {
                 &item.status,
                 &item.crs,
                 &item.path,
+                &item.table_name,
                 &item.error,
             ],
         )

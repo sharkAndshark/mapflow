@@ -32,7 +32,7 @@ These specific behaviors should be verified by the most efficient means possible
 | **Validation (Zip Structure)** | Upload invalid `.zip` | Reject with clear error | **Unit / API** |
 | **Status State Machine** | File processing lifecycle | Status transitions: `uploading` -> `uploaded` -> `processing` -> `ready` | **Integration** |
 | **Details Metadata** | Request file details | Returns correct CRS, size, type | **API** |
-| **Tile Generation** | Request specific MVT tile | Returns valid binary MVT with correct geometry | **Unit / Integration** |
+| **Tile Generation** | Request specific MVT tile | Returns valid binary MVT with correct geometry and properties (tags) | **Unit / Integration** |
 
 ## Testing Strategy & Commands
 

@@ -9,6 +9,239 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // for oneshot
 
+async fn wait_until_ready(app: &axum::Router, file_id: &str) -> FileItem {
+    for _ in 0..30 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let request = Request::builder()
+            .method("GET")
+            .uri("/api/files")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+        if let Some(f) = files.iter().find(|f| f.id == file_id) {
+            if f.status == "ready" {
+                return f.clone();
+            }
+            if f.status == "failed" {
+                panic!("File processing failed: {:?}", f.error);
+            }
+        }
+    }
+    panic!("Timeout waiting for file to be ready");
+}
+
+fn read_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
+    let mut result: u64 = 0;
+    let mut shift = 0;
+    while *pos < buf.len() && shift <= 63 {
+        let b = buf[*pos];
+        *pos += 1;
+        result |= ((b & 0x7f) as u64) << shift;
+        if (b & 0x80) == 0 {
+            return Some(result);
+        }
+        shift += 7;
+    }
+    None
+}
+
+fn read_len_delimited<'a>(buf: &'a [u8], pos: &mut usize) -> Option<&'a [u8]> {
+    let len = read_varint(buf, pos)? as usize;
+    if *pos + len > buf.len() {
+        return None;
+    }
+    let out = &buf[*pos..*pos + len];
+    *pos += len;
+    Some(out)
+}
+
+fn skip_field(buf: &[u8], pos: &mut usize, wire_type: u8) -> Option<()> {
+    match wire_type {
+        0 => {
+            let _ = read_varint(buf, pos)?;
+            Some(())
+        }
+        1 => {
+            *pos = pos.checked_add(8)?;
+            if *pos > buf.len() {
+                return None;
+            }
+            Some(())
+        }
+        2 => {
+            let _ = read_len_delimited(buf, pos)?;
+            Some(())
+        }
+        5 => {
+            *pos = pos.checked_add(4)?;
+            if *pos > buf.len() {
+                return None;
+            }
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+fn parse_packed_u32(buf: &[u8]) -> Option<Vec<u32>> {
+    let mut pos = 0;
+    let mut out = Vec::new();
+    while pos < buf.len() {
+        let v = read_varint(buf, &mut pos)?;
+        out.push(v as u32);
+    }
+    Some(out)
+}
+
+fn layer_has_string_tag(layer: &[u8], want_key: &str, want_value: &str) -> bool {
+    // Collect keys and values; then scan features for tags.
+    let mut keys: Vec<String> = Vec::new();
+    let mut values: Vec<Option<String>> = Vec::new();
+    let mut features: Vec<Vec<u32>> = Vec::new();
+
+    let mut pos = 0;
+    while pos < layer.len() {
+        let key = match read_varint(layer, &mut pos) {
+            Some(v) => v,
+            None => return false,
+        };
+        let field = (key >> 3) as u32;
+        let wire = (key & 0x07) as u8;
+
+        match (field, wire) {
+            // keys: repeated string
+            (3, 2) => {
+                let s = match read_len_delimited(layer, &mut pos) {
+                    Some(b) => b,
+                    None => return false,
+                };
+                let s = match std::str::from_utf8(s) {
+                    Ok(v) => v.to_string(),
+                    Err(_) => return false,
+                };
+                keys.push(s);
+            }
+            // values: repeated message
+            (4, 2) => {
+                let msg = match read_len_delimited(layer, &mut pos) {
+                    Some(b) => b,
+                    None => return false,
+                };
+                values.push(parse_value_string(msg));
+            }
+            // features: repeated message
+            (2, 2) => {
+                let msg = match read_len_delimited(layer, &mut pos) {
+                    Some(b) => b,
+                    None => return false,
+                };
+                if let Some(tags) = parse_feature_tags(msg) {
+                    features.push(tags);
+                }
+            }
+            _ => {
+                if skip_field(layer, &mut pos, wire).is_none() {
+                    return false;
+                }
+            }
+        }
+    }
+
+    let Some(want_key_index) = keys.iter().position(|k| k == want_key) else {
+        return false;
+    };
+
+    for tags in features {
+        // tags are pairs: [key_index, value_index, ...]
+        for pair in tags.chunks_exact(2) {
+            let k = pair[0] as usize;
+            let v = pair[1] as usize;
+            if k == want_key_index {
+                if let Some(Some(s)) = values.get(v) {
+                    if s == want_value {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}
+
+fn parse_feature_tags(feature: &[u8]) -> Option<Vec<u32>> {
+    let mut pos = 0;
+    while pos < feature.len() {
+        let key = read_varint(feature, &mut pos)?;
+        let field = (key >> 3) as u32;
+        let wire = (key & 0x07) as u8;
+        match (field, wire) {
+            // tags: packed uint32
+            (2, 2) => {
+                let packed = read_len_delimited(feature, &mut pos)?;
+                return parse_packed_u32(packed);
+            }
+            _ => {
+                skip_field(feature, &mut pos, wire)?;
+            }
+        }
+    }
+    None
+}
+
+fn parse_value_string(value: &[u8]) -> Option<String> {
+    let mut pos = 0;
+    while pos < value.len() {
+        let key = read_varint(value, &mut pos)?;
+        let field = (key >> 3) as u32;
+        let wire = (key & 0x07) as u8;
+        match (field, wire) {
+            // string_value
+            (1, 2) => {
+                let s = read_len_delimited(value, &mut pos)?;
+                let s = std::str::from_utf8(s).ok()?.to_string();
+                return Some(s);
+            }
+            _ => {
+                skip_field(value, &mut pos, wire)?;
+            }
+        }
+    }
+    None
+}
+
+fn mvt_has_string_tag(tile: &[u8], want_key: &str, want_value: &str) -> bool {
+    let mut pos = 0;
+    while pos < tile.len() {
+        let key = match read_varint(tile, &mut pos) {
+            Some(v) => v,
+            None => return false,
+        };
+        let field = (key >> 3) as u32;
+        let wire = (key & 0x07) as u8;
+        match (field, wire) {
+            // layers: repeated message
+            (3, 2) => {
+                let layer = match read_len_delimited(tile, &mut pos) {
+                    Some(b) => b,
+                    None => return false,
+                };
+                if layer_has_string_tag(layer, want_key, want_value) {
+                    return true;
+                }
+            }
+            _ => {
+                if skip_field(tile, &mut pos, wire).is_none() {
+                    return false;
+                }
+            }
+        }
+    }
+    false
+}
+
 // Helper to setup the app for testing
 async fn setup_app() -> (axum::Router, TempDir) {
     let temp_dir = TempDir::new().expect("temp dir");
@@ -232,8 +465,8 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
     {
         let conn = state.db.lock().await;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, error)\
-             VALUES (?1, ?2, ?3, ?4, NOW(), ?5, ?6, ?7, ?8)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)\
+             VALUES (?1, ?2, ?3, ?4, NOW(), ?5, ?6, ?7, ?8, ?9)",
             duckdb::params![
                 "seed-processing",
                 "seed",
@@ -242,6 +475,7 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
                 "processing",
                 None::<String>,
                 "./uploads/seed-processing/seed.geojson",
+                None::<String>,
                 None::<String>,
             ],
         )
@@ -343,34 +577,13 @@ async fn test_upload_geojson_lifecycle() {
     let file_id = file_item.id;
 
     // 2. Poll for status change (uploaded -> processing -> ready)
-    // Processing happens in background tokio::spawn, so we need to wait
-    let mut attempts = 0;
-    loop {
-        if attempts > 10 {
-            panic!("Timeout waiting for file to be ready");
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        let request = Request::builder()
-            .method("GET")
-            .uri("/api/files")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.clone().oneshot(request).await.unwrap();
-        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
-
-        if let Some(f) = files.iter().find(|f| f.id == file_id) {
-            if f.status == "ready" {
-                assert!(f.crs.is_some(), "CRS should be detected");
-                break;
-            } else if f.status == "failed" {
-                panic!("File processing failed: {:?}", f.error);
-            }
-        }
-        attempts += 1;
-    }
+    // Processing happens in background tokio::spawn, so we need to wait.
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert!(ready_item.crs.is_some(), "CRS should be detected");
+    assert!(
+        ready_item.table_name.is_some(),
+        "table_name should be set when ready"
+    );
 
     // 3. Check Preview Meta
     let request = Request::builder()
@@ -400,5 +613,12 @@ async fn test_upload_geojson_lifecycle() {
     assert!(
         !tile_body.is_empty(),
         "Expected non-empty MVT tile body for point at 0,0"
+    );
+
+    // 5. Verify MVT includes properties (tags)
+    // We expect our uploaded GeoJSON property { "name": "Test Point" } to be present.
+    assert!(
+        mvt_has_string_tag(&tile_body, "name", "Test Point"),
+        "Expected MVT to include string tag name=Test Point"
     );
 }

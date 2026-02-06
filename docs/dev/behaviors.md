@@ -30,7 +30,7 @@ This document defines the technical contracts, API specifications, and storage c
   - **Returns:** `id`, `name`, `crs`, `bbox` ([minx, miny, maxx, maxy], WGS84).
 - `GET /api/files/:id/tiles/:z/:x/:y`
   - **Returns:** `application/vnd.mapbox-vector-tile` (MVT).
-  - **Logic:** No feature properties included (geometry only) for performance.
+  - **Logic:** Includes feature properties (tags) in addition to geometry.
 
 ### Testing Endpoints (Debug Only)
 - `POST /api/test/reset`
@@ -44,7 +44,8 @@ This document defines the technical contracts, API specifications, and storage c
 
 ### Database Schema (DuckDB)
 - **Table `files`:** Stores metadata (`id`, `name`, `path`, `status`, `error`, etc.).
-- **Table `spatial_data`:** Stores imported geometry.
+- **Table `dataset_columns`:** Stores per-dataset column mapping (normalized identifier -> original property key) and MVT-compatible types.
+- **Per-dataset tables:** Each upload is imported into its own DuckDB table and referenced by `files.table_name`.
 
 ### Status Lifecycle
 1. `uploading`: Frontend optimistic state.
