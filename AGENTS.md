@@ -6,9 +6,9 @@
 6. 对 duckdb spatial 的使用，务必参考 `/Users/zhangyijun/RiderProjects/duckdb-spatial/docs` 文件下的内容，尤其是空间函数如 `st_asmvt` `st_transform` 等。
 7. 永远不需要考虑用户更新版本和历史数据迁移的问题，当前软件还未发布，这些问题不存在。
 8. 做正确的决策，不要折衷，不要最小改动。当前软件还未发布，我们不要欠技术债。
-9. commit前运行测试
+9. commit前运行所有测试
 10. 你对包括AGENTS.md 以及 docs 的更新，是项目快速、稳健、正确演进的发动机，正向自循环的那种
-
+11. 重要！！！！：docs文件夹 and AGENTS.md组成了整个系统演进的飞轮，飞轮的转动依赖你主动更新它们
 附：当你改变了可观测契约（API 状态码/错误文案/流程语义）或测试策略时，必须同步更新：
 - `docs/dev/behaviors.md`（契约）
 - `docs/dev/testing.md`（验证方式/命令）
