@@ -3,6 +3,8 @@ set dotenv-load := true
 
 PORT := env_var_or_default("PORT", "3000")
 VITE_PORT := env_var_or_default("VITE_PORT", "5173")
+DB_PATH := env_var_or_default("DB_PATH", "./data/mapflow.duckdb")
+UPLOAD_DIR := env_var_or_default("UPLOAD_DIR", "./uploads")
 
 # Default: local dev (backend + frontend)
 start: dev
@@ -79,3 +81,16 @@ test-e2e:
 # Run all tests
 test: test-backend test-e2e
   @echo "All tests complete"
+
+# --- Cleanup ---
+
+# Remove DuckDB file(s) (respects DB_PATH)
+clean-db:
+  rm -f "{{DB_PATH}}" "{{DB_PATH}}.wal" "{{DB_PATH}}.tmp"
+
+# Remove uploads directory (respects UPLOAD_DIR)
+clean-uploads:
+  rm -rf "{{UPLOAD_DIR}}"
+
+# Clean local dev state (db + uploads)
+clean: clean-db clean-uploads
