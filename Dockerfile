@@ -7,13 +7,17 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Build Backend
-FROM rust:1.85-slim-bookworm AS backend-builder
+FROM rust:1.93-slim-bookworm AS backend-builder
 WORKDIR /app
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev g++ && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml ./
 COPY backend/Cargo.toml ./backend/
 COPY Cargo.lock ./
+# Create a minimal target so Cargo can parse the manifest.
+# This keeps dependency caching without mutating the lockfile.
+RUN mkdir -p backend/src && echo "fn main() {}" > backend/src/main.rs
+
 # Pre-fetch deps for reproducible builds
 RUN cargo fetch --locked --manifest-path backend/Cargo.toml
 
