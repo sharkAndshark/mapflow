@@ -71,10 +71,13 @@ h1 {
 
 .panel {
   margin-top: 28px;
-  padding: 20px 20px 8px;
+  padding: 0; /* Remove padding to handle internal layout better */
   border-radius: 16px;
   background: #ffffff;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Ensure children don't overflow rounded corners */
 }
 
 .panel-header {
@@ -82,13 +85,31 @@ h1 {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding-bottom: 16px;
+  padding: 20px 24px;
   border-bottom: 1px solid #ececec;
+  background: #fff;
 }
 
-.panel-header h2 {
-  margin: 0;
-  font-size: 18px;
+.panel-body {
+  display: flex;
+  flex: 1;
+  min-height: 400px; /* Minimum height for the panel */
+}
+
+.list-area {
+  flex: 1;
+  border-right: 1px solid #ececec;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* Prevent flex item from overflowing */
+}
+
+.detail-area {
+  width: 320px;
+  flex-shrink: 0;
+  background: #fcfcfc;
+  display: flex;
+  flex-direction: column;
 }
 
 .panel-meta {
@@ -100,154 +121,195 @@ h1 {
   padding: 32px 0;
   text-align: center;
   color: #6b6b6b;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .table {
-  margin-top: 8px;
   display: grid;
-  gap: 6px;
+  /* Removed gap to make it look more like a continuous list */
 }
 
 .row {
   display: grid;
-  grid-template-columns: 1.8fr 1fr 1fr 1.3fr 0.8fr;
+  grid-template-columns: 1.5fr 0.8fr 0.8fr 1.2fr 0.8fr; /* Adjusted for list view */
   gap: 12px;
   align-items: center;
-  padding: 12px 8px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  background: transparent;
+  padding: 12px 24px; /* Align with header padding */
+  border-bottom: 1px solid #f0f0f0;
+  background: #fff;
   text-align: left;
   font: inherit;
+  margin: 0;
+  border-radius: 0;
 }
 
 .row.head {
   font-weight: 600;
   color: #4c4c4c;
-  background: #f6f6f6;
-  border-color: #efefef;
+  background: #f9f9f9;
+  border-color: #ececec;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
 }
 
 .row:not(.head) {
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  transition: background 0.2s ease;
 }
 
 .row:not(.head):hover {
-  background: #f7f4ef;
-  border-color: #ece1d5;
+  background: #f7f9fc;
 }
 
 .row.selected {
-  background: #f3eadf;
-  border-color: #d6c1aa;
+  background: #f0f7ff;
+  border-left: 3px solid #0080ff; /* Visual indicator for selection */
+  padding-left: 21px; /* Adjust padding to account for border */
 }
 
+/* Detail Area Styles */
+.detail-content {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  text-align: center;
+  padding: 32px;
+}
+
+.detail-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.detail-title {
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  word-break: break-all;
+}
+
+.detail-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: #999;
+  background: #eee;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.detail-group {
+  margin-bottom: 20px;
+}
+
+.detail-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.detail-value {
+  font-size: 14px;
+  color: #333;
+}
+
+.detail-error {
+  margin-top: 16px;
+  background: #fff0f0;
+  border: 1px solid #ffcccc;
+  border-radius: 6px;
+  padding: 12px;
+  color: #cc0000;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.detail-actions {
+  margin-top: 32px;
+  display: flex;
+  gap: 12px;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 20px;
+  background: #0080ff;
+  color: white;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: background 0.2s;
+  border: none;
+  cursor: pointer;
+  flex: 1;
+}
+
+.btn-primary:hover {
+  background: #0060c0;
+}
+
+.btn-primary.disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Muted text utility */
 .muted {
   color: #6b6b6b;
 }
 
+/* Status colors */
 .status {
-  font-weight: 600;
-}
-
-.status.uploaded {
-  color: #2c7a4b;
-}
-
-.status.uploading {
-  color: #a66d00;
-}
-
-.status.failed {
-  color: #b21c1c;
-}
-
-/* New Action Column Styles */
-.row {
-  grid-template-columns: 1.8fr 1fr 1fr 1.3fr 0.8fr 100px; /* added 100px for actions */
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.btn-link {
-  background: none;
-  border: none;
-  color: #0080ff;
-  cursor: pointer;
-  font-size: inherit;
-  font-weight: 600;
-  padding: 0;
-}
-.btn-link:hover {
-  text-decoration: underline;
-}
-
-/* Preview Page Styles */
-.preview-page {
-  background: #fff;
-}
-
-.preview-page.loading {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  font-size: 18px;
-  color: #666;
-  gap: 12px;
-}
-
-.spinner {
-  border: 4px solid #eee;
-  border-left-color: #666;
-  border-radius: 50%;
-  width: 24px;
-  height: 24px;
-  animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.preview-page.error {
-  padding: 2rem;
-}
-
-.back-link {
-  text-decoration: none;
-  color: #1e1e1e;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-.back-link:hover {
-  text-decoration: underline;
+  gap: 6px;
 }
 
-.badge {
-  background: #eee;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  color: #666;
-}
+.status.uploaded { color: #2c7a4b; }
+.status.uploading { color: #a66d00; }
+.status.processing { color: #0060c0; }
+.status.ready { color: #2c7a4b; }
+.status.failed { color: #b21c1c; }
 
+/* Responsive adjustments */
 @media (max-width: 900px) {
-  .row {
-    grid-template-columns: 1.4fr 0.9fr 0.9fr 1.2fr 0.8fr; /* removed action col for mobile or let it wrap */
-    grid-template-rows: auto auto;
+  .panel-body {
+    flex-direction: column;
   }
-
-  .row > div:last-child {
-    grid-column: 1 / -1;
-    justify-content: flex-start; /* Reset justify for mobile layout */
-    margin-top: 8px;
+  
+  .list-area {
+    border-right: none;
+    border-bottom: 1px solid #ececec;
+    height: auto;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  
+  .detail-area {
+    width: 100%;
+    border-top: 1px solid #ececec;
+    min-height: 200px;
   }
 }
 
@@ -264,9 +326,17 @@ h1 {
 
   .row {
     grid-template-columns: 1fr 1fr;
+    padding: 12px 16px;
   }
 
   .row.head {
+    display: none;
+  }
+  
+  /* Hide less important columns on mobile list */
+  .row > div:nth-child(3), /* Size */
+  .row > div:nth-child(4)  /* Date */
+  {
     display: none;
   }
 }

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-
 import { useNavigate } from 'react-router-dom';
 
 const STATUS_LABELS = {
@@ -25,12 +24,88 @@ function parseType(fileName) {
   return 'unknown';
 }
 
+function DetailSidebar({ file }) {
+  if (!file) {
+    return (
+      <div className="detail-empty">
+        <p>选择一个文件查看详情</p>
+      </div>
+    );
+  }
+
+  const isReady = file.status === 'ready';
+  const isFailed = file.status === 'failed';
+  const canPreview = isReady || file.status === 'uploaded'; // uploaded allows preview (though maybe empty)
+
+  return (
+    <div className="detail-content">
+      <div className="detail-header">
+        <h3 className="detail-title">{file.name}</h3>
+        <span className="detail-id">{file.id}</span>
+      </div>
+
+      <div className="detail-group">
+        <div className="detail-label">Type</div>
+        <div className="detail-value">{file.type}</div>
+      </div>
+
+      <div className="detail-group">
+        <div className="detail-label">Size</div>
+        <div className="detail-value">{formatSize(file.size || 0)}</div>
+      </div>
+
+      <div className="detail-group">
+        <div className="detail-label">Status</div>
+        <div className={`status ${file.status}`}>
+           {STATUS_LABELS[file.status] || file.status}
+        </div>
+      </div>
+
+      <div className="detail-group">
+        <div className="detail-label">Uploaded At</div>
+        <div className="detail-value">
+          {file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '--'}
+        </div>
+      </div>
+
+      {file.crs && (
+        <div className="detail-group">
+          <div className="detail-label">CRS</div>
+          <div className="detail-value">{file.crs}</div>
+        </div>
+      )}
+
+      {isFailed && file.error && (
+        <div className="detail-error">
+          <strong>Error:</strong> {file.error}
+        </div>
+      )}
+
+      <div className="detail-actions">
+        <a 
+          href={`/preview/${file.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`btn-primary ${!canPreview ? 'disabled' : ''}`}
+        >
+          Open Preview
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Derive selected file object
+  const selectedFile = useMemo(() => 
+    files.find(f => f.id === selectedId) || null
+  , [files, selectedId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +158,8 @@ export default function App() {
     };
 
     setFiles((prev) => [optimistic, ...prev]);
+    // Auto-select the uploading file
+    setSelectedId(tempId);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -136,57 +213,48 @@ export default function App() {
           <span className="panel-meta">支持 .zip / .geojson，单文件最大 200MB（可配置）</span>
         </div>
 
-        {isLoading ? (
-          <div className="empty">加载中...</div>
-        ) : orderedFiles.length === 0 ? (
-          <div className="empty" data-testid="empty-state">
-            暂未上传文件
-          </div>
-        ) : (
-          <div className="table">
-            <div className="row head">
-              <div>名称</div>
-              <div>类型</div>
-              <div>大小</div>
-              <div>上传时间</div>
-              <div>状态</div>
-              <div>操作</div>
-            </div>
-            {orderedFiles.map((item) => (
-              <div
-                key={item.id}
-                className={`row ${selectedId === item.id ? 'selected' : ''}`}
-                onClick={() => setSelectedId(item.id)}
-              >
-                <div>{item.name}</div>
-                <div>{item.type}</div>
-                <div>{formatSize(item.size || 0)}</div>
-                <div className="muted">
-                  {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : '--'}
-                </div>
-                <div className={`status ${item.status || 'uploaded'}`}>
-                  {STATUS_LABELS[item.status] || item.status}
-                </div>
-                <div className="actions">
-                     {(item.status === 'ready' || item.status === 'uploaded') && (
-                       <a 
-                         href={`/preview/${item.id}`}
-                         target="_blank"
-                         rel="noopener noreferrer"
-                         className="btn-link"
-                         onClick={(e) => {
-                           e.stopPropagation();
-                         }}
-                         style={{ textDecoration: 'none' }}
-                       >
-                         Preview
-                       </a>
-                   )}
-                </div>
+        <div className="panel-body">
+          <div className="list-area">
+            {isLoading ? (
+              <div className="empty">加载中...</div>
+            ) : orderedFiles.length === 0 ? (
+              <div className="empty" data-testid="empty-state">
+                暂未上传文件
               </div>
-            ))}
+            ) : (
+              <div className="table">
+                <div className="row head">
+                  <div>名称</div>
+                  <div>类型</div>
+                  <div>大小</div>
+                  <div>上传时间</div>
+                  <div>状态</div>
+                </div>
+                {orderedFiles.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`row ${selectedId === item.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedId(item.id)}
+                  >
+                    <div>{item.name}</div>
+                    <div>{item.type}</div>
+                    <div>{formatSize(item.size || 0)}</div>
+                    <div className="muted">
+                      {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : '--'}
+                    </div>
+                    <div className={`status ${item.status || 'uploaded'}`}>
+                      {STATUS_LABELS[item.status] || item.status}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+          
+          <div className="detail-area">
+             <DetailSidebar file={selectedFile} />
+          </div>
+        </div>
       </section>
     </div>
   );

@@ -30,14 +30,20 @@ test('click preview opens new tab with map', async ({ page }) => {
   // We accept either, but ideally we want '已就绪' to ensure processing is done for preview
   await expect(page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/)).toBeVisible();
 
-  // 2. Click preview link and wait for new page
+  // 2. Click row to select it (to open sidebar)
   const row = page.locator('.row', { hasText: 'sample' });
   await expect(row).toBeVisible();
+  await row.click();
   
-  const previewLink = row.locator('a', { hasText: 'Preview' });
+  // 3. Find Preview button in Detail Sidebar
+  // The sidebar should now be populated
+  const sidebar = page.locator('.detail-area');
+  await expect(sidebar.getByText('sample')).toBeVisible(); // Check title in sidebar
+  
+  const previewLink = sidebar.getByRole('link', { name: 'Open Preview' });
   await expect(previewLink).toBeVisible();
 
-  // Validate new tab behavior
+  // 4. Click preview link and wait for new page
   const [newPage] = await Promise.all([
     page.context().waitForEvent('page'),
     previewLink.click(),
@@ -45,7 +51,7 @@ test('click preview opens new tab with map', async ({ page }) => {
 
   await newPage.waitForLoadState();
   
-  // 3. Verify URL and Content on new page
+  // 5. Verify URL and Content on new page
   expect(newPage.url()).toContain('/preview/');
   await expect(newPage.getByText('sample')).toBeVisible(); // Filename in header
 });

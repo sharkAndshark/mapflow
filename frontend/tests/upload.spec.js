@@ -3,18 +3,33 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+test.describe.configure({ mode: 'serial' });
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
 const uploadDir = path.resolve(__dirname, '../../tmp/test-uploads');
+// Use a different DB path for this test file to avoid conflict if parallel
 const dbPath = path.resolve(__dirname, '../../tmp/test-mapflow.duckdb');
 
 const geojsonPath = path.join(fixturesDir, 'sample.geojson');
 const shapefileZip = path.join(fixturesDir, 'roads.zip');
 
-test.beforeEach(() => {
-  fs.rmSync(uploadDir, { recursive: true, force: true });
-  fs.rmSync(dbPath, { force: true });
-  fs.mkdirSync(uploadDir, { recursive: true });
+test.beforeAll(() => {
+   // Ensure clean slate at start of suite
+   try {
+     fs.rmSync(uploadDir, { recursive: true, force: true });
+     fs.rmSync(dbPath, { force: true });
+   } catch (e) { console.warn("Cleanup failed", e); }
+   fs.mkdirSync(uploadDir, { recursive: true });
+});
+
+test.beforeEach(async ({ page }) => {
+  // We can't reliably delete the DB while server is running (locks).
+  // Instead, we just proceed. If tests share state, we should write them robustly
+  // or use unique file names per test.
+  
+  // For 'persistence', we rely on it being there.
+  // For others, we just check if our *new* file appears.
 });
 
 async function uploadFile(page, filePath) {
@@ -36,6 +51,9 @@ test('persistence: upload then reload shows file', async ({ page }) => {
   
   await page.reload();
   
+  // Wait for table to load
+  await expect(page.locator('.table')).toBeVisible();
+
   const reloadedRow = page.locator('.row', { hasText: 'sample' }).filter({ hasText: /已就绪|等待处理/ }).first();
   await expect(reloadedRow).toBeVisible();
   await expect(reloadedRow.getByText('geojson')).toBeVisible();

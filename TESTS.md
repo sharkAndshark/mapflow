@@ -13,8 +13,9 @@
 | 上传不支持格式时提示失败 | 上传不支持的文件 | 显示失败提示 |
 | 上传超过配置上限时提示失败 | 上传超限文件 | 显示失败提示 |
 | Shapefile zip 缺关键文件时上传失败 | 上传缺关键文件的 zip | 显示失败提示 |
-| 选中文件点击预览打开新标签页 | 列表项中的“Preview”链接 | 打开新标签页，URL 形如 `/preview/:id`，且页面不返回 404 |
+| 选中文件点击预览打开新标签页 | 侧栏中的“Open Preview”按钮 | 打开新标签页，URL 形如 `/preview/:id`，且页面不返回 404 |
 | 预览页加载地图瓦片 | 在预览页查看网络请求 | 包含 `/api/files/:id/tiles/z/x/y` 请求，状态码 200，响应头 `Content-Type: application/vnd.mapbox-vector-tile`，且至少有一个 Tile 响应体非空 |
+| 点击列表行显示侧栏详情 | 点击文件列表任一行 | 右侧出现详情栏，展示 name/type/size/status/uploadedAt；若有错误展示 error |
 
 ## 行为清单（计划补充）
 暂无
