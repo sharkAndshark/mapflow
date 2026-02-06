@@ -20,28 +20,37 @@ async function uploadFile(page, filePath) {
 test('persistence: upload then reload shows file', async ({ page }) => {
   await page.goto('/');
   await uploadFile(page, geojsonPath);
-  
+
   // Wait specifically for the uploaded status
-  const uploadedRow = page.locator('.row', { hasText: 'sample' }).filter({ hasText: /已就绪|等待处理/ }).first();
+  const uploadedRow = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ hasText: /已就绪|等待处理/ })
+    .first();
   await expect(uploadedRow).toBeVisible();
-  
+
   await page.reload();
-  
+
   // Wait for table to load
   await expect(page.locator('.table')).toBeVisible();
 
-  const reloadedRow = page.locator('.row', { hasText: 'sample' }).filter({ hasText: /已就绪|等待处理/ }).first();
+  const reloadedRow = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ hasText: /已就绪|等待处理/ })
+    .first();
   await expect(reloadedRow).toBeVisible();
   await expect(reloadedRow.getByText('geojson')).toBeVisible();
 });
 
 test('upload geojson and show in list', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('.page')).toBeVisible(); 
+  await expect(page.locator('.page')).toBeVisible();
 
   await uploadFile(page, geojsonPath);
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: /已就绪|等待处理/ }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ hasText: /已就绪|等待处理/ })
+    .first();
   await expect(row).toBeVisible();
   await expect(row.getByText('geojson')).toBeVisible();
 });

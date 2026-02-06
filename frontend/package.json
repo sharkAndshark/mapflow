@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "format": "biome format --write .",
     "format:check": "biome format .",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "build:backend": "cargo build --manifest-path ../backend/Cargo.toml",
     "test:e2e": "npm run build && npm run build:backend && playwright test"
   },
@@ -22,6 +24,7 @@
     "@biomejs/biome": "^2.3.11",
     "@playwright/test": "^1.50.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^2.1.9"
   }
 }

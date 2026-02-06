@@ -1,4 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import {
+  hasActiveJobs as computeHasActiveJobs,
+  mergeServerFilesWithOptimistic,
+} from './polling.js';
 
 const STATUS_LABELS = {
   uploading: '上传中',
@@ -37,7 +41,7 @@ function DetailSidebar({ file }) {
   const canPreview = isReady;
 
   return (
-    <div className="detail-content">
+    <div className="detail-content" data-testid="detail-sidebar">
       <div className="detail-header">
         <h3 className="detail-title">{file.name}</h3>
         <span className="detail-id">{file.id}</span>
@@ -55,7 +59,9 @@ function DetailSidebar({ file }) {
 
       <div className="detail-group">
         <div className="detail-label">Status</div>
-        <div className={`status ${file.status}`}>{STATUS_LABELS[file.status] || file.status}</div>
+        <div className={`status ${file.status}`} data-testid="file-status">
+          {STATUS_LABELS[file.status] || file.status}
+        </div>
       </div>
 
       <div className="detail-group">
@@ -85,6 +91,7 @@ function DetailSidebar({ file }) {
             target="_blank"
             rel="noopener noreferrer"
             className="btn-primary"
+            data-testid="open-preview"
           >
             Open Preview
           </a>
@@ -110,10 +117,7 @@ export default function App() {
     [files, selectedId],
   );
 
-  const hasActiveJobs = useMemo(
-    () => files.some((f) => ['uploaded', 'processing'].includes(f.status)),
-    [files],
-  );
+  const hasActiveJobs = useMemo(() => computeHasActiveJobs(files), [files]);
 
   // Polling Logic
   useEffect(() => {
@@ -126,10 +130,7 @@ export default function App() {
         const data = await res.json();
 
         setFiles((prevFiles) => {
-          const uploadingFiles = prevFiles.filter((f) => f.status === 'uploading');
-          const serverIds = new Set(data.map((f) => f.id));
-          const stillUploading = uploadingFiles.filter((f) => !serverIds.has(f.id));
-          return [...stillUploading, ...data];
+          return mergeServerFilesWithOptimistic(prevFiles, data);
         });
       } catch (err) {
         console.error('Polling failed', err);
@@ -268,6 +269,7 @@ export default function App() {
                     type="button"
                     className={`row ${selectedId === item.id ? 'selected' : ''}`}
                     onClick={() => setSelectedId(item.id)}
+                    data-testid={`file-row-${item.id}`}
                   >
                     <div>{item.name}</div>
                     <div>{item.type}</div>

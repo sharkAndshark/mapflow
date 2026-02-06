@@ -75,12 +75,16 @@ docker-shell:
 test-backend:
   cargo test --manifest-path backend/Cargo.toml
 
+# Run frontend unit tests
+test-frontend-unit:
+  npm --prefix frontend run test:unit
+
 # Run frontend e2e tests (requires build first or running server)
 test-e2e:
   npm --prefix frontend run test:e2e
 
 # Run all tests
-test: test-backend test-e2e
+test: test-backend test-frontend-unit test-e2e
   @echo "All tests complete"
 
 # --- Cleanup ---

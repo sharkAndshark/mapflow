@@ -21,7 +21,9 @@ test('click preview opens new tab with map', async ({ page, workerServer }) => {
 
   // Wait for upload to complete (could be '已就绪' or '等待处理' depending on timing)
   // We accept either, but ideally we want '已就绪' to ensure processing is done for preview
-  await expect(page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/)).toBeVisible();
+  await expect(
+    page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/),
+  ).toBeVisible();
 
   // Ensure backend processing completes before opening preview.
   await workerServer.waitForFileReady('sample');
@@ -30,23 +32,20 @@ test('click preview opens new tab with map', async ({ page, workerServer }) => {
   const row = page.locator('.row', { hasText: 'sample' });
   await expect(row).toBeVisible();
   await row.click();
-  
+
   // 3. Find Preview button in Detail Sidebar
   // The sidebar should now be populated
-  const sidebar = page.locator('.detail-area');
+  const sidebar = page.getByTestId('detail-sidebar');
   await expect(sidebar.getByText('sample')).toBeVisible(); // Check title in sidebar
-  
-  const previewLink = sidebar.getByRole('link', { name: 'Open Preview' });
+
+  const previewLink = sidebar.getByTestId('open-preview');
   await expect(previewLink).toBeVisible();
 
   // 4. Click preview link and wait for new page
-  const [newPage] = await Promise.all([
-    page.context().waitForEvent('page'),
-    previewLink.click(),
-  ]);
+  const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
 
   await newPage.waitForLoadState();
-  
+
   // 5. Verify URL and Content on new page
   expect(newPage.url()).toContain('/preview/');
   await expect(newPage.getByText('sample')).toBeVisible(); // Filename in header
@@ -54,12 +53,13 @@ test('click preview opens new tab with map', async ({ page, workerServer }) => {
   // 6. Verify Tile Requests (Observability Contract)
   // We expect the map to load tiles. We intercept/wait for at least one successful tile request.
   // URL pattern: /api/files/:id/tiles/:z/:x/:y
-  const tileResponse = await newPage.waitForResponse(response => 
-    response.url().includes(`/api/files/`) && 
-    response.url().includes(`/tiles/`) &&
-    response.status() === 200
+  const tileResponse = await newPage.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/files/`) &&
+      response.url().includes(`/tiles/`) &&
+      response.status() === 200,
   );
-  
+
   expect(tileResponse.headers()['content-type']).toBe('application/vnd.mapbox-vector-tile');
   // Now that the fixture has a small feature near (0,0), we expect at least one non-empty tile.
   const body = await tileResponse.body();

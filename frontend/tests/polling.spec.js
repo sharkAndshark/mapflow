@@ -29,10 +29,10 @@ test('upload file and verify status auto-updates from processing to ready', asyn
 
   // 4. Verify Detail Sidebar also updates if selected
   await row.click();
-  const sidebar = page.locator('.detail-area');
-  await expect(sidebar.getByText('已就绪')).toBeVisible();
-  
+  const sidebar = page.getByTestId('detail-sidebar');
+  await expect(sidebar.getByTestId('file-status')).toHaveText('已就绪');
+
   // 5. Preview button should be enabled
-  const previewLink = sidebar.getByRole('link', { name: 'Open Preview' });
+  const previewLink = sidebar.getByTestId('open-preview');
   await expect(previewLink).not.toHaveClass(/disabled/);
 });

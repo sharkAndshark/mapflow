@@ -87,6 +87,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Frontend unit tests
+        working-directory: frontend
+        run: npm run test:unit
+
       - name: Frontend format (check)
         working-directory: frontend
         run: npx biome format .

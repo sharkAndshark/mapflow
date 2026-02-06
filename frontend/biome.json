@@ -3,11 +3,26 @@
   "vcs": {
     "enabled": false,
     "clientKind": "git",
-    "useIgnoreFile": false
+    "useIgnoreFile": true
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "vite.config.js", "package.json"]
+    "includes": [
+      "src/**",
+      "tests/**",
+      "vite.config.js",
+      "playwright.config.js",
+      "vitest.config.js",
+      "package.json"
+    ],
+    "experimentalScannerIgnores": [
+      "**/.DS_Store",
+      "node_modules/**",
+      "dist/**",
+      "playwright-report/**",
+      "test-results/**",
+      "tmp/**"
+    ]
   },
   "formatter": {
     "indentStyle": "space",
