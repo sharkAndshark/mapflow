@@ -393,6 +393,117 @@ async fn test_preview_nonexistent_id_returns_404() {
 }
 
 #[tokio::test]
+async fn test_preview_not_ready_returns_409() {
+    let (app, _temp) = setup_app().await;
+
+    let boundary = "------------------------boundaryNR";
+    let geojson_content = r#"{ "type": "FeatureCollection", "features": [] }"#;
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"empty.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    // Immediately request preview. It should be rejected until status=ready.
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/preview", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body_json["error"], "File is not ready for preview");
+}
+
+#[tokio::test]
+async fn test_tile_not_ready_returns_409() {
+    let (app, _temp) = setup_app().await;
+
+    let boundary = "------------------------boundaryTNR";
+    let geojson_content = r#"{ "type": "FeatureCollection", "features": [] }"#;
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"empty.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body_json["error"], "File is not ready for preview");
+}
+
+#[tokio::test]
+async fn test_tile_invalid_coords_returns_400() {
+    let (app, _temp) = setup_app().await;
+
+    // z < 0
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files/nope/tiles/-1/0/0")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    // x out of range for z=0 (max x is 0)
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files/nope/tiles/0/1/0")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    // y out of range for z=1 (max y is 1)
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files/nope/tiles/1/0/2")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn test_upload_payload_too_large_returns_413() {
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");

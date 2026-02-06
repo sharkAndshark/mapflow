@@ -99,7 +99,7 @@ async fn get_preview_meta(
 
     // Check if file exists and get meta
     let mut stmt = conn
-        .prepare("SELECT name, crs, path, table_name FROM files WHERE id = ?")
+        .prepare("SELECT name, crs, status, table_name FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
     let meta: Option<(String, Option<String>, String, Option<String>)> = stmt
@@ -108,7 +108,7 @@ async fn get_preview_meta(
         })
         .ok();
 
-    let (name, crs, _path, table_name) = match meta {
+    let (name, crs, status, table_name) = match meta {
         Some(m) => m,
         None => {
             return Err((
@@ -120,7 +120,7 @@ async fn get_preview_meta(
         }
     };
 
-    let table_name = table_name.ok_or_else(|| {
+    let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
         (
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -169,6 +169,8 @@ async fn get_tile(
     State(state): State<AppState>,
     AxumPath((id, z, x, y)): AxumPath<(String, i32, i32, i32)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    validate_tile_coords(z, x, y)?;
+
     println!(
         "Received tile request: id={}, z={}, x={}, y={}",
         id, z, x, y
@@ -176,11 +178,11 @@ async fn get_tile(
     let conn = state.db.lock().await;
 
     // 1. Get CRS and table for the file
-    let (crs, table_name): (Option<String>, Option<String>) = conn
+    let (crs, status, table_name): (Option<String>, String, Option<String>) = conn
         .query_row(
-            "SELECT crs, table_name FROM files WHERE id = ?",
+            "SELECT crs, status, table_name FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|_| {
             (
@@ -191,7 +193,7 @@ async fn get_tile(
             )
         })?;
 
-    let table_name = table_name.ok_or_else(|| {
+    let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
         (
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -252,6 +254,22 @@ async fn get_tile(
                 .into_response())
         }
     }
+}
+
+fn validate_tile_coords(z: i32, x: i32, y: i32) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    // Practical cap. This is plenty for web maps and keeps bounds math simple.
+    const MAX_Z: i32 = 22;
+
+    if z < 0 || x < 0 || y < 0 || z > MAX_Z {
+        return Err(bad_request("Invalid tile coordinates"));
+    }
+
+    let max_xy: i32 = 1_i32 << z;
+    if x >= max_xy || y >= max_xy {
+        return Err(bad_request("Invalid tile coordinates"));
+    }
+
+    Ok(())
 }
 
 async fn upload_file(
