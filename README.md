@@ -1,185 +1,30 @@
-# MapFlow（探索版）
+# MapFlow (Explorer Edition)
 
-## 目标（先从最容易的开始）
-让数据整理人员用**资源管理器式列表**上传并查看空间数据文件。
+**MapFlow** is a lightweight tool for data curators to upload, organize, and preview spatial data files.
 
-## 本阶段范围（最小可用）
-- 仅支持**固定两种**空间数据格式的上传：`Shapefile`、`GeoJSON`（标准单文件，不支持按行分割/NDJSON）
-  - `Shapefile` 必须为**zip 压缩包**，且包含同名的 `.shp` / `.shx` / `.dbf`（`.prj` 可缺省）
-  - `GeoJSON` 仅接受 `.geojson` 文件扩展名
-  - 坐标系不限制；若无法识别则在元数据中记录为 `crs: null`
-- 单文件大小上限：默认 `200MB`，可通过 `UPLOAD_MAX_SIZE_MB` 配置
-- 服务端口默认：`3000`
-- 上传目录默认：`./uploads`
-- 上传后在列表中展示文件（名称 / 类型 / 大小 / 时间）。
-- 能浏览“我上传了哪些文件”。
-- **地图预览（新开标签页）**：在列表中点击 Preview 新开标签页预览；后端支持 history fallback。
+## Features
+- **Upload:** Support for Shapefile (zipped) and GeoJSON.
+- **Manage:** Simple file list with status tracking.
+- **Preview:** Instant map preview for uploaded datasets.
 
-## 暂不做
-- 服务发布
-- 属性编辑
-- 节点/流程
+## Quickstart
 
-## 逐步探索计划（可随时迭代）
-- Step 1: 上传 + 文件列表（完成）
-- Step 2: 地图预览（新开标签页）（完成）
-- Step 3: 文件详情侧栏（只读）（完成）
-- Step 4: 最小化发布入口（可选）
+### Installation
+(Instructions for future binary release or docker pull)
 
-## 地图预览：最小接口（草案）
-- `GET /api/files/:id/preview`
-  - 返回：`id`, `name`, `crs`, `bbox`（[minx, miny, maxx, maxy]，WGS84，用于初始定位）
-  - 备注：`bbox` 依赖后端空间索引，若文件处于 `processing` 或 `failed` 状态，可能返回 `null`。
-- `GET /api/files/:id/tiles/:z/:x/:y` (no .mvt extension)
-  - 返回：`application/vnd.mapbox-vector-tile` 的二进制
-  - 参数：`id` 为 files.id；z/x/y 为 WebMercator 瓦片坐标
-  - 备注：当前瓦片不包含 `properties` 字段（仅几何），以保证性能和避免 NULL 类型问题。
-- `GET /api/files/:id/feature/:fid` (计划中)
-  - 返回：单个 Feature 的完整 GeoJSON（含属性）
+### Usage
+1. Start the application.
+2. Open `http://localhost:3000` in your browser.
+3. Drag and drop a `.zip` (Shapefile) or `.geojson` file to upload.
+4. Click a file in the list to view details or open the map preview.
 
-## 地图预览：DuckDB Spatial 技术要点
-- CRS 识别：用 `ST_Read_Meta(path)` 读取 `layers[1].geometry_fields[1].crs.auth_name/auth_code`，写入 `files.crs`（如 `EPSG:4326`）
-- 重投影：用 `ST_Transform(geom, source_crs, 'EPSG:3857', always_xy := true|false)`
-  - 注意：EPSG:4326 在 PROJ 定义里轴顺序是 [lat, lon]；GeoJSON 常见是 [lon, lat]，需要 `always_xy := true`
-- 瓦片范围：`ST_TileEnvelope(z,x,y)` 返回 EPSG:3857 的 tile envelope
-- MVT 编码：`ST_AsMVTGeom` 先裁剪/缩放到 tile extent，再 `ST_AsMVT` 输出 tile blob
-- 参考文档（本机克隆）：`~/RiderProjects/duckdb-spatial/docs/functions.md`
+## Development
 
-## 最小界面（先落地最容易的）
-- 顶部：`上传`按钮（选择文件上传）
-- 列表列项：名称、类型、大小、上传时间、状态
-- 状态值：上传中（前端乐观）、等待处理（uploaded）、处理中（processing）、已就绪（ready）、失败（failed）
-- 空状态：提示“暂未上传文件”
-- 列表点击：高亮选中行，右侧展开详情侧栏
-- 详情侧栏：展示文件元数据（含 ID、CRS、错误信息），提供“Open Preview”按钮
-- 本阶段使用**表格视图**；后期可选添加图标视图切换
-
-## 最小接口（仅覆盖本阶段）
-- `POST /api/uploads`
-  - 表单字段：`file`
-  - 仅接受 `zip`（Shapefile）或 `.geojson`（单文件）
-  - 失败返回清晰错误（格式不支持 / 超过配置上限）
-  - 成功返回：新文件的元数据（同 `GET /api/files` 单条结构）
-- `GET /api/files`
-  - 返回列表字段：`id`、`name`、`type`、`size`、`uploadedAt`、`status`、`crs`
-
-## 最小存储约定（DuckDB + 文件系统）
-- 原始文件保存到：`./uploads/<id>/`
-- 元数据存储：DuckDB `files` 表
-- 空间数据存储：DuckDB `spatial_data` 表
-- 元数据字段（示例）：`id`、`name`、`type`、`size`、`uploadedAt`、`status`、`crs`、`path`、`error`
-- `crs`：若识别不到坐标系，则为 `null`
-- 状态流转（Status Lifecycle）：
-  - `uploading`：前端乐观状态（文件上传中）
-  - `uploaded`：后端已接收文件并落盘，等待后台处理
-  - `processing`：后台正在导入空间数据
-  - `ready`：空间数据导入完成，可预览
-  - `failed`：上传或导入失败（查看 error 字段）
-- 服务重启：启动时自动将 `processing` 状态更新为 `failed`（error: 'Server restarted during processing'），防止任务永久挂起
-
-## 本地开发
-后端使用 Rust (axum)，前端使用 React + Vite。
-
-### 代码质量与格式化（强烈建议启用）
-- Rust：提交前/CI 会执行 `cargo fmt` 与 `cargo clippy -D warnings`
-- Frontend：使用 Biome 执行代码格式化（`npm --prefix frontend run format`）
-
-#### 安装 git hooks
-仓库内置 hooks（路径：`.githooks/`）。本地执行一次：
-
-```bash
-./scripts/install-hooks.sh
-```
-
-安装后，`git commit` 会自动运行：
-- `cargo fmt --check`
-- `cargo clippy -D warnings`
-- `npm --prefix frontend run format:check`
-
-### 环境变量配置
-
-#### 后端配置
-- `PORT`：服务端口，默认 `3000`
-- `UPLOAD_MAX_SIZE_MB`：单文件大小上限（单位 MB，正整数），默认 `200`
-- `UPLOAD_DIR`：上传目录，默认 `./uploads`
-- `DB_PATH`：DuckDB 数据库文件路径，默认 `./data/mapflow.duckdb`
-
-#### 前端开发配置
-- `VITE_PORT`：前端开发服务器端口，默认 `5173`
-
-#### 测试配置
-- `TEST_PORT`：E2E 测试使用的端口，默认 `3000`
-
-### 使用 .env 文件
-
-1. 复制配置模板：`cp .env.example .env`
-2. 修改 `.env` 文件中的配置
-3. 启动服务（会自动读取 .env 文件）
-
-示例（仅当前命令生效）：
-```bash
-# 后端
-UPLOAD_MAX_SIZE_MB=50 cargo run --manifest-path backend/Cargo.toml
-
-# 前端
-VITE_PORT=3001 npm run dev
-
-# 测试
-TEST_PORT=9999 npm run test:e2e
-```
-
-### 避免端口冲突
-
-如需同时运行开发服务器和测试，可使用不同端口：
-
-```bash
-# 终端 1：开发服务器使用 8080 端口
-PORT=8080 cargo run --manifest-path backend/Cargo.toml
-
-# 终端 2：E2E 测试使用 9999 端口（避免冲突）
-TEST_PORT=9999 npm run test:e2e
-```
-
-### 可选：使用 justfile
-如果你安装了 `just`，可以用以下命令快速编排：
-- `just start` 或 `just dev`：同时启动前后端（最快开发模式）
-- `just docker-up`：Docker 启动（不重新构建）
-- `just docker-up-build`：Docker 重新构建并启动
-- `just build`：本地打包前端 + 构建后端
-- `just check`：运行 fmt 和 clippy 检查
-- `just test`：全量测试
-
-### 安装依赖
-- `just install`：安装前端依赖
-- 后端依赖会在首次运行 cargo 时自动下载
-
-### 启动开发环境
-1. 快速启动：`just start`
-   - 系统会自动选择空闲端口（避免冲突）
-   - **请查看终端输出**获取实际访问地址（例如 `Frontend will run at: http://localhost:xxxx`）
-2. 后端 API 地址也会在终端显示
-
-### 生产/测试（后端直出前端静态资源）
-1. 构建前端：`cd frontend && npm run build`
-2. 启动后端：`cargo run --manifest-path backend/Cargo.toml`
-3. 访问 `http://localhost:3000`
-
-### 行为测试（Playwright）
-1. 安装浏览器：`cd frontend && npx playwright install`
-2. 运行测试：`cd frontend && npm run test:e2e`
-
-## 行为测试清单
-行为测试的清单与约束记录在 `TESTS.md`，用于保持对外可观测行为的稳定契约。
-
-## 需要你确定的小点
-- 这一阶段不再扩展格式，先把上传与列表流程做顺。
-
-## TODO（下一步）
-- 将“release 构建不包含测试接口 `/api/test/reset`”的验证步骤写入测试/发布约束（文档化并尽量自动化）
-- 加速 E2E：Playwright worker 后端启动从 `cargo run` 优化为“预编译一次后直接运行二进制”（减少用例启动耗时）
-
-## Release 安全约束（测试接口）
-- 测试专用接口：`POST /api/test/reset`
-  - 仅在 debug 构建且设置 `MAPFLOW_TEST_MODE=1` 时注册
-  - release 构建永不包含该接口（即使设置了 `MAPFLOW_TEST_MODE=1`）
-- CI 会对 release 二进制做一次探测：启动后请求 `POST /api/test/reset`，期望返回非 2xx（通常为 404/405）
+**For Contributors & AI Agents:**
+- **Entry Point:** See [docs/dev.md](./docs/dev.md) for architecture, setup, and workflows.
+- **Behaviors:** See [docs/dev/behaviors.md](./docs/dev/behaviors.md) for API contracts.
+- **Testing:** See [docs/dev/testing.md](./docs/dev/testing.md) for verification checklists.
+- **Commands:**
+  - `just start` (Run app)
+  - `cargo test` / `npm test`
+  - `cargo clippy` / `cargo fmt`
