@@ -1,29 +1,51 @@
 # Testing & Quality Assurance
 
-This document outlines the observable behaviors used to verify system correctness.
+This document outlines the system behaviors and the strategy to verify them.
 
-## Behavior Checklist (Observable Contracts)
+## Verification Philosophy
 
-These behaviors must be verified by E2E tests (or manual regression) before merging.
+**Behaviors are contracts; tests are implementations.**
 
-| Behavior | Trigger | Expected Outcome |
-| --- | --- | --- |
-| **Upload (GeoJSON)** | UI upload `.geojson` | List shows file, status becomes "ready" |
-| **Upload (Shapefile)** | UI upload `.zip` | List shows file, status becomes "ready" |
-| **Persistence** | Restart server | Previously uploaded files remain visible in list |
-| **Validation (Format)** | Upload `.txt` or invalid ext | Error message displayed |
-| **Validation (Size)** | Upload file > Limit | Error message displayed |
-| **Validation (Structure)** | Upload invalid `.zip` | Error message displayed |
-| **Preview** | Click "Open Preview" | Opens new tab, map loads, tiles request returns 200 |
-| **Details** | Click list item | Sidebar shows metadata (CRS, size, etc.) |
-| **Status Update** | Upload large file | Status transitions: uploaded -> processing -> ready |
+1.  **Rule of Choice:** Verify each behavior at the **lowest appropriate layer** (Unit > Integration/API > E2E) to ensure speed and stability.
+2.  **Role of E2E:** Use E2E tests **ONLY** for critical "User Journeys" (cross-boundary flows) and browser-specific interactions. Do not use E2E for edge cases covered by lower layers.
+3.  **Manual Fallback:** Manual verification is allowed only as a temporary measure and must be documented.
 
-## Testing Strategy
+## 1. Critical User Journeys (E2E Required)
+
+These flows ensure the system works end-to-end for the user. They must be covered by Playwright tests.
+
+| Journey | Trigger | Expected Outcome |
+| :--- | :--- | :--- |
+| **Complete Upload Flow (GeoJSON)** | User uploads valid `.geojson` | List updates -> Status moves to `ready` -> Details accessible -> Preview opens map |
+| **Complete Upload Flow (Shapefile)** | User uploads valid `.zip` | List updates -> Status moves to `ready` -> Details accessible -> Preview opens map |
+| **Persistence across Restart** | Server restart after upload | Previously uploaded files remain visible and accessible in list/preview |
+| **Preview Integration** | User clicks "Open Preview" | New tab opens, map loads, tile requests succeed (200 OK & non-empty) |
+
+## 2. Behavioral Contracts (Layered Verification)
+
+These specific behaviors should be verified by the most efficient means possible.
+
+| Behavior | Trigger | Expected Outcome | Suggested Layer |
+| :--- | :--- | :--- | :--- |
+| **Validation (Format)** | Upload `.txt` / invalid ext | Reject with clear error | **API / Integration** |
+| **Validation (Size)** | Upload file > Limit | Reject with clear error | **API / Integration** |
+| **Validation (Zip Structure)** | Upload invalid `.zip` | Reject with clear error | **Unit / API** |
+| **Status State Machine** | File processing lifecycle | Status transitions: `uploading` -> `uploaded` -> `processing` -> `ready` | **Integration** |
+| **Details Metadata** | Request file details | Returns correct CRS, size, type | **API** |
+| **Tile Generation** | Request specific MVT tile | Returns valid binary MVT with correct geometry | **Unit / Integration** |
+
+## Testing Strategy & Commands
 
 ### E2E Tests (Playwright)
-- **Location:** `frontend/tests/` (or similar).
+*Focus: User Journeys, Browser Interaction, Routing.*
+- **Location:** `frontend/tests/`
 - **Command:** `npm --prefix frontend run test:e2e`
-- **Environment:** Each worker uses a distinct `PORT` and `DB_PATH` to prevent conflicts.
+- **Environment:** Each worker uses a distinct `PORT` and `DB_PATH`.
+
+### API / Integration Tests (Rust)
+*Focus: HTTP Contracts, DB State, File Processing, Validation.*
+- **Location:** `backend/tests/` (Integration) or `backend/src/**` (Unit)
+- **Command:** `cargo test`
 
 ### Release Safety Gate
 - **Requirement:** Release builds must NOT expose test endpoints.
@@ -32,6 +54,6 @@ These behaviors must be verified by E2E tests (or manual regression) before merg
 ## Code Quality Standards (CI Gates)
 
 | Language | Check Command |
-| --- | --- |
+| :--- | :--- |
 | **Rust** | `cargo fmt -- --check` && `cargo clippy -- -D warnings` |
 | **Frontend** | `biome format .` (or `npm run format:check`) |
