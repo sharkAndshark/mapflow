@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 const STATUS_LABELS = {
   uploading: '上传中',
@@ -96,7 +95,6 @@ function DetailSidebar({ file }) {
 }
 
 export default function App() {
-  const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -106,6 +104,55 @@ export default function App() {
   const selectedFile = useMemo(() => 
     files.find(f => f.id === selectedId) || null
   , [files, selectedId]);
+
+  // Polling Logic
+  useEffect(() => {
+    // Check if we have any files in a transient state that requires polling
+    // Note: 'uploading' is client-side only, but 'uploaded' and 'processing' are server states.
+    const hasActiveJobs = files.some(f => 
+      ['uploaded', 'processing'].includes(f.status)
+    );
+
+    if (!hasActiveJobs) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await fetch('/api/files');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        // Merge logic: currently we just replace the whole list. 
+        // Since 'uploading' is optimistic and local-only until the next fetch,
+        // we need to be careful not to wipe out a file currently being uploaded 
+        // if the server doesn't know about it yet.
+        // However, our current upload flow adds it to 'files' immediately as 'uploading'.
+        // The server list won't have the 'uploading' file until the POST finishes.
+        // So we should only update files that are NOT 'uploading'.
+        
+        setFiles(prevFiles => {
+          const uploadingFiles = prevFiles.filter(f => f.status === 'uploading');
+          // If the server returns a file that we thought was 'uploading', we should use the server's version.
+          // But usually 'uploading' means the POST hasn't returned yet.
+          
+          // Simple strategy: valid list from server + keep local 'uploading' ones
+          // DANGER: What if an 'uploading' file just finished?
+          // The POST request updates 'files' with the response (which is 'uploaded').
+          // So 'uploading' state is short-lived and controlled by handleFileChange.
+          // It's safer to just replace everything from server, BUT we must keep
+          // the 'uploading' ones that are NOT in the server list yet.
+          
+          const serverIds = new Set(data.map(f => f.id));
+          const stillUploading = uploadingFiles.filter(f => !serverIds.has(f.id));
+          
+          return [...stillUploading, ...data];
+        });
+      } catch (err) {
+        console.error("Polling failed", err);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(intervalId);
+  }, [files]); // Re-evaluate when files change (e.g. status updates)
 
   useEffect(() => {
     let cancelled = false;

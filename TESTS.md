@@ -16,6 +16,7 @@
 | 选中文件点击预览打开新标签页 | 侧栏中的“Open Preview”按钮 | 打开新标签页，URL 形如 `/preview/:id`，且页面不返回 404 |
 | 预览页加载地图瓦片 | 在预览页查看网络请求 | 包含 `/api/files/:id/tiles/z/x/y` 请求，状态码 200，响应头 `Content-Type: application/vnd.mapbox-vector-tile`，且至少有一个 Tile 响应体非空 |
 | 点击列表行显示侧栏详情 | 点击文件列表任一行 | 右侧出现详情栏，展示 name/type/size/status/uploadedAt；若有错误展示 error |
+| 文件状态自动刷新（轮询） | 上传后不刷新页面等待 | 状态从“等待处理/处理中”自动变为“已就绪” |
 
 ## 行为清单（计划补充）
 暂无
@@ -25,5 +26,5 @@
 - README 中的“最小接口/存储约定”变更时，应同步更新本文档
 
 ## 测试注意事项
-- 运行前端 e2e（`npm run test:e2e`）前请确保测试端口（默认 `3000`）未运行后端服务，否则会复用已有服务导致用例读取到非测试目录数据
-- 如需避免端口冲突，可通过环境变量 `TEST_PORT` 指定测试端口：`TEST_PORT=9999 npm run test:e2e`
+- E2E 测试为每个 Playwright worker 启动独立后端进程，使用独立的 `PORT/DB_PATH/UPLOAD_DIR`，避免并发时 DB 锁与文件串扰
+- 测试专用接口：`POST /api/test/reset` 仅在 debug 构建且设置 `MAPFLOW_TEST_MODE=1` 时注册；release 构建永不包含该接口

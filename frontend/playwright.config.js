@@ -7,19 +7,9 @@ export default defineConfig({
     timeout: 10_000
   },
   use: {
-    baseURL: `http://localhost:${process.env.TEST_PORT || 3000}`,
+    // We don't set a global baseURL because each worker has its own server.
+    // Our custom fixture handles URL resolution.
     trace: 'on-first-retry'
   },
-  webServer: {
-    command: 'cargo run --manifest-path backend/Cargo.toml',
-    cwd: '..',
-    port: Number(process.env.TEST_PORT || 3000),
-    reuseExistingServer: !process.env.CI,
-    env: {
-      WEB_DIST: 'frontend/dist',
-      UPLOAD_DIR: 'tmp/test-uploads',
-      DB_PATH: 'tmp/test-mapflow.duckdb',
-      PORT: String(process.env.TEST_PORT || 3000)
-    }
-  }
+  // Removed webServer config because we spawn servers per-worker in fixtures.js
 });

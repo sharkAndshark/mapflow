@@ -131,6 +131,15 @@ async fn main() {
         max_size_label,
     };
 
+    // Reconciliation: Mark any 'processing' files as 'failed' on startup
+    {
+        let conn = state.db.lock().await;
+        let _ = conn.execute(
+            "UPDATE files SET status = 'failed', error = 'Server restarted during processing' WHERE status = 'processing'",
+            [],
+        );
+    }
+
     let mut app = build_api_router(state.clone());
 
     let web_dist = std::env::var("WEB_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
@@ -149,23 +158,91 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("failed to bind");
+
     axum::serve(listener, app).await.expect("server failed");
 }
 
 fn build_api_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
         .allow_headers(Any);
 
-    Router::new()
+    let router: Router<AppState> = Router::new()
         .route("/api/files", get(list_files))
         .route("/api/uploads", post(upload_file))
         .route("/api/files/:id/preview", get(get_preview_meta))
-        .route("/api/files/:id/tiles/:z/:x/:y", get(get_tile))
-        .layer(DefaultBodyLimit::disable()) // Disable default 2MB limit
+        .route("/api/files/:id/tiles/:z/:x/:y", get(get_tile));
+
+    let router = add_test_routes(router);
+
+    router
+        .layer(DefaultBodyLimit::disable())
         .with_state(state)
         .layer(cors)
+}
+
+#[cfg(debug_assertions)]
+fn add_test_routes(router: Router<AppState>) -> Router<AppState> {
+    if std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1") {
+        println!("Test mode enabled (debug only): exposing POST /api/test/reset");
+        router.route("/api/test/reset", post(reset_test_state))
+    } else {
+        router
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn add_test_routes(router: Router<AppState>) -> Router<AppState> {
+    router
+}
+
+#[cfg(debug_assertions)]
+async fn reset_test_state(State(state): State<AppState>) -> impl IntoResponse {
+    let conn = state.db.lock().await;
+
+    if let Err(e) = conn.execute_batch("DELETE FROM spatial_data;\nDELETE FROM files;") {
+        eprintln!("Test Reset DB Error: {:?}", e);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "DB cleanup failed" })),
+        );
+    }
+
+    match fs::read_dir(&state.upload_dir).await {
+        Ok(mut entries) => {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Err(e) = fs::remove_dir_all(path).await {
+                        eprintln!("Test Reset FS Error: {:?}", e);
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({ "error": "Upload dir cleanup failed" })),
+                        );
+                    }
+                } else if let Err(e) = fs::remove_file(path).await {
+                    eprintln!("Test Reset FS Error: {:?}", e);
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({ "error": "Upload dir cleanup failed" })),
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Test Reset FS Error: {:?}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Upload dir read failed" })),
+            );
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "status": "reset_complete" })),
+    )
 }
 
 async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
@@ -213,7 +290,7 @@ async fn get_preview_meta(
     let mut stmt = conn
         .prepare("SELECT name, crs, path FROM files WHERE id = ?")
         .map_err(internal_error)?;
-    
+
     let meta: Option<(String, Option<String>, String)> = stmt
         .query_row(duckdb::params![id], |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?))
@@ -222,12 +299,19 @@ async fn get_preview_meta(
 
     let (name, crs, _path) = match meta {
         Some(m) => m,
-        None => return Err((StatusCode::NOT_FOUND, Json(ErrorResponse { error: "File not found".to_string() }))),
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            ))
+        }
     };
 
     // Calculate BBOX in WGS84
     // Note: If CRS is missing/null, we assume EPSG:4326 and always_xy=true (lon/lat) for simplicity
-    
+
     // Query for bbox components directly
     let bbox_components_query = format!(
         "SELECT ST_XMin(b), ST_YMin(b), ST_XMax(b), ST_YMax(b) FROM (
@@ -239,16 +323,16 @@ async fn get_preview_meta(
 
     let bbox_values: Option<[f64; 4]> = conn
         .query_row(&bbox_components_query, duckdb::params![id], |row| {
-             let minx: Option<f64> = row.get(0).ok();
-             let miny: Option<f64> = row.get(1).ok();
-             let maxx: Option<f64> = row.get(2).ok();
-             let maxy: Option<f64> = row.get(3).ok();
-             
-             if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (minx, miny, maxx, maxy) {
-                 Ok([x1, y1, x2, y2])
-             } else {
-                 Ok([0.0, 0.0, 0.0, 0.0]) // Handle empty result
-             }
+            let minx: Option<f64> = row.get(0).ok();
+            let miny: Option<f64> = row.get(1).ok();
+            let maxx: Option<f64> = row.get(2).ok();
+            let maxy: Option<f64> = row.get(3).ok();
+
+            if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (minx, miny, maxx, maxy) {
+                Ok([x1, y1, x2, y2])
+            } else {
+                Ok([0.0, 0.0, 0.0, 0.0]) // Handle empty result
+            }
         })
         .ok()
         .filter(|b| b != &[0.0, 0.0, 0.0, 0.0]);
@@ -265,13 +349,27 @@ async fn get_tile(
     State(state): State<AppState>,
     AxumPath((id, z, x, y)): AxumPath<(String, i32, i32, i32)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    println!("Received tile request: id={}, z={}, x={}, y={}", id, z, x, y);
+    println!(
+        "Received tile request: id={}, z={}, x={}, y={}",
+        id, z, x, y
+    );
     let conn = state.db.lock().await;
 
     // 1. Get CRS for the file
     let crs: Option<String> = conn
-        .query_row("SELECT crs FROM files WHERE id = ?", duckdb::params![id], |row| row.get(0))
-        .map_err(|_| (StatusCode::NOT_FOUND, Json(ErrorResponse { error: "File not found".to_string() })))?;
+        .query_row(
+            "SELECT crs FROM files WHERE id = ?",
+            duckdb::params![id],
+            |row| row.get(0),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
 
     let source_crs = crs.as_deref().unwrap_or("EPSG:4326");
 
@@ -282,7 +380,7 @@ async fn get_tile(
     //  - ST_TileEnvelope(z, x, y) to get tile bounds in 3857
     //  - ST_AsMVTGeom(geom_3857, tile_env) to clip/transform to tile coords
     //  - ST_AsMVT(...) to encode
-    
+
     let select_sql = format!(
         "SELECT ST_AsMVT(feature) FROM (
             SELECT {{
@@ -304,35 +402,37 @@ async fn get_tile(
     println!("Executing SQL for tile z={z} x={x} y={y} id={id}");
 
     // Params: z, x, y, source_id, z, x, y
-    let mvt_blob: Option<Vec<u8>> = match conn.query_row(
-        &select_sql,
-        duckdb::params![z, x, y, id, z, x, y],
-        |row| row.get(0)
-    ) {
-        Ok(blob) => Some(blob),
-        Err(e) => {
-            eprintln!("Tile Error (z={z}, x={x}, y={y}): {:?}", e);
-            eprintln!("SQL that failed: {}", select_sql);
-            return Err(internal_error(format!("Tile generation failed: {}", e)));
-        }
-    };
+    let mvt_blob: Option<Vec<u8>> =
+        match conn.query_row(&select_sql, duckdb::params![z, x, y, id, z, x, y], |row| {
+            row.get(0)
+        }) {
+            Ok(blob) => Some(blob),
+            Err(e) => {
+                eprintln!("Tile Error (z={z}, x={x}, y={y}): {:?}", e);
+                eprintln!("SQL that failed: {}", select_sql);
+                return Err(internal_error(format!("Tile generation failed: {}", e)));
+            }
+        };
 
-    println!("Tile Request: z={z}, x={x}, y={y}, Blob Size: {:?}", mvt_blob.as_ref().map(|v| v.len()));
+    println!(
+        "Tile Request: z={z}, x={x}, y={y}, Blob Size: {:?}",
+        mvt_blob.as_ref().map(|v| v.len())
+    );
 
     match mvt_blob {
-        Some(blob) if !blob.is_empty() => {
-             Ok((
-                [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
-                blob
-            ).into_response())
-        },
+        Some(blob) if !blob.is_empty() => Ok((
+            [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
+            blob,
+        )
+            .into_response()),
         _ => {
             // Return empty response or 204? Mapbox clients usually expect 200 with empty body or valid PBF.
             // An empty blob is a valid MVT (empty).
-             Ok((
+            Ok((
                 [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
-                Vec::new()
-            ).into_response())
+                Vec::new(),
+            )
+                .into_response())
         }
     }
 }
@@ -392,7 +492,6 @@ async fn upload_file(
     }
     file.flush().await.map_err(internal_error)?;
     drop(file); // Explicitly close file to release lock
-
 
     let base_name = Path::new(&safe_name)
         .file_stem()
@@ -487,7 +586,10 @@ async fn upload_file(
                 );
             }
             Err(e) => {
-                eprintln!("Failed to import spatial data for {}: {}", upload_id_clone, e);
+                eprintln!(
+                    "Failed to import spatial data for {}: {}",
+                    upload_id_clone, e
+                );
                 // Update status to failed
                 let conn = db.lock().await;
                 let _ = conn.execute(
@@ -535,7 +637,7 @@ async fn import_spatial_data(
 
     // 1. Detect CRS using ST_Read_Meta
     // layers[1].geometry_fields[1].crs.auth_name / auth_code
-    // Note: ST_Read_Meta return structure depends on the file. 
+    // Note: ST_Read_Meta return structure depends on the file.
     // We try to get the first layer's CRS.
     // List indexing in DuckDB is 1-based.
     let crs_query = format!(
@@ -545,10 +647,13 @@ async fn import_spatial_data(
     );
 
     let detected_crs: Option<String> = conn.query_row(&crs_query, [], |row| row.get(0)).ok();
-    
+
     // Update files table with detected CRS
     if let Some(crs) = &detected_crs {
-        let _ = conn.execute("UPDATE files SET crs = ? WHERE id = ?", duckdb::params![crs, source_id]);
+        let _ = conn.execute(
+            "UPDATE files SET crs = ? WHERE id = ?",
+            duckdb::params![crs, source_id],
+        );
     }
 
     // 2. Import Data
@@ -579,11 +684,11 @@ fn format_bytes(bytes: u64) -> String {
     const MB: u64 = 1024 * 1024;
     const GB: u64 = 1024 * 1024 * 1024;
 
-    if bytes >= GB && bytes % GB == 0 {
+    if bytes >= GB && bytes.is_multiple_of(GB) {
         format!("{}GB", bytes / GB)
-    } else if bytes >= MB && bytes % MB == 0 {
+    } else if bytes >= MB && bytes.is_multiple_of(MB) {
         format!("{}MB", bytes / MB)
-    } else if bytes >= KB && bytes % KB == 0 {
+    } else if bytes >= KB && bytes.is_multiple_of(KB) {
         format!("{}KB", bytes / KB)
     } else {
         format!("{}B", bytes)
@@ -667,7 +772,7 @@ fn internal_error<E: std::fmt::Debug>(error: E) -> (StatusCode, Json<ErrorRespon
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse {
-            error: "Upload failed".to_string(),
+            error: "Internal Server Error".to_string(),
         }),
     )
 }
@@ -676,14 +781,11 @@ fn internal_error<E: std::fmt::Debug>(error: E) -> (StatusCode, Json<ErrorRespon
 mod tests {
     use super::*;
     use axum::body::Body;
-    use axum::http::{header, Request};
+    use axum::http::Request;
     use http_body_util::BodyExt;
-    use std::io::{Cursor, Write};
     use std::sync::OnceLock;
     use tempfile::TempDir;
     use tower::util::ServiceExt;
-    use zip::write::FileOptions;
-    use zip::ZipWriter;
 
     static ENV_LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
 
@@ -693,7 +795,8 @@ mod tests {
         fs::create_dir_all(&upload_dir).await.ok();
 
         let conn = duckdb::Connection::open_in_memory().expect("Failed to create test database");
-        conn.execute_batch("INSTALL spatial; LOAD spatial;").unwrap();
+        conn.execute_batch("INSTALL spatial; LOAD spatial;")
+            .unwrap();
 
         conn.execute_batch(
             r"
@@ -728,28 +831,6 @@ mod tests {
         };
 
         (state, temp_dir)
-    }
-
-    fn multipart_body(
-        field_name: &str,
-        filename: &str,
-        content_type: &str,
-        data: &[u8],
-    ) -> (String, Vec<u8>) {
-        let boundary = "BOUNDARY123456";
-        let mut body = Vec::new();
-        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        body.extend_from_slice(
-            format!(
-                "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n"
-            )
-            .as_bytes(),
-        );
-        body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
-        body.extend_from_slice(data);
-        body.extend_from_slice(b"\r\n");
-        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
-        (boundary.to_string(), body)
     }
 
     async fn response_json<T: serde::de::DeserializeOwned>(
@@ -805,9 +886,9 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                .uri("/api/files")
-                .body(Body::empty())
-                .unwrap(),
+                    .uri("/api/files")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();

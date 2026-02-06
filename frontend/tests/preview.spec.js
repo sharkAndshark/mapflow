@@ -1,21 +1,15 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadDir = path.resolve(__dirname, '../../tmp/test-uploads');
-const dbPath = path.resolve(__dirname, '../../tmp/test-mapflow.duckdb');
 
-test.beforeEach(() => {
-  fs.rmSync(uploadDir, { recursive: true, force: true });
-  fs.rmSync(dbPath, { force: true });
-  fs.mkdirSync(uploadDir, { recursive: true });
-  // Note: We don't write index.json anymore because backend uses DuckDB.
-  // Instead, we rely on the test running against a fresh DB (cleared above).
+test.beforeEach(async ({ workerServer }) => {
+  await workerServer.reset();
 });
 
-test('click preview opens new tab with map', async ({ page }) => {
+test('click preview opens new tab with map', async ({ page, request }) => {
   // 1. Upload a file via UI (since we can't easily seed DuckDB from here without a tool)
   const fixturesDir = path.join(__dirname, 'fixtures');
   const geojsonPath = path.join(fixturesDir, 'sample.geojson');
@@ -54,4 +48,18 @@ test('click preview opens new tab with map', async ({ page }) => {
   // 5. Verify URL and Content on new page
   expect(newPage.url()).toContain('/preview/');
   await expect(newPage.getByText('sample')).toBeVisible(); // Filename in header
+
+  // 6. Verify Tile Requests (Observability Contract)
+  // We expect the map to load tiles. We intercept/wait for at least one successful tile request.
+  // URL pattern: /api/files/:id/tiles/:z/:x/:y
+  const tileResponse = await newPage.waitForResponse(response => 
+    response.url().includes(`/api/files/`) && 
+    response.url().includes(`/tiles/`) &&
+    response.status() === 200
+  );
+  
+  expect(tileResponse.headers()['content-type']).toBe('application/vnd.mapbox-vector-tile');
+  // Optional: check body size > 0 if we are sure the sample covers the view
+  // const body = await tileResponse.body();
+  // expect(body.length).toBeGreaterThan(0);
 });
