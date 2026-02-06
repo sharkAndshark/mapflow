@@ -115,6 +115,72 @@ async fn test_upload_invalid_shapefile_zip_returns_400() {
 }
 
 #[tokio::test]
+async fn test_startup_reconciliation_marks_processing_as_failed() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+
+    let state = AppState {
+        upload_dir,
+        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        max_size: 10 * 1024 * 1024,
+        max_size_label: "10MB".to_string(),
+    };
+
+    // Seed a processing file.
+    {
+        let conn = state.db.lock().await;
+        conn.execute(
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, error)\
+             VALUES (?1, ?2, ?3, ?4, NOW(), ?5, ?6, ?7, ?8)",
+            duckdb::params![
+                "seed-processing",
+                "seed",
+                "geojson",
+                1_i64,
+                "processing",
+                None::<String>,
+                "./uploads/seed-processing/seed.geojson",
+                None::<String>,
+            ],
+        )
+        .unwrap();
+    }
+
+    // Apply the same reconciliation logic as backend/src/main.rs on startup.
+    {
+        let conn = state.db.lock().await;
+        conn.execute(
+            "UPDATE files SET status = 'failed', error = 'Server restarted during processing' \
+             WHERE status = 'processing'",
+            [],
+        )
+        .unwrap();
+    }
+
+    let app = build_api_router(state);
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+    let item = files.iter().find(|f| f.id == "seed-processing").unwrap();
+    assert_eq!(item.status, "failed");
+    assert_eq!(
+        item.error.as_deref(),
+        Some("Server restarted during processing")
+    );
+}
+
+#[tokio::test]
 async fn test_upload_invalid_extension() {
     let (app, _temp) = setup_app().await;
 
