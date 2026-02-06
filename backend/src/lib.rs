@@ -21,6 +21,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 mod config;
 mod db;
+mod http_errors;
 mod import;
 mod test_routes;
 mod tiles;
@@ -30,6 +31,7 @@ pub use config::{format_bytes, read_max_size_config};
 pub use db::{
     init_database, reconcile_processing_files, DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
 };
+use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
@@ -481,34 +483,6 @@ fn create_id() -> String {
     let mut bytes = [0u8; 3];
     rand::thread_rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
-}
-
-fn bad_request(message: &str) -> (StatusCode, Json<ErrorResponse>) {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(ErrorResponse {
-            error: message.to_string(),
-        }),
-    )
-}
-
-fn payload_too_large(message: &str) -> (StatusCode, Json<ErrorResponse>) {
-    (
-        StatusCode::PAYLOAD_TOO_LARGE,
-        Json(ErrorResponse {
-            error: message.to_string(),
-        }),
-    )
-}
-
-fn internal_error<E: std::fmt::Debug>(error: E) -> (StatusCode, Json<ErrorResponse>) {
-    eprintln!("Internal Error: {:?}", error);
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse {
-            error: "Internal Server Error".to_string(),
-        }),
-    )
 }
 
 #[cfg(test)]
