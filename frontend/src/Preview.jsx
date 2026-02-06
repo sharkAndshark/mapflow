@@ -73,12 +73,6 @@ export default function Preview() {
         // Remove geometry from properties to avoid cluttering popup
         const { geometry, ...props } = properties;
         setPopupContent(props);
-        
-        // Simple popup positioning (could use ol/Overlay for better UI)
-        // For now, we just show React state based UI over the map or sidebar
-        // But users expect a popup at location. 
-        // Let's use a simple overlay logic if needed, or just side panel.
-        // Given constraints, I'll render a fixed info box or overlay. 
       } else {
         setPopupContent(null);
       }
@@ -128,27 +122,6 @@ export default function Preview() {
 
   }, [meta, id]);
 
-  if (error) {
-    return (
-      <div className="preview-page error">
-        <header className="header">
-             <Link to="/" className="back-link">← Back</Link>
-             <h1>Error</h1>
-        </header>
-        <div className="alert error-alert">{error}</div>
-      </div>
-    );
-  }
-
-  if (!meta) {
-    return (
-        <div className="preview-page loading">
-             <div className="spinner"></div>
-             <p>Loading Map Data...</p>
-        </div>
-    );
-  }
-
   return (
     <div className="preview-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
        <header className="header" style={{ 
@@ -160,15 +133,40 @@ export default function Preview() {
            gap: '16px'
        }}>
          <Link to="/" className="back-link">← Back</Link>
-         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
-            {meta.crs && <span className="badge">{meta.crs}</span>}
-         </div>
+         {meta && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
+                {meta.crs && <span className="badge">{meta.crs}</span>}
+            </div>
+         )}
        </header>
 
-       <div style={{ flex: '1 1 auto', position: 'relative' }}>
+       <div style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden' }}>
           <div ref={mapElement} style={{ width: '100%', height: '100%', background: '#f5f4f2' }} />
           
+          {/* Loading Overlay */}
+          {!meta && !error && (
+            <div style={{
+                position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.8)',
+                display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '10px',
+                zIndex: 10
+            }}>
+                 <div className="spinner"></div>
+                 <p>Loading Map Data...</p>
+            </div>
+          )}
+
+          {/* Error Overlay */}
+          {error && (
+            <div style={{
+                position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.9)',
+                display: 'flex', justifyContent: 'center', alignItems: 'center',
+                zIndex: 20
+            }}>
+                <div className="alert error-alert">{error}</div>
+            </div>
+          )}
+
           {/* Simple Property Inspector Overlay */}
           {popupContent && (
             <div style={{
