@@ -7,6 +7,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '../../');
 
 // Helper to wait for port
 const waitForPort = async (port, timeout = 30000) => {
@@ -50,11 +51,30 @@ export const test = base.extend({
     console.log(`[Worker ${workerId}] Starting backend on port ${port}...`);
 
     // 2. Spawn Backend Process
-    // We use the compiled binary if available, or cargo run.
-    // 'cargo run' is slower to start, so if you ran `cargo build`, binary is faster.
-    // For now we use cargo run but optimized to not rebuild if not needed.
-    const backendProcess = spawn('cargo', ['run', '--quiet', '--manifest-path', 'backend/Cargo.toml'], {
-      cwd: path.resolve(__dirname, '../../'),
+    // Prefer running the precompiled backend binary for speed.
+    // Fallback to `cargo run` only when the binary is not available.
+    const exeExt = process.platform === 'win32' ? '.exe' : '';
+    const binaryCandidates = [
+      path.join(repoRoot, 'target', 'debug', `backend${exeExt}`),
+      path.join(repoRoot, 'backend', 'target', 'debug', `backend${exeExt}`),
+    ];
+
+    let backendCommand = 'cargo';
+    let backendArgs = ['run', '--quiet', '--manifest-path', 'backend/Cargo.toml'];
+    for (const candidate of binaryCandidates) {
+      if (fs.existsSync(candidate)) {
+        backendCommand = candidate;
+        backendArgs = [];
+        break;
+      }
+    }
+
+    console.log(
+      `[Worker ${workerId}] Backend cmd: ${backendCommand}${backendArgs.length ? ` ${backendArgs.join(' ')}` : ''}`
+    );
+
+    const backendProcess = spawn(backendCommand, backendArgs, {
+      cwd: repoRoot,
       env: {
         ...process.env,
         PORT: String(port),

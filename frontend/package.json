@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "test:e2e": "npm run build && playwright test"
+    "build:backend": "cargo build --manifest-path ../backend/Cargo.toml",
+    "test:e2e": "npm run build && npm run build:backend && playwright test"
   },
   "dependencies": {
     "ol": "^10.7.0",
