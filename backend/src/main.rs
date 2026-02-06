@@ -290,8 +290,7 @@ async fn get_tile(
                     ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),
                     ST_Extent(ST_TileEnvelope(?, ?, ?)),
                     4096, 256, true
-                ),
-                'properties': properties
+                )
             }} as feature
             FROM spatial_data
             WHERE source_id = ? 
@@ -303,7 +302,6 @@ async fn get_tile(
     );
 
     println!("Executing SQL for tile z={z} x={x} y={y} id={id}");
-    println!("SQL: {}", select_sql);
 
     // Params: z, x, y, source_id, z, x, y
     let mvt_blob: Option<Vec<u8>> = match conn.query_row(
@@ -315,7 +313,7 @@ async fn get_tile(
         Err(e) => {
             eprintln!("Tile Error (z={z}, x={x}, y={y}): {:?}", e);
             eprintln!("SQL that failed: {}", select_sql);
-            None
+            return Err(internal_error(format!("Tile generation failed: {}", e)));
         }
     };
 
@@ -470,13 +468,20 @@ async fn upload_file(
     let file_path_clone = file_path.clone();
     let file_type_str = file_type.to_string();
     tokio::spawn(async move {
-        if let Err(e) =
-            import_spatial_data(&db, &upload_id_clone, &file_path_clone, &file_type_str).await
-        {
-            eprintln!(
-                "Failed to import spatial data for {}: {}",
-                upload_id_clone, e
-            );
+        match import_spatial_data(&db, &upload_id_clone, &file_path_clone, &file_type_str).await {
+            Ok(_) => {
+                println!("Successfully imported spatial data for {}", upload_id_clone);
+                // Status is already "uploaded", but we could change it to "ready" or "processed" if we had that state
+            }
+            Err(e) => {
+                eprintln!("Failed to import spatial data for {}: {}", upload_id_clone, e);
+                // Update status to failed
+                let conn = db.lock().await;
+                let _ = conn.execute(
+                    "UPDATE files SET status = 'failed', error = ? WHERE id = ?",
+                    duckdb::params![e, upload_id_clone],
+                );
+            }
         }
     });
 
