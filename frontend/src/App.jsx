@@ -34,7 +34,7 @@ function DetailSidebar({ file }) {
 
   const isReady = file.status === 'ready';
   const isFailed = file.status === 'failed';
-  const canPreview = isReady || file.status === 'uploaded'; // uploaded allows preview (though maybe empty)
+  const canPreview = isReady;
 
   return (
     <div className="detail-content">
@@ -79,14 +79,20 @@ function DetailSidebar({ file }) {
       )}
 
       <div className="detail-actions">
-        <a
-          href={`/preview/${file.id}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`btn-primary ${!canPreview ? 'disabled' : ''}`}
-        >
-          Open Preview
-        </a>
+        {canPreview ? (
+          <a
+            href={`/preview/${file.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary"
+          >
+            Open Preview
+          </a>
+        ) : (
+          <span className="btn-primary disabled" aria-disabled="true">
+            Open Preview
+          </span>
+        )}
       </div>
     </div>
   );
@@ -257,8 +263,9 @@ export default function App() {
                   <div>状态</div>
                 </div>
                 {orderedFiles.map((item) => (
-                  <div
+                  <button
                     key={item.id}
+                    type="button"
                     className={`row ${selectedId === item.id ? 'selected' : ''}`}
                     onClick={() => setSelectedId(item.id)}
                   >
@@ -271,7 +278,7 @@ export default function App() {
                     <div className={`status ${item.status || 'uploaded'}`}>
                       {STATUS_LABELS[item.status] || item.status}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
