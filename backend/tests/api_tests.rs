@@ -5,6 +5,7 @@ use backend::{
     PROCESSING_RECONCILIATION_ERROR,
 };
 use http_body_util::BodyExt; // for collect()
+use mvt_reader::{feature::Value as MvtValue, Reader as MvtReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -68,213 +69,38 @@ fn multipart_body(boundary: &str, filename: &str, bytes: &[u8]) -> Vec<u8> {
     body
 }
 
-fn read_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
-    let mut result: u64 = 0;
-    let mut shift = 0;
-    while *pos < buf.len() && shift <= 63 {
-        let b = buf[*pos];
-        *pos += 1;
-        result |= ((b & 0x7f) as u64) << shift;
-        if (b & 0x80) == 0 {
-            return Some(result);
-        }
-        shift += 7;
-    }
-    None
-}
-
-fn read_len_delimited<'a>(buf: &'a [u8], pos: &mut usize) -> Option<&'a [u8]> {
-    let len = read_varint(buf, pos)? as usize;
-    if *pos + len > buf.len() {
-        return None;
-    }
-    let out = &buf[*pos..*pos + len];
-    *pos += len;
-    Some(out)
-}
-
-fn skip_field(buf: &[u8], pos: &mut usize, wire_type: u8) -> Option<()> {
-    match wire_type {
-        0 => {
-            let _ = read_varint(buf, pos)?;
-            Some(())
-        }
-        1 => {
-            *pos = pos.checked_add(8)?;
-            if *pos > buf.len() {
-                return None;
-            }
-            Some(())
-        }
-        2 => {
-            let _ = read_len_delimited(buf, pos)?;
-            Some(())
-        }
-        5 => {
-            *pos = pos.checked_add(4)?;
-            if *pos > buf.len() {
-                return None;
-            }
-            Some(())
-        }
-        _ => None,
-    }
-}
-
-fn parse_packed_u32(buf: &[u8]) -> Option<Vec<u32>> {
-    let mut pos = 0;
-    let mut out = Vec::new();
-    while pos < buf.len() {
-        let v = read_varint(buf, &mut pos)?;
-        out.push(v as u32);
-    }
-    Some(out)
-}
-
-fn layer_has_string_tag(layer: &[u8], want_key: &str, want_value: &str) -> bool {
-    // Collect keys and values; then scan features for tags.
-    let mut keys: Vec<String> = Vec::new();
-    let mut values: Vec<Option<String>> = Vec::new();
-    let mut features: Vec<Vec<u32>> = Vec::new();
-
-    let mut pos = 0;
-    while pos < layer.len() {
-        let key = match read_varint(layer, &mut pos) {
-            Some(v) => v,
-            None => return false,
-        };
-        let field = (key >> 3) as u32;
-        let wire = (key & 0x07) as u8;
-
-        match (field, wire) {
-            // keys: repeated string
-            (3, 2) => {
-                let s = match read_len_delimited(layer, &mut pos) {
-                    Some(b) => b,
-                    None => return false,
-                };
-                let s = match std::str::from_utf8(s) {
-                    Ok(v) => v.to_string(),
-                    Err(_) => return false,
-                };
-                keys.push(s);
-            }
-            // values: repeated message
-            (4, 2) => {
-                let msg = match read_len_delimited(layer, &mut pos) {
-                    Some(b) => b,
-                    None => return false,
-                };
-                values.push(parse_value_string(msg));
-            }
-            // features: repeated message
-            (2, 2) => {
-                let msg = match read_len_delimited(layer, &mut pos) {
-                    Some(b) => b,
-                    None => return false,
-                };
-                if let Some(tags) = parse_feature_tags(msg) {
-                    features.push(tags);
-                }
-            }
-            _ => {
-                if skip_field(layer, &mut pos, wire).is_none() {
-                    return false;
-                }
-            }
-        }
-    }
-
-    let Some(want_key_index) = keys.iter().position(|k| k == want_key) else {
-        return false;
+fn mvt_has_string_tag(tile: &[u8], want_key: &str, want_value: &str) -> bool {
+    let reader = match MvtReader::new(tile.to_vec()) {
+        Ok(v) => v,
+        Err(_) => return false,
     };
 
-    for tags in features {
-        // tags are pairs: [key_index, value_index, ...]
-        for pair in tags.chunks_exact(2) {
-            let k = pair[0] as usize;
-            let v = pair[1] as usize;
-            if k == want_key_index {
-                if let Some(Some(s)) = values.get(v) {
-                    if s == want_value {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
+    let layers = match reader.get_layer_names() {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
 
-    false
-}
-
-fn parse_feature_tags(feature: &[u8]) -> Option<Vec<u32>> {
-    let mut pos = 0;
-    while pos < feature.len() {
-        let key = read_varint(feature, &mut pos)?;
-        let field = (key >> 3) as u32;
-        let wire = (key & 0x07) as u8;
-        match (field, wire) {
-            // tags: packed uint32
-            (2, 2) => {
-                let packed = read_len_delimited(feature, &mut pos)?;
-                return parse_packed_u32(packed);
-            }
-            _ => {
-                skip_field(feature, &mut pos, wire)?;
-            }
-        }
-    }
-    None
-}
-
-fn parse_value_string(value: &[u8]) -> Option<String> {
-    let mut pos = 0;
-    while pos < value.len() {
-        let key = read_varint(value, &mut pos)?;
-        let field = (key >> 3) as u32;
-        let wire = (key & 0x07) as u8;
-        match (field, wire) {
-            // string_value
-            (1, 2) => {
-                let s = read_len_delimited(value, &mut pos)?;
-                let s = std::str::from_utf8(s).ok()?.to_string();
-                return Some(s);
-            }
-            _ => {
-                skip_field(value, &mut pos, wire)?;
-            }
-        }
-    }
-    None
-}
-
-fn mvt_has_string_tag(tile: &[u8], want_key: &str, want_value: &str) -> bool {
-    let mut pos = 0;
-    while pos < tile.len() {
-        let key = match read_varint(tile, &mut pos) {
-            Some(v) => v,
-            None => return false,
+    for (layer_index, _layer_name) in layers.into_iter().enumerate() {
+        let features = match reader.get_features(layer_index) {
+            Ok(v) => v,
+            Err(_) => continue,
         };
-        let field = (key >> 3) as u32;
-        let wire = (key & 0x07) as u8;
-        match (field, wire) {
-            // layers: repeated message
-            (3, 2) => {
-                let layer = match read_len_delimited(tile, &mut pos) {
-                    Some(b) => b,
-                    None => return false,
-                };
-                if layer_has_string_tag(layer, want_key, want_value) {
+
+        for f in features {
+            let Some(props) = f.properties.as_ref() else {
+                continue;
+            };
+            let Some(v) = props.get(want_key) else {
+                continue;
+            };
+            if let MvtValue::String(s) = v {
+                if s == want_value {
                     return true;
                 }
             }
-            _ => {
-                if skip_field(tile, &mut pos, wire).is_none() {
-                    return false;
-                }
-            }
         }
     }
+
     false
 }
 

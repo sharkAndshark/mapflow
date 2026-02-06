@@ -20,3 +20,4 @@ axum-extra = { version = "0.12.5", features = ["query"] }
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile = "3"
+mvt-reader = "2.2.0"
