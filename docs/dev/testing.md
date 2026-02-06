@@ -83,6 +83,8 @@ Note: The frontend currently relies on Playwright E2E as its only automated test
 - **Note:** `backend/tests/` is the canonical place for HTTP/API contract tests; `backend/src/**` unit tests are for pure helpers.
 - **Command:** `cargo test`
 
+Note: When asserting MVT contents (properties/tags), prefer using a mature decoder (e.g. `mvt-reader`) over hand-rolled protobuf parsing.
+
 ### Release Safety Gate
 - **Requirement:** Release builds must NOT expose test endpoints.
 - **Verification:** CI builds release binary, starts it, and asserts `POST /api/test/reset` returns 404/405.

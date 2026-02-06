@@ -70,6 +70,13 @@ This document defines the technical contracts, API specifications, and storage c
 
 Note: Backend currently persists `uploaded`, `processing`, `ready`, `failed`. The `uploading` state exists only on the frontend.
 
+## UI Observable Contracts
+
+### Preview Availability
+
+- The UI MUST allow opening the preview page only when the selected file `status` is `ready`.
+- When the file is not `ready` (`uploaded`, `processing`, `failed`), the UI MUST present the preview action as disabled (not clickable).
+
 ## Technical Implementation Details
 
 ### DuckDB Spatial Usage
