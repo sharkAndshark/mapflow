@@ -5,7 +5,7 @@ const STATUS_LABELS = {
   uploaded: '等待处理',
   processing: '处理中',
   ready: '已就绪',
-  failed: '失败'
+  failed: '失败',
 };
 
 function formatSize(bytes) {
@@ -55,9 +55,7 @@ function DetailSidebar({ file }) {
 
       <div className="detail-group">
         <div className="detail-label">Status</div>
-        <div className={`status ${file.status}`}>
-           {STATUS_LABELS[file.status] || file.status}
-        </div>
+        <div className={`status ${file.status}`}>{STATUS_LABELS[file.status] || file.status}</div>
       </div>
 
       <div className="detail-group">
@@ -81,7 +79,7 @@ function DetailSidebar({ file }) {
       )}
 
       <div className="detail-actions">
-        <a 
+        <a
           href={`/preview/${file.id}`}
           target="_blank"
           rel="noopener noreferrer"
@@ -101,13 +99,14 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Derive selected file object
-  const selectedFile = useMemo(() => 
-    files.find(f => f.id === selectedId) || null
-  , [files, selectedId]);
+  const selectedFile = useMemo(
+    () => files.find((f) => f.id === selectedId) || null,
+    [files, selectedId],
+  );
 
   const hasActiveJobs = useMemo(
     () => files.some((f) => ['uploaded', 'processing'].includes(f.status)),
-    [files]
+    [files],
   );
 
   // Polling Logic
@@ -181,7 +180,7 @@ export default function App() {
       size: file.size,
       uploadedAt: new Date().toISOString(),
       status: 'uploading',
-      crs: null
+      crs: null,
     };
 
     setFiles((prev) => [optimistic, ...prev]);
@@ -194,7 +193,7 @@ export default function App() {
     try {
       const res = await fetch('/api/uploads', {
         method: 'POST',
-        body: formData
+        body: formData,
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -208,8 +207,8 @@ export default function App() {
       setErrorMessage(message);
       setFiles((prev) =>
         prev.map((item) =>
-          item.id === tempId ? { ...item, status: 'failed', error: message } : item
-        )
+          item.id === tempId ? { ...item, status: 'failed', error: message } : item,
+        ),
       );
     }
   }
@@ -277,9 +276,9 @@ export default function App() {
               </div>
             )}
           </div>
-          
+
           <div className="detail-area">
-             <DetailSidebar file={selectedFile} />
+            <DetailSidebar file={selectedFile} />
           </div>
         </div>
       </section>

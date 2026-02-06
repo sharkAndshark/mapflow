@@ -10,8 +10,8 @@ export default defineConfig(() => {
     server: {
       port: Number(frontendPort),
       proxy: {
-        '/api': `http://127.0.0.1:${backendPort}`
-      }
-    }
+        '/api': `http://127.0.0.1:${backendPort}`,
+      },
+    },
   };
 });

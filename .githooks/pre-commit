@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+
+echo "[pre-commit] cargo fmt (check)"
+cargo fmt --all -- --check
+
+echo "[pre-commit] cargo clippy"
+cargo clippy --manifest-path "$ROOT_DIR/backend/Cargo.toml" --all-targets -- -D warnings
+
+if [ -f "$ROOT_DIR/frontend/package.json" ]; then
+  echo "[pre-commit] frontend biome format (check)"
+  npm --prefix "$ROOT_DIR/frontend" run -s format:check
+fi

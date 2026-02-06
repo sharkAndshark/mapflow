@@ -80,6 +80,22 @@
 ## 本地开发
 后端使用 Rust (axum)，前端使用 React + Vite。
 
+### 代码质量与格式化（强烈建议启用）
+- Rust：提交前/CI 会执行 `cargo fmt` 与 `cargo clippy -D warnings`
+- Frontend：使用 Biome 执行代码格式化（`npm --prefix frontend run format`）
+
+#### 安装 git hooks
+仓库内置 hooks（路径：`.githooks/`）。本地执行一次：
+
+```bash
+./scripts/install-hooks.sh
+```
+
+安装后，`git commit` 会自动运行：
+- `cargo fmt --check`
+- `cargo clippy -D warnings`
+- `npm --prefix frontend run format:check`
+
 ### 环境变量配置
 
 #### 后端配置

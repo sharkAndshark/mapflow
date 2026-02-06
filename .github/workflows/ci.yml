@@ -12,18 +12,30 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
+      - name: Backend fmt (check)
+        run: cargo fmt --manifest-path backend/Cargo.toml --all -- --check
+
+      - name: Backend clippy
+        run: cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+
       - name: Backend tests
         run: cargo test --manifest-path backend/Cargo.toml
 
       - name: Frontend install
         working-directory: frontend
-        run: npm install
+        run: npm ci
+
+      - name: Frontend format (check)
+        working-directory: frontend
+        run: npx biome format .
 
       - name: Install Playwright browsers
         working-directory: frontend

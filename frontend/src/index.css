@@ -48,7 +48,9 @@ h1 {
   font-weight: 600;
   cursor: pointer;
   background: #fff;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .upload-button:hover {
@@ -286,18 +288,28 @@ h1 {
   gap: 6px;
 }
 
-.status.uploaded { color: #2c7a4b; }
-.status.uploading { color: #a66d00; }
-.status.processing { color: #0060c0; }
-.status.ready { color: #2c7a4b; }
-.status.failed { color: #b21c1c; }
+.status.uploaded {
+  color: #2c7a4b;
+}
+.status.uploading {
+  color: #a66d00;
+}
+.status.processing {
+  color: #0060c0;
+}
+.status.ready {
+  color: #2c7a4b;
+}
+.status.failed {
+  color: #b21c1c;
+}
 
 /* Responsive adjustments */
 @media (max-width: 900px) {
   .panel-body {
     flex-direction: column;
   }
-  
+
   .list-area {
     border-right: none;
     border-bottom: 1px solid #ececec;
@@ -305,7 +317,7 @@ h1 {
     max-height: 400px;
     overflow-y: auto;
   }
-  
+
   .detail-area {
     width: 100%;
     border-top: 1px solid #ececec;
@@ -332,11 +344,10 @@ h1 {
   .row.head {
     display: none;
   }
-  
+
   /* Hide less important columns on mobile list */
-  .row > div:nth-child(3), /* Size */
-  .row > div:nth-child(4)  /* Date */
-  {
+  .row > div:nth-child(3) /* Size */,
+  .row > div:nth-child(4) /* Date */ {
     display: none;
   }
 }

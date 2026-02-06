@@ -25,6 +25,10 @@
 - 行为测试通过即代表用户层面的承诺仍成立
 - README 中的“最小接口/存储约定”变更时，应同步更新本文档
 
+## 代码质量约束（CI 门禁）
+- Rust：必须通过 `cargo fmt -- --check` 与 `cargo clippy -- -D warnings`
+- Frontend：必须通过 Biome 格式检查（`biome format .` 或 `biome ci .`）
+
 ## 测试注意事项
 - E2E 测试为每个 Playwright worker 启动独立后端进程，使用独立的 `PORT/DB_PATH/UPLOAD_DIR`，避免并发时 DB 锁与文件串扰
 - 测试专用接口：`POST /api/test/reset` 仅在 debug 构建且设置 `MAPFLOW_TEST_MODE=1` 时注册；release 构建永不包含该接口

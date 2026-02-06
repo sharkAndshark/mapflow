@@ -112,64 +112,86 @@ export default function Preview() {
       const [minx, miny, maxx, maxy] = meta.bbox;
       // Backend sends WGS84, map is default Web Mercator (EPSG:3857)
       const extent = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857');
-      
+
       map.getView().fit(extent, {
         padding: [50, 50, 50, 50],
         duration: 1000,
-        maxZoom: 14 // Don't zoom in too close for single points
+        maxZoom: 14, // Don't zoom in too close for single points
       });
     }
-
   }, [meta, id]);
 
   return (
-    <div className="preview-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-       <header className="header" style={{ 
-           flex: '0 0 auto', 
-           padding: '16px 24px', 
-           borderBottom: '1px solid #ececec', 
-           background: '#fff',
-           justifyContent: 'flex-start',
-           gap: '16px'
-       }}>
-         <Link to="/" className="back-link">← Back</Link>
-         {meta && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
-                {meta.crs && <span className="badge">{meta.crs}</span>}
-            </div>
-         )}
-       </header>
+    <div
+      className="preview-page"
+      style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}
+    >
+      <header
+        className="header"
+        style={{
+          flex: '0 0 auto',
+          padding: '16px 24px',
+          borderBottom: '1px solid #ececec',
+          background: '#fff',
+          justifyContent: 'flex-start',
+          gap: '16px',
+        }}
+      >
+        <Link to="/" className="back-link">
+          ← Back
+        </Link>
+        {meta && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
+            {meta.crs && <span className="badge">{meta.crs}</span>}
+          </div>
+        )}
+      </header>
 
-       <div style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden' }}>
-          <div ref={mapElement} style={{ width: '100%', height: '100%', background: '#f5f4f2' }} />
-          
-          {/* Loading Overlay */}
-          {!meta && !error && (
-            <div style={{
-                position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.8)',
-                display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '10px',
-                zIndex: 10
-            }}>
-                 <div className="spinner"></div>
-                 <p>Loading Map Data...</p>
-            </div>
-          )}
+      <div style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden' }}>
+        <div ref={mapElement} style={{ width: '100%', height: '100%', background: '#f5f4f2' }} />
 
-          {/* Error Overlay */}
-          {error && (
-            <div style={{
-                position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.9)',
-                display: 'flex', justifyContent: 'center', alignItems: 'center',
-                zIndex: 20
-            }}>
-                <div className="alert error-alert">{error}</div>
-            </div>
-          )}
+        {/* Loading Overlay */}
+        {!meta && !error && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(255,255,255,0.8)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              flexDirection: 'column',
+              gap: '10px',
+              zIndex: 10,
+            }}
+          >
+            <div className="spinner"></div>
+            <p>Loading Map Data...</p>
+          </div>
+        )}
 
-          {/* Simple Property Inspector Overlay */}
-          {popupContent && (
-            <div style={{
+        {/* Error Overlay */}
+        {error && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(255,255,255,0.9)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 20,
+            }}
+          >
+            <div className="alert error-alert">{error}</div>
+          </div>
+        )}
+
+        {/* Simple Property Inspector Overlay */}
+        {popupContent && (
+          <div
+            style={{
               position: 'absolute',
               top: '20px',
               right: '20px',
@@ -180,28 +202,33 @@ export default function Preview() {
               maxWidth: '300px',
               maxHeight: '400px',
               overflow: 'auto',
-              zIndex: 100
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <h4 style={{ margin: 0 }}>Feature Properties</h4>
-                <button 
-                  onClick={() => setPopupContent(null)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}
-                >×</button>
-              </div>
-              <table style={{ fontSize: '12px', width: '100%', borderCollapse: 'collapse' }}>
-                <tbody>
-                  {Object.entries(popupContent).map(([key, value]) => (
-                    <tr key={key} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={{ fontWeight: '600', padding: '4px 8px 4px 0', color: '#555' }}>{key}</td>
-                      <td style={{ padding: '4px 0' }}>{String(value)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              zIndex: 100,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <h4 style={{ margin: 0 }}>Feature Properties</h4>
+              <button
+                onClick={() => setPopupContent(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}
+              >
+                ×
+              </button>
             </div>
-          )}
-       </div>
+            <table style={{ fontSize: '12px', width: '100%', borderCollapse: 'collapse' }}>
+              <tbody>
+                {Object.entries(popupContent).map(([key, value]) => (
+                  <tr key={key} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ fontWeight: '600', padding: '4px 8px 4px 0', color: '#555' }}>
+                      {key}
+                    </td>
+                    <td style={{ padding: '4px 0' }}>{String(value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
