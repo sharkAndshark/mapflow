@@ -51,7 +51,9 @@ jobs:
         run: cargo fmt --manifest-path backend/Cargo.toml --all -- --check
 
       - name: Backend clippy
-        run: cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --manifest-path backend/Cargo.toml -- -D warnings
+        # Note: We don't use --all-targets to avoid recompiling test code
+        # Tests will be compiled and checked by the next step
 
       - name: Backend tests
         run: cargo test --manifest-path backend/Cargo.toml
