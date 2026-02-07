@@ -101,6 +101,7 @@ Note: Backend currently persists `uploaded`, `processing`, `ready`, `failed`. Th
 - UI placeholder conventions:
   - NULL is displayed as `--`.
   - Empty strings are displayed as `""`.
+  - Visual distinction: placeholder values are muted; NULL is also italic; hover tooltips clarify `NULL` vs `Empty string`.
 
 ## Technical Implementation Details
 

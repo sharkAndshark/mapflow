@@ -68,6 +68,9 @@ These specific behaviors should be verified by the most efficient means possible
 | **Tile Generation** | Request specific MVT tile | Returns valid binary MVT with correct geometry and properties (tags) | **Unit / Integration** |
 | **Feature Properties (Stable Schema)** | Request `/api/files/:id/features/:fid` | Returns ordered fields for the dataset; missing values are returned as JSON null | **Integration (HTTP/API)** |
 
+Frontend unit coverage:
+- `frontend/tests/unit/featureInspectorFormat.test.js` asserts inspector placeholder formatting (NULL -> `--`, empty string -> `""`).
+
 ## Testing Strategy & Commands
 
 ### E2E Tests (Playwright)

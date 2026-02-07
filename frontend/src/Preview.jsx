@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 
+import { formatInspectorValue } from './featureInspectorFormat.js';
+
 import 'ol/ol.css';
 import OLMap from 'ol/Map';
 import View from 'ol/View';
@@ -319,9 +321,9 @@ export default function Preview() {
                   {popupContent.map((entry) => {
                     const key = entry?.key;
                     const value = entry?.value;
-                    const isNull = value === null;
-                    const isEmptyString = typeof value === 'string' && value.length === 0;
-                    const displayValue = isNull ? '--' : isEmptyString ? '""' : String(value);
+                    const formatted = formatInspectorValue(value);
+                    const isNull = formatted.tone === 'null';
+                    const isEmptyString = formatted.tone === 'empty';
                     return (
                       <tr key={String(key)} style={{ borderBottom: '1px solid #eee' }}>
                         <td style={{ fontWeight: '600', padding: '4px 8px 4px 0', color: '#555' }}>
@@ -333,9 +335,9 @@ export default function Preview() {
                             color: isNull || isEmptyString ? '#888' : undefined,
                             fontStyle: isNull ? 'italic' : undefined,
                           }}
-                          title={isNull ? 'NULL' : isEmptyString ? 'Empty string' : undefined}
+                          title={formatted.title}
                         >
-                          {displayValue}
+                          {formatted.text}
                         </td>
                       </tr>
                     );
