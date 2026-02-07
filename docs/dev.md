@@ -75,3 +75,12 @@ The repository enforces strict code quality standards.
 **Checks run on commit:**
 - Rust: `cargo fmt --check` and `cargo clippy -D warnings`
 - Frontend: `npm --prefix frontend run format:check` (Biome)
+
+**Tests run automatically:**
+- On `git commit`: backend `cargo test` + frontend `npm --prefix frontend run test:unit` (if `frontend/package.json` exists)
+- On `git push`: full suite (`just test`), including Playwright E2E
+
+**Skip hook tests (emergency only):**
+```bash
+MAPFLOW_SKIP_HOOK_TESTS=1 git push
+```

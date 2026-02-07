@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+
+if [ "${MAPFLOW_SKIP_HOOK_TESTS:-}" = "1" ]; then
+  echo "[pre-push] skipping tests (MAPFLOW_SKIP_HOOK_TESTS=1)"
+  exit 0
+fi
+
+echo "[pre-push] running full test suite"
+
+if command -v just >/dev/null 2>&1; then
+  just test
+  exit 0
+fi
+
+echo "[pre-push] 'just' not found; falling back to direct commands"
+
+echo "[pre-push] backend tests (cargo test)"
+cargo test --manifest-path "$ROOT_DIR/backend/Cargo.toml"
+
+if [ -f "$ROOT_DIR/frontend/package.json" ]; then
+  echo "[pre-push] frontend unit tests (vitest)"
+  npm --prefix "$ROOT_DIR/frontend" run -s test:unit
+
+  echo "[pre-push] frontend e2e tests (playwright)"
+  npm --prefix "$ROOT_DIR/frontend" run -s test:e2e
+fi
+
+echo "[pre-push] all tests passed"

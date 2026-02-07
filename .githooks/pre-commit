@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 
+SKIP_TESTS="${MAPFLOW_SKIP_HOOK_TESTS:-}"
+
 echo "[pre-commit] cargo fmt (check)"
 cargo fmt --all -- --check
 
@@ -12,4 +14,17 @@ cargo clippy --manifest-path "$ROOT_DIR/backend/Cargo.toml" --all-targets -- -D 
 if [ -f "$ROOT_DIR/frontend/package.json" ]; then
   echo "[pre-commit] frontend biome format (check)"
   npm --prefix "$ROOT_DIR/frontend" run -s format:check
+fi
+
+if [ "$SKIP_TESTS" = "1" ]; then
+  echo "[pre-commit] skipping tests (MAPFLOW_SKIP_HOOK_TESTS=1)"
+  exit 0
+fi
+
+echo "[pre-commit] backend tests (cargo test)"
+cargo test --manifest-path "$ROOT_DIR/backend/Cargo.toml"
+
+if [ -f "$ROOT_DIR/frontend/package.json" ]; then
+  echo "[pre-commit] frontend unit tests (vitest)"
+  npm --prefix "$ROOT_DIR/frontend" run -s test:unit
 fi

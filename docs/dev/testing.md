@@ -102,4 +102,4 @@ Note: When asserting MVT contents (properties/tags), prefer using a mature decod
   - Backend-only refactors: `just test-backend`
   - Frontend-only changes: run `npm --prefix frontend run format:check` + `npm --prefix frontend run test:unit` + `npm --prefix frontend run build`. Run E2E when changing critical user journeys (`npm --prefix frontend run test:e2e`).
   - Cross-cutting / uncertain impact: `just test`
-- Note: repository pre-commit hooks already gate formatting and clippy/biome checks, but they are not a substitute for executing tests.
+- Note: repository hooks also run tests automatically (commit: backend tests + frontend unit; push: full `just test` including E2E). This is a safety net, not a replacement for intentionally running the most relevant suite while iterating.
