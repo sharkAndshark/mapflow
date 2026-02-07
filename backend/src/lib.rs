@@ -27,9 +27,11 @@ pub use config::{format_bytes, read_max_size_config};
 pub use db::{
     init_database, reconcile_processing_files, DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
 };
+use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
 pub use models::{AppState, ErrorResponse, FileItem, PreviewMeta};
+use models::{FeaturePropertiesResponse, FeatureProperty};
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
@@ -44,7 +46,8 @@ pub fn build_api_router(state: AppState) -> Router {
         .route("/api/files", get(list_files))
         .route("/api/uploads", post(upload_file))
         .route("/api/files/:id/preview", get(get_preview_meta))
-        .route("/api/files/:id/tiles/:z/:x/:y", get(get_tile));
+        .route("/api/files/:id/tiles/:z/:x/:y", get(get_tile))
+        .route("/api/files/:id/features/:fid", get(get_feature_properties));
 
     let router = add_test_routes(router);
 
@@ -254,6 +257,113 @@ async fn get_tile(
                 .into_response())
         }
     }
+}
+
+async fn get_feature_properties(
+    State(state): State<AppState>,
+    AxumPath((id, fid)): AxumPath<(String, i64)>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    let (status, table_name): (String, Option<String>) = conn
+        .query_row(
+            "SELECT status, table_name FROM files WHERE id = ?",
+            duckdb::params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready for preview".to_string(),
+            }),
+        )
+    })?;
+
+    let mut cols_stmt = conn
+        .prepare(
+            "SELECT normalized_name, original_name\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
+        )
+        .map_err(internal_error)?;
+
+    let cols_iter = cols_stmt
+        .query_map(duckdb::params![&id], |row| {
+            let normalized: String = row.get(0)?;
+            let original: String = row.get(1)?;
+            Ok((normalized, original))
+        })
+        .map_err(internal_error)?;
+
+    let mut columns: Vec<(String, String)> = Vec::new();
+    for c in cols_iter {
+        columns.push(c.map_err(internal_error)?);
+    }
+
+    // Build a projection that preserves ordering and uses safe identifiers.
+    let mut select_exprs: Vec<String> = Vec::with_capacity(columns.len());
+    for (normalized, _original) in &columns {
+        select_exprs.push(format!("\"{normalized}\""));
+    }
+
+    let sql = format!(
+        "SELECT {} FROM \"{}\" WHERE fid = ?",
+        select_exprs.join(", "),
+        table_name
+    );
+
+    let mut stmt = conn.prepare(&sql).map_err(internal_error)?;
+    let mut rows = stmt.query(duckdb::params![fid]).map_err(internal_error)?;
+
+    let Some(row) = rows.next().map_err(internal_error)? else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "Feature not found".to_string(),
+            }),
+        ));
+    };
+
+    let mut properties: Vec<FeatureProperty> = Vec::with_capacity(columns.len());
+    for (index, (_normalized, original)) in columns.iter().enumerate() {
+        let raw = match row.get_ref(index).map_err(internal_error)? {
+            ValueRef::Null => serde_json::Value::Null,
+            ValueRef::Boolean(v) => serde_json::Value::Bool(v),
+            ValueRef::TinyInt(v) => serde_json::Value::Number(v.into()),
+            ValueRef::SmallInt(v) => serde_json::Value::Number(v.into()),
+            ValueRef::Int(v) => serde_json::Value::Number(v.into()),
+            ValueRef::BigInt(v) => serde_json::Value::Number(v.into()),
+            ValueRef::UTinyInt(v) => serde_json::Value::Number(v.into()),
+            ValueRef::USmallInt(v) => serde_json::Value::Number(v.into()),
+            ValueRef::UInt(v) => serde_json::Value::Number(v.into()),
+            ValueRef::UBigInt(v) => serde_json::Value::Number(v.into()),
+            ValueRef::Float(v) => serde_json::Number::from_f64(v as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+            ValueRef::Double(v) => serde_json::Number::from_f64(v)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+            ValueRef::Text(bytes) => {
+                serde_json::Value::String(String::from_utf8_lossy(bytes).to_string())
+            }
+            ValueRef::Blob(bytes) => serde_json::Value::String(format!("0x{}", hex::encode(bytes))),
+            other => serde_json::Value::String(format!("{other:?}")),
+        };
+        properties.push(FeatureProperty {
+            key: original.clone(),
+            value: raw,
+        });
+    }
+
+    Ok(Json(FeaturePropertiesResponse { fid, properties }))
 }
 
 fn validate_tile_coords(z: i32, x: i32, y: i32) -> Result<(), (StatusCode, Json<ErrorResponse>)> {

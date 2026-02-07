@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 
 import 'ol/ol.css';
@@ -17,7 +17,68 @@ export default function Preview() {
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState(null);
   const [popupContent, setPopupContent] = useState(null);
+  const [popupLoading, setPopupLoading] = useState(false);
+  const [popupError, setPopupError] = useState(null);
+  const [popupFid, setPopupFid] = useState(null);
   const popupRef = useRef(null);
+  const requestSeqRef = useRef(0);
+
+  const cancelPopup = useCallback(() => {
+    requestSeqRef.current += 1;
+    setPopupContent(null);
+    setPopupError(null);
+    setPopupLoading(false);
+    setPopupFid(null);
+  }, []);
+
+  const loadFeatureProperties = useCallback(
+    async (fid) => {
+      const seq = requestSeqRef.current + 1;
+      requestSeqRef.current = seq;
+
+      setPopupFid(fid);
+      setPopupLoading(true);
+      setPopupError(null);
+      setPopupContent(null);
+      try {
+        const res = await fetch(`/api/files/${id}/features/${fid}`);
+        if (!res.ok) {
+          let message = 'Failed to load feature properties';
+          try {
+            const data = await res.json();
+            if (data && typeof data.error === 'string') {
+              message = data.error;
+            }
+          } catch (_) {
+            // ignore
+          }
+          throw new Error(message);
+        }
+        const data = await res.json();
+        if (seq !== requestSeqRef.current) {
+          return;
+        }
+        if (!data || !Array.isArray(data.properties)) {
+          throw new Error('Invalid feature properties response');
+        }
+        if (typeof data.fid === 'number') {
+          setPopupFid(data.fid);
+        }
+        setPopupContent(data.properties);
+      } catch (e) {
+        if (seq !== requestSeqRef.current) {
+          return;
+        }
+        setPopupError(e instanceof Error ? e.message : 'Failed to load feature properties');
+        setPopupContent(null);
+      } finally {
+        if (seq === requestSeqRef.current) {
+          setPopupLoading(false);
+        }
+      }
+    },
+    [id],
+  );
 
   const defaultStyle = useMemo(
     () =>
@@ -83,12 +144,19 @@ export default function Preview() {
     olMap.on('click', (evt) => {
       const feature = olMap.forEachFeatureAtPixel(evt.pixel, (feature) => feature);
       if (feature) {
-        const properties = feature.getProperties();
-        // Remove geometry from properties to avoid cluttering popup
-        const { geometry, ...props } = properties;
-        setPopupContent(props);
+        const fid = feature.getId?.() ?? feature.get('fid') ?? feature.getProperties?.()?.fid;
+        if (fid === undefined || fid === null || fid === '') {
+          setPopupError('Selected feature has no fid');
+          setPopupContent(null);
+          setPopupLoading(false);
+          setPopupFid(null);
+          return;
+        }
+
+        // Load full row properties from DuckDB to ensure stable schema + NULL visibility.
+        loadFeatureProperties(fid);
       } else {
-        setPopupContent(null);
+        cancelPopup();
       }
     });
 
@@ -96,7 +164,7 @@ export default function Preview() {
       olMap.setTarget(null);
       mapRef.current = null;
     };
-  }, []);
+  }, [cancelPopup, loadFeatureProperties]);
 
   // Update Layer and View when Meta changes
   useEffect(() => {
@@ -203,7 +271,7 @@ export default function Preview() {
         )}
 
         {/* Simple Property Inspector Overlay */}
-        {popupContent && (
+        {(popupContent || popupLoading || popupError) && (
           <div
             style={{
               position: 'absolute',
@@ -220,27 +288,61 @@ export default function Preview() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <h4 style={{ margin: 0 }}>Feature Properties</h4>
+              <h4 style={{ margin: 0 }}>
+                Feature Properties
+                {popupFid !== null && (
+                  <span style={{ marginLeft: '8px', fontSize: '11px', color: '#777' }}>
+                    fid: {popupFid}
+                  </span>
+                )}
+              </h4>
               <button
-                onClick={() => setPopupContent(null)}
+                onClick={cancelPopup}
                 type="button"
                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}
               >
                 ×
               </button>
             </div>
-            <table style={{ fontSize: '12px', width: '100%', borderCollapse: 'collapse' }}>
-              <tbody>
-                {Object.entries(popupContent).map(([key, value]) => (
-                  <tr key={key} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ fontWeight: '600', padding: '4px 8px 4px 0', color: '#555' }}>
-                      {key}
-                    </td>
-                    <td style={{ padding: '4px 0' }}>{String(value)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+            {popupError && (
+              <div className="alert error-alert" style={{ marginBottom: '10px' }}>
+                {popupError}
+              </div>
+            )}
+
+            {popupLoading && <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>Loading…</p>}
+
+            {Array.isArray(popupContent) && (
+              <table style={{ fontSize: '12px', width: '100%', borderCollapse: 'collapse' }}>
+                <tbody>
+                  {popupContent.map((entry) => {
+                    const key = entry?.key;
+                    const value = entry?.value;
+                    const isNull = value === null;
+                    const isEmptyString = typeof value === 'string' && value.length === 0;
+                    const displayValue = isNull ? '--' : isEmptyString ? '""' : String(value);
+                    return (
+                      <tr key={String(key)} style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ fontWeight: '600', padding: '4px 8px 4px 0', color: '#555' }}>
+                          {key}
+                        </td>
+                        <td
+                          style={{
+                            padding: '4px 0',
+                            color: isNull || isEmptyString ? '#888' : undefined,
+                            fontStyle: isNull ? 'italic' : undefined,
+                          }}
+                          title={isNull ? 'NULL' : isEmptyString ? 'Empty string' : undefined}
+                        >
+                          {displayValue}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </div>

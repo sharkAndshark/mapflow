@@ -597,6 +597,113 @@ async fn test_upload_geojson_lifecycle() {
 }
 
 #[tokio::test]
+async fn test_feature_properties_endpoint_returns_null_for_missing_values() {
+    let (app, _temp) = setup_app().await;
+
+    // Two features share schema {name, class, speed_limit} but second feature omits speed_limit.
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": "Road A",
+                    "class": "primary",
+                    "speed_limit": 30
+                },
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[0, 0], [0.1, 0.1]]
+                }
+            },
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": "Road B",
+                    "class": "secondary"
+                },
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[0, 0], [0.1, 0.1]]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryFEATURES";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"roads.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    // fid is 1-based (row_number()) and stable.
+    // We query the second feature, which should have speed_limit = NULL.
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/2", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["fid"], 2);
+    let props = body_json["properties"]
+        .as_array()
+        .expect("properties array");
+    assert!(props.len() >= 2);
+
+    let mut saw_name = false;
+    let mut saw_class = false;
+    let mut saw_speed_limit = false;
+    let mut speed_limit_was_null = false;
+
+    for p in props {
+        let key = p["key"].as_str().unwrap_or("");
+        if key == "name" {
+            saw_name = true;
+            assert_eq!(p["value"], "Road B");
+        }
+        if key == "class" {
+            saw_class = true;
+            assert_eq!(p["value"], "secondary");
+        }
+        if key == "speed_limit" {
+            saw_speed_limit = true;
+            speed_limit_was_null = p["value"].is_null();
+        }
+    }
+
+    assert!(saw_name);
+    assert!(saw_class);
+    assert!(saw_speed_limit, "Expected speed_limit key to be present");
+    assert!(
+        speed_limit_was_null,
+        "Expected missing speed_limit to be returned as JSON null"
+    );
+}
+
+#[tokio::test]
 async fn test_upload_shapefile_zip_lifecycle() {
     let (app, _temp) = setup_app().await;
 

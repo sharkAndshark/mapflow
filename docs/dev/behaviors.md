@@ -45,6 +45,23 @@ This document defines the technical contracts, API specifications, and storage c
     - 409 Conflict when the file is not ready for preview.
       - Body: `{ "error": "File is not ready for preview" }`.
 
+### Feature Properties (Stable Schema)
+- `GET /api/files/:id/features/:fid`
+  - **Purpose:** Fetch a single feature's properties from DuckDB by its stable `fid`, using the dataset's captured column schema.
+  - **Why:** MVT feature tags may omit NULL-valued properties; this endpoint guarantees a stable field list per dataset/table.
+  - **Returns (Success):**
+    - `{ "fid": <number>, "properties": [ { "key": <string>, "value": <json|null> }, ... ] }`
+    - `properties` is ordered by the dataset column `ordinal`.
+    - `key` uses original column names (user-facing).
+    - `value` is `null` when the row value is NULL.
+  - **Response (Error):**
+    - 404 Not Found when `:id` does not exist.
+      - Body: `{ "error": "File not found" }`.
+    - 409 Conflict when the file is not ready for preview.
+      - Body: `{ "error": "File is not ready for preview" }`.
+    - 404 Not Found when `:fid` does not exist in the dataset.
+      - Body: `{ "error": "Feature not found" }`.
+
 ### Testing Endpoints (Debug Only)
 - `POST /api/test/reset`
   - **Behavior:** Resets database and storage.
@@ -76,6 +93,14 @@ Note: Backend currently persists `uploaded`, `processing`, `ready`, `failed`. Th
 
 - The UI MUST allow opening the preview page only when the selected file `status` is `ready`.
 - When the file is not `ready` (`uploaded`, `processing`, `failed`), the UI MUST present the preview action as disabled (not clickable).
+
+### Preview Feature Inspector
+
+- For a given DuckDB table (dataset), the feature inspector MUST display a stable set of property fields based on the dataset schema.
+- Fields with NULL values MUST still be shown (with a UI placeholder value).
+- UI placeholder conventions:
+  - NULL is displayed as `--`.
+  - Empty strings are displayed as `""`.
 
 ## Technical Implementation Details
 

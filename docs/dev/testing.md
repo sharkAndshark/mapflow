@@ -66,6 +66,7 @@ These specific behaviors should be verified by the most efficient means possible
 | **Status State Machine** | File processing lifecycle | Status transitions: `uploading` -> `uploaded` -> `processing` -> `ready` | **Integration** |
 | **Details Metadata** | Request file details | Returns correct CRS, size, type | **Integration (HTTP/API)** |
 | **Tile Generation** | Request specific MVT tile | Returns valid binary MVT with correct geometry and properties (tags) | **Unit / Integration** |
+| **Feature Properties (Stable Schema)** | Request `/api/files/:id/features/:fid` | Returns ordered fields for the dataset; missing values are returned as JSON null | **Integration (HTTP/API)** |
 
 ## Testing Strategy & Commands
 

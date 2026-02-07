@@ -41,3 +41,17 @@ pub struct PreviewMeta {
     pub crs: Option<String>,
     pub bbox: Option<[f64; 4]>, // minx, miny, maxx, maxy in WGS84
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct FeatureProperty {
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct FeaturePropertiesResponse {
+    pub fid: i64,
+    pub properties: Vec<FeatureProperty>,
+}
