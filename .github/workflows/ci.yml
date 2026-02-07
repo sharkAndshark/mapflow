@@ -20,6 +20,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Backend fmt (check)
         run: cargo fmt --manifest-path backend/Cargo.toml --all -- --check
 
