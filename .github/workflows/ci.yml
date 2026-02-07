@@ -104,7 +104,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: frontend/node_modules/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json') }}
