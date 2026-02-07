@@ -89,10 +89,6 @@ Note: The frontend uses Playwright E2E for critical journeys and a small Vitest 
 
 Note: When asserting MVT contents (properties/tags), prefer using a mature decoder (e.g. `mvt-reader`) over hand-rolled protobuf parsing.
 
-### Release Safety Gate
-- **Requirement:** Release builds must NOT expose test endpoints.
-- **Verification:** CI builds release binary, starts it, and asserts `POST /api/test/reset` returns 404/405.
-
 ## Code Quality Standards (CI Gates)
 
 | Language | Check Command |
