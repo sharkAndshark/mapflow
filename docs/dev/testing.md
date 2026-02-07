@@ -54,6 +54,13 @@ These flows ensure the system works end-to-end for the user. They must be covere
 | **Persistence across Restart** | Server restart after upload | Previously uploaded files remain visible and accessible in list/preview |
 | **Preview Integration** | User clicks "Open Preview" | New tab opens, map loads, tile requests succeed (200 OK & non-empty) |
 
+## CI Smoke Test (Docker)
+
+CI includes a Docker smoke test that builds the container image, runs it, uploads a known GeoJSON fixture, waits for `ready`, and fetches a fixed tile.
+
+- The tile assertion is a golden-byte comparison against `testdata/smoke/expected_sample_z0_x0_y0.mvt.base64`.
+- If the tile output changes (due to a deliberate tile encoding/logic change), regenerate the golden by running `scripts/ci/fetch_tile.sh` and updating the base64 file.
+
 ## Behavioral Contracts (Layered Verification)
 
 These specific behaviors should be verified by the most efficient means possible.

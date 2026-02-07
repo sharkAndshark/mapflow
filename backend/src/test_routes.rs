@@ -1,4 +1,9 @@
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+use axum::Router;
+
+#[cfg(debug_assertions)]
+use axum::{extract::State, http::StatusCode, routing::post, Json};
+
+#[cfg(debug_assertions)]
 use tokio::fs;
 
 use crate::AppState;

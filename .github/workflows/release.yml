@@ -1,22 +1,23 @@
-name: ci
+name: release
 
 on:
   push:
-  pull_request:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
-  backend_fmt:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: rustfmt
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend
+          components: rustfmt, clippy
 
       - name: Install protobuf compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -24,48 +25,13 @@ jobs:
       - name: Backend fmt (check)
         run: cargo fmt --manifest-path backend/Cargo.toml --all -- --check
 
-  backend_clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend
-
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
       - name: Backend clippy
         run: cargo clippy --manifest-path backend/Cargo.toml -- -D warnings
-
-  backend_tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend
-
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Backend tests
         run: cargo test --manifest-path backend/Cargo.toml
 
-  frontend_unit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -81,56 +47,19 @@ jobs:
 
       - name: Frontend format (check)
         working-directory: frontend
-        run: npx biome format .
-
-  frontend_e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend
-
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v5
-        with:
-          path: frontend/node_modules/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
-      - name: Frontend install
-        working-directory: frontend
-        run: npm ci
+        run: npm run format:check
 
       - name: Install Playwright browsers
         working-directory: frontend
         run: npx playwright install --with-deps
 
-      - name: E2E tests
+      - name: Frontend E2E tests
         working-directory: frontend
         run: npm run test:e2e
 
   docker_smoke:
     runs-on: ubuntu-latest
-    needs:
-      - backend_fmt
-      - backend_clippy
-      - backend_tests
-      - frontend_unit
-      - frontend_e2e
+    needs: verify
     steps:
       - uses: actions/checkout@v4
 
@@ -143,9 +72,9 @@ jobs:
           context: .
           load: true
           platforms: linux/amd64
-          tags: mapflow-smoke:ci
+          tags: mapflow-smoke:${{ github.ref_name }}
 
-      - name: Smoke test container (golden tile)
+      - name: Smoke test container
         shell: bash
         run: |
           set -euo pipefail
@@ -171,7 +100,7 @@ jobs:
             -e UPLOAD_DIR=/app/uploads \
             -v "${data_dir}:/app/data" \
             -v "${uploads_dir}:/app/uploads" \
-            "mapflow-smoke:ci")
+            "mapflow-smoke:${{ github.ref_name }}")
 
           for i in $(seq 1 60); do
             if curl -fsS "http://127.0.0.1:${port}/api/files" >/dev/null; then
@@ -207,6 +136,7 @@ jobs:
 
           curl -fsS "http://127.0.0.1:${port}/api/files/${id}/preview" >/dev/null
 
+          # Golden tile compare to make the smoke test deterministic.
           curl -fsS -o /tmp/mapflow_smoke_tile.mvt "http://127.0.0.1:${port}/api/files/${id}/tiles/0/0/0"
           python3 - <<'PY'
           import base64, hashlib
@@ -220,3 +150,54 @@ jobs:
             raise SystemExit(1)
           print('tile ok sha256', hashlib.sha256(got).hexdigest())
           PY
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: docker_smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image name
+        id: image
+        shell: bash
+        run: |
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "name=ghcr.io/${owner_lc}/mapflow" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  github_release:
+    runs-on: ubuntu-latest
+    needs: docker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

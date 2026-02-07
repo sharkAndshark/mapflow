@@ -12,3 +12,5 @@
 附：当你改变了可观测契约（API 状态码/错误文案/流程语义）或测试策略时，必须同步更新：
 - `docs/dev/behaviors.md`（契约）
 - `docs/dev/testing.md`（验证方式/命令）
+
+12. 对于二进制输出（如 MVT tile）做 golden 测试时，优先用 ASCII 的 base64 文件存放期望值（如 `*.mvt.base64`），避免在仓库里引入不可见字符导致 diff/工具链不稳定。
