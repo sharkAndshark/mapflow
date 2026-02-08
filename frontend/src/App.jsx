@@ -28,6 +28,53 @@ function parseType(fileName) {
 }
 
 function DetailSidebar({ file }) {
+  const [schema, setSchema] = useState(null);
+  const [schemaError, setSchemaError] = useState(null);
+  const [isLoadingSchema, setIsLoadingSchema] = useState(false);
+
+  useEffect(() => {
+    const fileId = file?.id;
+    const fileStatus = file?.status;
+
+    if (!fileId || fileStatus !== 'ready') {
+      setSchema(null);
+      setSchemaError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingSchema(true);
+    setSchemaError(null);
+
+    fetch(`/api/files/${fileId}/schema`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to load schema');
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setSchema(data);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSchemaError(err.message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingSchema(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [file?.id, file?.status]);
+
   if (!file) {
     return (
       <div className="detail-empty">
@@ -75,6 +122,52 @@ function DetailSidebar({ file }) {
         <div className="detail-group">
           <div className="detail-label">CRS</div>
           <div className="detail-value">{file.crs}</div>
+        </div>
+      )}
+
+      {isReady && (
+        <div className="detail-group">
+          <div className="detail-label">字段信息</div>
+          <div className="detail-value">
+            {isLoadingSchema ? (
+              <span style={{ color: '#888', fontSize: '12px' }}>加载中...</span>
+            ) : schemaError ? (
+              <span style={{ color: '#d32f2f', fontSize: '12px' }}>{schemaError}</span>
+            ) : schema && schema.fields ? (
+              <div style={{ fontSize: '13px' }}>
+                {schema.fields.length === 0 ? (
+                  <span style={{ color: '#888' }}>无字段</span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {schema.fields.map((field) => (
+                      <div
+                        key={field.name}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '2px 0',
+                        }}
+                      >
+                        <span style={{ fontWeight: 500 }}>{field.name}</span>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#666',
+                            background: '#f5f5f5',
+                            padding: '1px 6px',
+                            borderRadius: '3px',
+                          }}
+                        >
+                          {field.type}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
       )}
 

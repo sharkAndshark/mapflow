@@ -47,7 +47,8 @@ pub fn build_api_router(state: AppState) -> Router {
         .route("/api/uploads", post(upload_file))
         .route("/api/files/:id/preview", get(get_preview_meta))
         .route("/api/files/:id/tiles/:z/:x/:y", get(get_tile))
-        .route("/api/files/:id/features/:fid", get(get_feature_properties));
+        .route("/api/files/:id/features/:fid", get(get_feature_properties))
+        .route("/api/files/:id/schema", get(get_file_schema));
 
     let router = add_test_routes(router);
 
@@ -364,6 +365,60 @@ async fn get_feature_properties(
     }
 
     Ok(Json(FeaturePropertiesResponse { fid, properties }))
+}
+
+async fn get_file_schema(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    let status: String = conn
+        .query_row(
+            "SELECT status FROM files WHERE id = ?",
+            duckdb::params![id],
+            |row| row.get(0),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    if status != "ready" {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready".to_string(),
+            }),
+        ));
+    }
+
+    let mut cols_stmt = conn
+        .prepare(
+            "SELECT original_name, mvt_type\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
+        )
+        .map_err(internal_error)?;
+
+    let cols_iter = cols_stmt
+        .query_map(duckdb::params![&id], |row| {
+            let original_name: String = row.get(0)?;
+            let mvt_type: String = row.get(1)?;
+            Ok((original_name, mvt_type))
+        })
+        .map_err(internal_error)?;
+
+    let mut fields = Vec::new();
+    for c in cols_iter {
+        let (name, r#type) = c.map_err(internal_error)?;
+        fields.push(models::FieldInfo { name, r#type });
+    }
+
+    drop(conn);
+    Ok(Json(models::FileSchemaResponse { fields }))
 }
 
 fn validate_tile_coords(z: i32, x: i32, y: i32) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
