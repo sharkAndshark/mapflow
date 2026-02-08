@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+# Load nvm to ensure correct Node.js version
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# Use Node.js 20 LTS (v20.20.0+) to satisfy Vite 7.x requirement
+nvm use 20 >/dev/null 2>&1 || true
+
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
