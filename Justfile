@@ -130,7 +130,7 @@ outdated:
   @echo "=== Frontend outdated ==="
   npm outdated --prefix frontend || true
   @echo "\n=== Backend outdated ==="
-  @echo "Run: cargo update --dry-run --manifest-path backend/Cargo.toml"
+  cargo update --dry-run --manifest-path backend/Cargo.toml
 
 # Install frontend dependencies (first time or CI)
 install-frontend:
