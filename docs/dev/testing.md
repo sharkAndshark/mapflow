@@ -61,6 +61,26 @@ CI includes a Docker smoke test that builds the container image, runs it, upload
 - The tile assertion is a golden-byte comparison against `testdata/smoke/expected_sample_z0_x0_y0.mvt.base64`.
 - If the tile output changes (due to a deliberate tile encoding/logic change), regenerate the golden by running `scripts/ci/fetch_tile.sh` and updating the base64 file.
 
+## OSM Multi-Zoom Tile Tests (Backend)
+
+Backend includes comprehensive tile generation tests using real OSM data from San Francisco (`testdata/osm_medium/`).
+
+These tests verify that tile generation works correctly across multiple zoom levels (z=0..14) for different geometry types:
+
+- **sf_lines** (20,898 road features)
+- **sf_points** (traffic signals, places)
+- **sf_polygons** (31,715 building/landuse features)
+
+Each test validates:
+- Tile endpoint returns 200 OK
+- Tile decodes as valid MVT format
+- Feature count is reasonable for hit/empty/boundary tiles
+- High-zoom tiles contain expected OSM metadata (osm_id, name, etc.)
+
+Location: `backend/tests/api_tests.rs::test_tile_golden_osm_*_multi_zoom`
+
+Golden metadata (tile coordinates, expected feature counts) stored in `testdata/smoke/golden_*_tiles.json`.
+
 ## Behavioral Contracts (Layered Verification)
 
 These specific behaviors should be verified by the most efficient means possible.

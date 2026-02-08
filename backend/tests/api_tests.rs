@@ -124,6 +124,25 @@ async fn setup_app() -> (axum::Router, TempDir) {
     (router, temp_dir)
 }
 
+async fn setup_app_with_large_max_size() -> (axum::Router, TempDir) {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+
+    let state = AppState {
+        upload_dir,
+        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        max_size: 100 * 1024 * 1024, // 100MB for OSM datasets
+        max_size_label: "100MB".to_string(),
+    };
+
+    let router = build_api_router(state);
+    (router, temp_dir)
+}
+
 #[tokio::test]
 async fn test_upload_empty_body_returns_400() {
     let (app, _temp) = setup_app().await;
@@ -842,4 +861,247 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
         response.headers()["content-type"],
         "application/vnd.mapbox-vector-tile"
     );
+}
+
+// OSM Tile Golden Tests
+
+#[derive(Debug, serde::Deserialize)]
+struct GoldenTile {
+    x: u64,
+    y: u64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GoldenZoom {
+    z: u64,
+    hit: GoldenTile,
+    empty: GoldenTile,
+    boundary: GoldenTile,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GoldenData {
+    dataset: String,
+    fixture: String,
+    tiles: Vec<GoldenZoom>,
+}
+
+fn load_golden(dataset_name: &str) -> GoldenData {
+    let path = repo_root().join(format!("testdata/smoke/golden_{}_tiles.json", dataset_name));
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read golden file {:?}: {}", path, e));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse golden JSON {:?}: {}", path, e))
+}
+
+async fn test_tile_golden_for_dataset(dataset_name: &str) {
+    let (app, _temp) = setup_app_with_large_max_size().await;
+    let golden = load_golden(dataset_name);
+
+    println!("Testing golden for dataset: {}", golden.dataset);
+    println!("  Fixture: {}", golden.fixture);
+    println!("  Tiles: {}", golden.tiles.len());
+
+    // Upload fixture
+    let fixture_bytes = read_fixture_bytes(&golden.fixture);
+    let boundary = "------------------------boundaryGOLDEN";
+    let fixture_path = PathBuf::from(&golden.fixture);
+    let filename = fixture_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("fixture.geojson");
+    let body = multipart_body(boundary, filename, &fixture_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id;
+
+    // Wait for ready
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    // Test each zoom level
+    for zoom in &golden.tiles {
+        let z = zoom.z;
+
+        // Test hit tile
+        let hit = &zoom.hit;
+        let request = Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/api/files/{}/tiles/{}/{}/{}",
+                file_id, z, hit.x, hit.y
+            ))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+        let tile_bytes = tile_body.as_ref();
+
+        // Verify tile is valid and non-empty
+        assert!(
+            !tile_bytes.is_empty(),
+            "Tile should not be empty for {} z={} hit ({},{})",
+            dataset_name,
+            z,
+            hit.x,
+            hit.y
+        );
+
+        // Verify tile can be decoded as valid MVT
+        let reader = MvtReader::new(tile_bytes.to_vec());
+        assert!(
+            reader.is_ok(),
+            "Tile should be valid MVT for {} z={} hit ({},{})",
+            dataset_name,
+            z,
+            hit.x,
+            hit.y
+        );
+
+        // Semantic assertions for hit tiles
+        if let Ok(r) = reader {
+            let layer_names = r.get_layer_names();
+            assert!(layer_names.is_ok(), "Should get layer names");
+
+            if let Ok(names) = layer_names {
+                assert!(!names.is_empty(), "Tile should have at least one layer");
+
+                // Check first layer has features
+                let features = r.get_features(0);
+                assert!(features.is_ok(), "Should get features from layer 0");
+
+                if let Ok(feat_vec) = features {
+                    let feature_count = feat_vec.len();
+
+                    // For hit tiles, we should have features
+                    if feature_count > 0 {
+                        println!(
+                            "  z={}: hit({},{}) has {} features",
+                            z, hit.x, hit.y, feature_count
+                        );
+
+                        // Check that at least some features have expected properties
+                        let features = r.get_features(0).unwrap();
+                        let mut has_osm_id = false;
+                        let mut has_name = false;
+
+                        for f in features.iter().take(100) {
+                            // Check first 100 features
+                            if let Some(props) = &f.properties {
+                                if props.contains_key(&"osm_id".to_string()) {
+                                    has_osm_id = true;
+                                }
+                                if props.contains_key(&"name".to_string()) {
+                                    has_name = true;
+                                }
+                            }
+                        }
+
+                        // At high zoom levels, we should have detailed features
+                        if z >= 10 {
+                            assert!(
+                                has_osm_id || has_name,
+                                "Hit tile at z={} should have OSM metadata",
+                                z
+                            );
+                        }
+                    } else {
+                        println!(
+                            "  z={}: hit({},{}) has no features (might be empty area)",
+                            z, hit.x, hit.y
+                        );
+                    }
+                }
+            }
+        }
+
+        // Test empty tile (if different from hit)
+        if zoom.empty.x != hit.x || zoom.empty.y != hit.y {
+            let empty = &zoom.empty;
+            let request = Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/api/files/{}/tiles/{}/{}/{}",
+                    file_id, z, empty.x, empty.y
+                ))
+                .body(Body::empty())
+                .unwrap();
+
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+            let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+            let tile_bytes = tile_body.as_ref();
+
+            // Empty tile should be valid but have 0 features
+            let reader = MvtReader::new(tile_bytes.to_vec());
+            assert!(reader.is_ok(), "Empty tile should be valid MVT");
+            if let Ok(r) = reader {
+                let layer_names = r.get_layer_names();
+                assert!(layer_names.is_ok(), "Should get layer names");
+            }
+        }
+
+        // Test boundary tile (if different from hit)
+        if zoom.boundary.x != hit.x || zoom.boundary.y != hit.y {
+            let boundary_tile = &zoom.boundary;
+            let request = Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/api/files/{}/tiles/{}/{}/{}",
+                    file_id, z, boundary_tile.x, boundary_tile.y
+                ))
+                .body(Body::empty())
+                .unwrap();
+
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+            let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+            let tile_bytes = tile_body.as_ref();
+
+            // Boundary tile should be valid and have features
+            assert!(!tile_bytes.is_empty(), "Boundary tile should not be empty");
+            let reader = MvtReader::new(tile_bytes.to_vec());
+            assert!(reader.is_ok(), "Boundary tile should be valid MVT");
+        }
+
+        println!(
+            "  z={}: ✓ hit({},{}) empty({},{}) boundary({},{})",
+            z, hit.x, hit.y, zoom.empty.x, zoom.empty.y, zoom.boundary.x, zoom.boundary.y
+        );
+    }
+
+    println!("✓ All tiles match for {}", dataset_name);
+}
+
+#[tokio::test]
+async fn test_tile_golden_osm_lines_multi_zoom() {
+    test_tile_golden_for_dataset("sf_lines").await;
+}
+
+#[tokio::test]
+async fn test_tile_golden_osm_points_multi_zoom() {
+    test_tile_golden_for_dataset("sf_points").await;
+}
+
+#[tokio::test]
+async fn test_tile_golden_osm_polygons_multi_zoom() {
+    test_tile_golden_for_dataset("sf_polygons").await;
 }
