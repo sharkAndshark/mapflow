@@ -1,0 +1,37 @@
+{
+  "datasets": [
+    {
+      "name": "sf_lines",
+      "fixture": "testdata/osm_medium/geojson/sf_lines.geojson",
+      "sample_tiles": [
+        {"z": 0, "x": 0, "y": 0, "type": "hit", "expected_features": 99},
+        {"z": 10, "x": 163, "y": 395, "type": "hit", "expected_features": 19179},
+        {"z": 10, "x": 263, "y": 495, "type": "empty", "expected_features": 0},
+        {"z": 14, "x": 2620, "y": 6332, "type": "hit", "expected_features": 3580},
+        {"z": 14, "x": 2720, "y": 6432, "type": "empty", "expected_features": 0}
+      ]
+    },
+    {
+      "name": "sf_points",
+      "fixture": "testdata/osm_medium/geojson/sf_points.geojson",
+      "sample_tiles": [
+        {"z": 0, "x": 0, "y": 0, "type": "hit", "expected_features": 23685},
+        {"z": 10, "x": 163, "y": 395, "type": "hit", "expected_features": 23680},
+        {"z": 10, "x": 263, "y": 495, "type": "empty", "expected_features": 0},
+        {"z": 14, "x": 2620, "y": 6332, "type": "hit", "expected_features": 3872},
+        {"z": 14, "x": 2720, "y": 6432, "type": "empty", "expected_features": 0}
+      ]
+    },
+    {
+      "name": "sf_polygons",
+      "fixture": "testdata/osm_medium/geojson/sf_polygons.geojson",
+      "sample_tiles": [
+        {"z": 0, "x": 0, "y": 0, "type": "hit", "expected_features": 0},
+        {"z": 10, "x": 163, "y": 395, "type": "hit", "expected_features": 30063},
+        {"z": 10, "x": 263, "y": 495, "type": "empty", "expected_features": 0},
+        {"z": 14, "x": 2620, "y": 6332, "type": "hit", "expected_features": 4103},
+        {"z": 14, "x": 2720, "y": 6432, "type": "empty", "expected_features": 0}
+      ]
+    }
+  ]
+}

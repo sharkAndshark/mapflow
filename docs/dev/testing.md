@@ -61,25 +61,54 @@ CI includes a Docker smoke test that builds the container image, runs it, upload
 - The tile assertion is a golden-byte comparison against `testdata/smoke/expected_sample_z0_x0_y0.mvt.base64`.
 - If the tile output changes (due to a deliberate tile encoding/logic change), regenerate the golden by running `scripts/ci/fetch_tile.sh` and updating the base64 file.
 
-## OSM Multi-Zoom Tile Tests (Backend)
+## OSM Tile Tests (Backend)
 
-Backend includes comprehensive tile generation tests using real OSM data from San Francisco (`testdata/osm_medium/`).
+Backend includes tile generation tests using real OSM data from San Francisco (`testdata/osm_medium/`).
 
-These tests verify that tile generation works correctly across multiple zoom levels (z=0..14) for different geometry types:
+These tests verify that tile generation works correctly for different geometry types:
 
 - **sf_lines** (20,898 road features)
 - **sf_points** (traffic signals, places)
 - **sf_polygons** (31,715 building/landuse features)
 
-Each test validates:
-- Tile endpoint returns 200 OK
-- Tile decodes as valid MVT format
-- Feature count is reasonable for hit/empty/boundary tiles
-- High-zoom tiles contain expected OSM metadata (osm_id, name, etc.)
+### Sample-based Tests (Default)
 
-Location: `backend/tests/api_tests.rs::test_tile_golden_osm_*_multi_zoom`
+Default tests use a **representative sample** of tiles to balance speed and coverage:
 
-Golden metadata (tile coordinates, expected feature counts) stored in `testdata/smoke/golden_*_tiles.json`.
+- Tests 5 tiles per dataset (zoom levels 0, 10, 14)
+- Validates exact feature counts to catch regressions
+- Runs in ~4-5 seconds (suitable for git hooks and local development)
+
+**Run tests:**
+```bash
+cargo test test_tile_golden_osm_lines_samples
+cargo test test_tile_golden_osm_points_samples
+cargo test test_tile_golden_osm_polygons_samples
+```
+
+**Test configuration:** `testdata/smoke/osm_tile_test_samples.json`
+
+### Updating Golden Metadata
+
+When tile encoding logic changes and feature counts change:
+
+1. Run the affected test (will fail with `UPDATE NEEDED` message)
+2. Copy the output JSON fragments into `testdata/smoke/osm_tile_test_samples.json`
+3. Re-run the test to verify
+
+Example output:
+```
+========== UPDATE REQUIRED ==========
+Some tiles are missing expected_features. Update the config file:
+
+File: testdata/smoke/osm_tile_test_samples.json
+
+Dataset: sf_lines
+  {"z": 0, "x": 0, "y": 0, "type": "hit", "expected_features": 99}
+  {"z": 10, "x": 163, "y": 395, "type": "hit", "expected_features": 19179}
+```
+
+Location: `backend/tests/api_tests.rs::test_tile_golden_osm_*_samples`
 
 ## Behavioral Contracts (Layered Verification)
 
