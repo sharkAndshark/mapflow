@@ -122,3 +122,67 @@ clean-node:
 # Optional: remove Rust build cache (slow to rebuild)
 clean-target:
   cargo clean
+
+# --- Dependency Management ---
+
+# Check for outdated dependencies (run daily)
+outdated:
+  @echo "=== Frontend outdated ==="
+  npm outdated --prefix frontend || true
+  @echo "\n=== Backend outdated ==="
+  @echo "Run: cargo update --dry-run --manifest-path backend/Cargo.toml"
+
+# Update frontend dependencies (excludes major version upgrades: vite, react)
+update-frontend:
+  @echo "Updating frontend dependencies..."
+  @echo "Note: Skipping major upgrades (vite, react)"
+  cd frontend && npm install
+  @echo "✅ Frontend dependencies updated"
+  @echo "Next steps:"
+  @echo "  1. Run tests: just test-frontend-unit"
+  @echo "  2. Build project: just build"
+
+# Update backend dependencies
+update-backend:
+  @echo "Updating backend dependencies..."
+  cargo update --manifest-path backend/Cargo.toml
+  @echo "✅ Backend dependencies updated"
+  @echo "Next: Run tests to verify"
+  @echo "  just test-backend"
+
+# Update vite to v7 (DEFERRED - major upgrade)
+update-vite:
+  @echo "⚠️  Vite 7 is a major upgrade - skipping for now"
+  @echo "Current version: $(npm list vite --prefix frontend --depth=0 | grep vite | awk '{print $2}')"
+  @echo "Latest version: $(npm view vite version)"
+  @echo "\nTo upgrade manually when ready:"
+  @echo "  cd frontend && npm install vite@latest"
+  @echo "  cd frontend && npm install @vitejs/plugin-react@latest"
+  @echo "\n⚠️  Make sure to check breaking changes!"
+
+# Update react to v19 (DEFERRED - major upgrade)
+update-react:
+  @echo "⚠️  React 19 is a major upgrade - skipping for now"
+  @echo "Current version: $(npm list react react-dom --prefix frontend --depth=0 | grep -E 'react|react-dom' | awk '{print $2}')"
+  @echo "Latest version: $(npm view react version)"
+  @echo "\nTo upgrade manually when ready:"
+  @echo "  cd frontend && npm install react@latest react-dom@latest"
+  @echo "\n⚠️  Wait for ecosystem to mature!"
+
+# Update all dependencies (except major upgrades)
+update-all: update-frontend update-backend
+  @echo "\n✅ All dependencies updated"
+  @echo "⚠️  Major upgrades skipped: vite, react"
+  @echo "Run full test suite: just test"
+
+# Update specific frontend package
+update-frontend-pkg PACKAGE:
+  cd frontend && npm update {{PACKAGE}}
+  @echo "✅ Updated {{PACKAGE}}"
+  @echo "Run tests to verify: just test-frontend-unit"
+
+# Update specific backend package
+update-backend-pkg PACKAGE:
+  cargo update --manifest-path backend/Cargo.toml --package {{PACKAGE}}
+  @echo "✅ Updated {{PACKAGE}}"
+  @echo "Run tests to verify: just test-backend
