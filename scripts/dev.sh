@@ -27,6 +27,12 @@ NODE_VERSION_NUMBERS=$(echo "$NODE_VERSION" | cut -d'v' -f2 | cut -d'.' -f1,2)
 NODE_MAJOR=$(echo "$NODE_VERSION_NUMBERS" | cut -d'.' -f1)
 NODE_MINOR=$(echo "$NODE_VERSION_NUMBERS" | cut -d'.' -f2)
 
+# Validate version parsing
+if [ -z "$NODE_MAJOR" ] || [ -z "$NODE_MINOR" ]; then
+    echo "[dev.sh] ERROR: Unable to parse Node.js version from: $NODE_VERSION" >&2
+    exit 1
+fi
+
 # Allow v20.19.0+, v22.12.0+, v23.x+
 if { [ "$NODE_MAJOR" -eq 20 ] && [ "$NODE_MINOR" -ge 19 ]; } || \
    { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -ge 12 ]; } || \
@@ -175,7 +181,7 @@ while [ "$count" -lt "$max_retries" ]; do
         exit 1
     fi
 
-    if curl -s "http://127.0.0.1:$PORT/api/files" >/dev/null; then
+    if curl -s "http://127.0.0.1:$PORT/api/files" >/dev/null 2>&1; then
         backend_ready=1
         break
     fi
