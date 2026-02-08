@@ -5,16 +5,18 @@ set -euo pipefail
 export NVM_DIR="$HOME/.nvm"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
     \. "$NVM_DIR/nvm.sh"
+    
+    # Use .nvmrc if present, otherwise rely on user's active version
+    if [ -f ".nvmrc" ]; then
+        if ! nvm use >/dev/null 2>&1; then
+            echo "[dev.sh] ERROR: Failed to activate Node.js version from .nvmrc" >&2
+            echo "[dev.sh] ERROR: Please install the required version: nvm install" >&2
+            exit 1
+        fi
+    fi
 else
     echo "[dev.sh] ERROR: NVM not found at \$NVM_DIR/nvm.sh" >&2
     echo "[dev.sh] ERROR: Please install NVM or ensure Node.js 20.20+/22.12+ is active" >&2
-    exit 1
-fi
-
-# Use Node.js 20 LTS (v20.20.0+) to satisfy Vite 7.x requirement
-if ! nvm use 20 >/dev/null 2>&1; then
-    echo "[dev.sh] ERROR: Failed to activate Node.js 20 via NVM" >&2
-    echo "[dev.sh] ERROR: Please install Node.js 20 LTS: nvm install 20" >&2
     exit 1
 fi
 
