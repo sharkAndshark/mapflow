@@ -132,10 +132,14 @@ outdated:
   @echo "\n=== Backend outdated ==="
   @echo "Run: cargo update --dry-run --manifest-path backend/Cargo.toml"
 
-# Update frontend dependencies
+# Install frontend dependencies (first time or CI)
+install-frontend:
+  cd frontend && npm install
+
+# Update frontend dependencies (patch/minor versions only)
 update-frontend:
   @echo "Updating frontend dependencies..."
-  cd frontend && npm install
+  cd frontend && npm update
   @echo "✅ Frontend dependencies updated"
   @echo "Next steps:"
   @echo "  1. Run tests: just test-frontend-unit"
