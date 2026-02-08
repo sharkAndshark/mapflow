@@ -55,3 +55,14 @@ pub struct FeaturePropertiesResponse {
     pub fid: i64,
     pub properties: Vec<FeatureProperty>,
 }
+
+#[derive(Debug, Serialize)]
+pub struct FieldInfo {
+    pub name: String,
+    pub r#type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FileSchemaResponse {
+    pub fields: Vec<FieldInfo>,
+}

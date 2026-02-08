@@ -25,12 +25,14 @@
 | API-003 | 预览状态 | GET /api/files/:id/preview 仅在 ready 状态返回数据 | 200 + bbox(minx,miny,maxx,maxy,WGS84) / 404/409 + `{error}` | `cargo test test_preview_ready` | Integration | P0 |
 | API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 返回 MVT（Web Mercator 投影），包含几何和特征属性 | 200 + Content-Type=mvt / 400/404/409 + `{error}` | `cargo test test_tiles_*` | Integration | P0 |
 | API-005 | 特征属性 | GET /api/files/:id/features/:fid 返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序 | 200 + `{fid, properties:[{key,value}]}` / 404/409 + `{error}` | `cargo test test_features_*` | Integration | P0 |
-| API-006 | 测试端点 | POST /api/test/reset 重置数据库和存储，仅在 debug + MAPFLOW_TEST_MODE=1 | 执行成功，仅在 debug 构建 | `cargo test test_reset` | Integration | P2 |
+| API-006 | Schema 查询 | GET /api/files/:id/schema 返回 `{fields:[{name,type}]}`，type 为 MVT 兼容类型（VARCHAR/INTEGER/BIGINT/DOUBLE/GEOMETRY），按 ordinal 排序，仅 ready 状态可访问 | 200 + `{fields}` / 404/409 + `{error}` | `cargo test test_schema_*` | Integration | P1 |
+| API-007 | 测试端点 | POST /api/test/reset 重置数据库和存储，仅在 debug + MAPFLOW_TEST_MODE=1 | 执行成功，仅在 debug 构建 | `cargo test test_reset` | Integration | P2 |
 | STORE-001 | 文件存储 | 原始文件存储在 `./uploads/<id>/`（由 UPLOAD_DIR 控制） | 文件存在且路径正确 | `cargo test test_storage_*` | Integration | P0 |
 | STORE-002 | 数据库 Schema | DuckDB 表 files（元数据）、dataset_columns（列映射）、每个数据集的表（空间数据） | 表结构存在，数据可查询 | `pytest test_db_schema` | Unit | P0 |
 | STORE-003 | 状态机 | 任务状态遵循 uploading → uploaded → processing → ready/failed 生命周期，processing 任务在重启时标记为 failed | 数据库状态转换合法，无非法转换 | `pytest test_state_machine` | Unit | P0 |
 | UI-001 | 预览可用性 | UI 仅在 status=ready 时允许打开预览，非 ready 状态（uploaded/processing/failed）禁用 | 预览按钮状态正确 | `npm run test:e2e` | E2E | P0 |
 | UI-002 | 特征检查器 | 显示基于数据集 schema 的稳定属性字段，NULL 值显示为 `--`（斜体、静音），空字符串显示为 `""`（悬停区分） | NULL 和空字符串正确区分 | `npm run test:e2e` | E2E | P0 |
+| UI-003 | 字段信息显示 | Detail Sidebar 在 status=ready 时显示"字段信息"section，列出字段名和类型，支持加载中和错误状态 | 字段信息正确显示，状态转换正确 | `npm run test:e2e` | E2E | P1 |
 | E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-003 | 重启持久化 | 重启后之前上传的文件仍可访问 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
@@ -58,6 +60,34 @@
    - 实现细节（内部结构、时间字符串）→ 调整测试焦点
 
 详细原则见 `AGENTS.md` 的"验证原则"部分。
+
+## 数据模型参考
+
+### Schema API 响应模型
+
+```typescript
+interface FileSchemaResponse {
+  fields: FieldInfo[];
+}
+
+interface FieldInfo {
+  name: string;  // 原始字段名（original_name）
+  type: string;  // MVT 兼容类型（VARCHAR/INTEGER/BIGINT/DOUBLE/GEOMETRY）
+}
+```
+
+**类型映射规则：**
+- `VARCHAR`: 文本类型（包括空字符串）
+- `INTEGER`: 32位整数
+- `BIGINT`: 64位整数（包括从 SMALLINT/TINYINT 转换）
+- `DOUBLE`: 浮点数（包括从 FLOAT 转换）
+- `GEOMETRY`: 几何类型（通常为 `geom` 字段，在属性列表中排除）
+
+**查询行为：**
+- 仅对 `status=ready` 的文件返回 schema
+- 字段按 `ordinal` 排序（导入时的字段顺序）
+- 排除系统字段：`fid`（特征ID）、`geom`（几何）
+- NULL 值在属性查询中保留（参见 API-005）
 
 ## 参考
 

@@ -723,6 +723,351 @@ async fn test_feature_properties_endpoint_returns_null_for_missing_values() {
 }
 
 #[tokio::test]
+async fn test_schema_endpoint_returns_fields_and_types() {
+    let (app, _temp) = setup_app().await;
+
+    // Upload GeoJSON with multiple property types
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": "Test Feature",
+                    "class": "primary",
+                    "count": 42,
+                    "length": 123.45
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundarySCHEMA";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    // Request schema
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    // Verify response structure
+    assert!(body_json["fields"].is_array());
+
+    let fields = body_json["fields"]
+        .as_array()
+        .expect("fields should be an array");
+
+    // We expect to find our property fields
+    let mut found_name = false;
+    let mut found_class = false;
+    let mut found_count = false;
+    let mut found_length = false;
+
+    for field in fields {
+        let name = field["name"].as_str();
+        let field_type = field["type"].as_str();
+
+        if let Some(n) = name {
+            match n {
+                "name" => {
+                    found_name = true;
+                    assert_eq!(field_type, Some("VARCHAR"));
+                }
+                "class" => {
+                    found_class = true;
+                    assert_eq!(field_type, Some("VARCHAR"));
+                }
+                "count" => {
+                    found_count = true;
+                    assert_eq!(field_type, Some("INTEGER"));
+                }
+                "length" => {
+                    found_length = true;
+                    assert_eq!(field_type, Some("DOUBLE"));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    assert!(found_name, "Expected to find 'name' field");
+    assert!(found_class, "Expected to find 'class' field");
+    assert!(found_count, "Expected to find 'count' field");
+    assert!(found_length, "Expected to find 'length' field");
+}
+
+#[tokio::test]
+async fn test_schema_endpoint_returns_409_for_non_ready_file() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+
+    let state = AppState {
+        upload_dir,
+        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        max_size: 10 * 1024 * 1024,
+        max_size_label: "10MB".to_string(),
+    };
+
+    let app = build_api_router(state.clone());
+
+    // Insert a file in 'processing' state directly to avoid race condition
+    {
+        let conn = state.db.lock().await;
+        conn.execute(
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)\
+             VALUES (?1, ?2, ?3, ?4, NOW(), ?5, ?6, ?7, ?8, ?9)",
+            duckdb::params![
+                "test-processing-file",
+                "test.geojson",
+                "geojson",
+                100_i64,
+                "processing",
+                None::<String>,
+                "./uploads/test/test.geojson",
+                None::<String>,
+                None::<String>,
+            ],
+        )
+        .expect("insert processing file");
+    }
+
+    // Request schema - should return 409 since file is not ready
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files/test-processing-file/schema")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn test_schema_endpoint_returns_404_for_nonexistent_file() {
+    let (app, _temp) = setup_app().await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files/nonexistent/schema")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_schema_endpoint_handles_minimal_fields() {
+    let (app, _temp) = setup_app().await;
+
+    // Upload GeoJSON with only geometry, no properties
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryMINIMAL";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"minimal.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    // Request schema
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    // Verify response structure
+    assert!(body_json["fields"].is_array());
+
+    let fields = body_json["fields"]
+        .as_array()
+        .expect("fields should be an array");
+
+    // With no properties, dataset_columns should only have metadata fields (fid, geom excluded)
+    // So we expect an empty array or only metadata
+    // The implementation excludes geom and fid, so empty array is expected
+    assert_eq!(
+        fields.len(),
+        0,
+        "Expected no property fields for feature with no properties"
+    );
+}
+
+#[tokio::test]
+async fn test_schema_endpoint_handles_many_fields() {
+    let (app, _temp) = setup_app().await;
+
+    // Generate GeoJSON with many properties (50 fields)
+    let mut properties = serde_json::Map::new();
+    for i in 0..50 {
+        properties.insert(format!("field_{}", i), serde_json::json!(i));
+    }
+
+    let geojson_obj = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "properties": properties,
+            "geometry": {
+                "type": "Point",
+                "coordinates": [0.0, 0.0]
+            }
+        }]
+    });
+
+    let geojson_content = geojson_obj.to_string();
+
+    let boundary = "------------------------boundaryMANY";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"many.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    // Request schema
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    // Verify response structure
+    assert!(body_json["fields"].is_array());
+
+    let fields = body_json["fields"]
+        .as_array()
+        .expect("fields should be an array");
+
+    // Should have all 50 fields
+    assert_eq!(fields.len(), 50, "Expected 50 property fields");
+
+    // Verify all fields have correct structure (name and type)
+    for field in fields {
+        assert!(field["name"].is_string(), "Field name should be a string");
+        assert!(field["type"].is_string(), "Field type should be a string");
+
+        let name = field["name"].as_str().unwrap();
+        assert!(
+            name.starts_with("field_"),
+            "Field name should start with 'field_'"
+        );
+
+        // All generated fields are integers
+        assert_eq!(
+            field["type"], "INTEGER",
+            "Generated fields should be INTEGER type"
+        );
+    }
+
+    // Verify we can find our expected fields
+    let field_names: Vec<&str> = fields.iter().map(|f| f["name"].as_str().unwrap()).collect();
+
+    for i in [0, 25, 49].iter() {
+        let expected = format!("field_{}", i);
+        assert!(
+            field_names.contains(&expected.as_str()),
+            "Expected to find field {}",
+            expected
+        );
+    }
+}
+
+#[tokio::test]
 async fn test_upload_shapefile_zip_lifecycle() {
     let (app, _temp) = setup_app().await;
 
