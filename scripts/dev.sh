@@ -9,32 +9,31 @@ if [ -s "$NVM_DIR/nvm.sh" ]; then
     # Use .nvmrc if present, otherwise rely on user's active version
     if [ -f ".nvmrc" ]; then
         if ! nvm use >/dev/null 2>&1; then
-            echo "[dev.sh] ERROR: Failed to activate Node.js version from .nvmrc" >&2
-            echo "[dev.sh] ERROR: Please install the required version: nvm install" >&2
+            NVMRC_VERSION=$(cat .nvmrc)
+            echo "[dev.sh] ERROR: Failed to activate Node.js $NVMRC_VERSION from .nvmrc" >&2
+            echo "[dev.sh] ERROR: Please install: nvm install $NVMRC_VERSION" >&2
             exit 1
         fi
     fi
 else
     echo "[dev.sh] ERROR: NVM not found at \$NVM_DIR/nvm.sh" >&2
-    echo "[dev.sh] ERROR: Please install NVM or ensure Node.js 20.20+/22.12+ is active" >&2
+    echo "[dev.sh] ERROR: Please install NVM or ensure Node.js 20.19+/22.12+ is active" >&2
     exit 1
 fi
 
-# Verify Node version meets Vite 7.x requirements (v20.20.0+ or v22.12.0+)
+# Verify Node version meets Vite 7.x requirements (^20.19.0 || >=22.12.0)
 NODE_VERSION=$(node -v)
 NODE_VERSION_NUMBERS=$(echo "$NODE_VERSION" | cut -d'v' -f2 | cut -d'.' -f1,2)
 NODE_MAJOR=$(echo "$NODE_VERSION_NUMBERS" | cut -d'.' -f1)
 NODE_MINOR=$(echo "$NODE_VERSION_NUMBERS" | cut -d'.' -f2)
 
-# Check Node.js 20.20.0+ or 22.12.0+
-if [ "$NODE_MAJOR" -eq 20 ] && [ "$NODE_MINOR" -lt 20 ]; then
-    echo "[dev.sh] ERROR: Node.js $NODE_VERSION does not meet requirement (v20.20.0+ or v22.12.0+)" >&2
-    exit 1
-elif [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 12 ]; then
-    echo "[dev.sh] ERROR: Node.js $NODE_VERSION does not meet requirement (v20.20.0+ or v22.12.0+)" >&2
-    exit 1
-elif [ "$NODE_MAJOR" -lt 20 ]; then
-    echo "[dev.sh] ERROR: Node.js $NODE_VERSION does not meet requirement (v20.20.0+ or v22.12.0+)" >&2
+# Allow v20.19.0+, v22.12.0+, v23.x+
+if { [ "$NODE_MAJOR" -eq 20 ] && [ "$NODE_MINOR" -ge 19 ]; } || \
+   { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -ge 12 ]; } || \
+   [ "$NODE_MAJOR" -gt 22 ]; then
+    : # Version is acceptable
+else
+    echo "[dev.sh] ERROR: Node.js $NODE_VERSION does not meet requirement (v20.19.0+ or v22.12.0+)" >&2
     exit 1
 fi
 
