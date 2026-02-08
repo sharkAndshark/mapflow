@@ -1,6 +1,6 @@
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path as AxumPath, State},
-    http::{header, Method, StatusCode},
+    http::{header, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -12,7 +12,6 @@ use tokio::{
     fs,
     io::{AsyncWriteExt, BufWriter},
 };
-use tower_http::cors::{Any, CorsLayer};
 
 mod config;
 mod db;
@@ -37,11 +36,6 @@ use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
 
 pub fn build_api_router(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::DELETE])
-        .allow_headers(Any);
-
     let router: Router<AppState> = Router::new()
         .route("/api/files", get(list_files))
         .route("/api/uploads", post(upload_file))
@@ -52,10 +46,7 @@ pub fn build_api_router(state: AppState) -> Router {
 
     let router = add_test_routes(router);
 
-    router
-        .layer(DefaultBodyLimit::disable())
-        .with_state(state)
-        .layer(cors)
+    router.layer(DefaultBodyLimit::disable()).with_state(state)
 }
 
 async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
