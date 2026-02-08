@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 # Load nvm to ensure correct Node.js version
 export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    \. "$NVM_DIR/nvm.sh"
+else
+    echo "[dev.sh] ERROR: NVM not found at \$NVM_DIR/nvm.sh" >&2
+    echo "[dev.sh] ERROR: Please install NVM or ensure Node.js 20.20+/22.12+ is active" >&2
+    exit 1
+fi
 
 # Use Node.js 20 LTS (v20.20.0+) to satisfy Vite 7.x requirement
 if ! nvm use 20 >/dev/null 2>&1; then
@@ -12,11 +18,21 @@ if ! nvm use 20 >/dev/null 2>&1; then
     exit 1
 fi
 
-# Verify Node version meets Vite 7.x requirements (v20.20.0+)
-NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1,2)
-REQUIRED_VERSION="20.20"
-if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$NODE_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
-    echo "[dev.sh] ERROR: Node.js version $NODE_VERSION does not meet requirement (v${REQUIRED_VERSION}+)" >&2
+# Verify Node version meets Vite 7.x requirements (v20.20.0+ or v22.12.0+)
+NODE_VERSION=$(node -v)
+NODE_VERSION_NUMBERS=$(echo "$NODE_VERSION" | cut -d'v' -f2 | cut -d'.' -f1,2)
+NODE_MAJOR=$(echo "$NODE_VERSION_NUMBERS" | cut -d'.' -f1)
+NODE_MINOR=$(echo "$NODE_VERSION_NUMBERS" | cut -d'.' -f2)
+
+# Check Node.js 20.20.0+ or 22.12.0+
+if [ "$NODE_MAJOR" -eq 20 ] && [ "$NODE_MINOR" -lt 20 ]; then
+    echo "[dev.sh] ERROR: Node.js $NODE_VERSION does not meet requirement (v20.20.0+ or v22.12.0+)" >&2
+    exit 1
+elif [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 12 ]; then
+    echo "[dev.sh] ERROR: Node.js $NODE_VERSION does not meet requirement (v20.20.0+ or v22.12.0+)" >&2
+    exit 1
+elif [ "$NODE_MAJOR" -lt 20 ]; then
+    echo "[dev.sh] ERROR: Node.js $NODE_VERSION does not meet requirement (v20.20.0+ or v22.12.0+)" >&2
     exit 1
 fi
 
