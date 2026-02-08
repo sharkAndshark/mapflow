@@ -57,4 +57,5 @@ Environment variables (Docker):
 
 ## Development
 
-See `docs/dev.md`.
+- [behaviors.md](./docs/dev/behaviors.md) - System contracts and verification
+- [AGENTS.md](./AGENTS.md) - Agent collaboration guidelines

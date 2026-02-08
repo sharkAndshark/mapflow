@@ -1,111 +1,64 @@
-# System Behaviors & Contracts
+# 系统行为与测试契约
 
-This document defines the technical contracts, API specifications, and storage conventions for MapFlow. It is the reference for "what the system does" during development sprints.
+本文档定义 MapFlow 的可观测行为契约及其验证方法。
 
-## Current Sprint Scope
-**Goal:** Allow data curators to upload, list, and preview spatial data files (Explorer Mode).
+## 概览
 
-### Supported Formats
-- **Shapefile:** Must be a `.zip` archive containing `.shp`, `.shx`, `.dbf`.
-- **GeoJSON:** Standard `.geojson` file (single file).
+**目标：** 允许数据管理员上传、列表和预览空间数据文件（探索者模式）。
 
-## API Contracts
+**支持的格式：**
+- **Shapefile：** 必须是包含 `.shp`、`.shx`、`.dbf` 的 `.zip` 压缩包
+- **GeoJSON：** 标准的 `.geojson` 文件（单文件）
 
-### Uploads
-- `POST /api/uploads`
-  - **Body:** `multipart/form-data` with `file` field.
-  - **Constraints:** Max size defined by `UPLOAD_MAX_SIZE_MB`.
-  - **Response (Success):** JSON with file metadata.
-  - **Response (Error):**
-    - 400 Bad Request for invalid formats/structure.
-    - 413 Payload Too Large when exceeding size limit.
-    - Body: `{ "error": "..." }`.
+> 💡 **启发性提示**：当本表格超过 30 行时，考虑：
+> - 按模块分类（API/存储/UI）
+> - 按层级分类（Unit/Integration/E2E）
+> - 按优先级分类（P0/P1/P2）
+> - 提取高频模式到独立表格
 
-### File Management
-- `GET /api/files`
-  - **Returns:** List of files with `id`, `name`, `type`, `size`, `uploadedAt`, `status`, `crs`, `path` and optional `error`.
+## 行为契约表
 
-### Map Preview (Draft)
-- `GET /api/files/:id/preview`
-  - **Returns:** `id`, `name`, `crs`, `bbox` ([minx, miny, maxx, maxy], WGS84).
-  - **Response (Error):**
-    - 404 Not Found when `:id` does not exist.
-    - 409 Conflict when the file is not ready for preview (e.g. `uploaded`, `processing`, `failed`).
-      - Body: `{ "error": "File is not ready for preview" }`.
-- `GET /api/files/:id/tiles/:z/:x/:y`
-  - **Returns:** `application/vnd.mapbox-vector-tile` (MVT).
-  - **Logic:** Includes feature properties (tags) in addition to geometry.
-  - **Constraints:**
-    - `z` must be within `[0, 22]`.
-    - `x` and `y` must be within `[0, 2^z - 1]`.
-  - **Response (Error):**
-    - 400 Bad Request when tile coordinates are invalid.
-      - Body: `{ "error": "Invalid tile coordinates" }`.
-    - 404 Not Found when `:id` does not exist.
-    - 409 Conflict when the file is not ready for preview.
-      - Body: `{ "error": "File is not ready for preview" }`.
+| ID | 模块 | 可观测行为 | 验证标准 | 验证命令 | 层级 | 优先级 |
+|----|------|-----------|---------|---------|------|--------|
+| API-001 | 上传 | POST /api/uploads 接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 200 + 元数据 / 400（格式无效） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
+| API-002 | 文件列表 | GET /api/files 返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON | `cargo test test_files_list` | Integration | P0 |
+| API-003 | 预览状态 | GET /api/files/:id/preview 仅在 ready 状态返回数据 | 200 + bbox(minx,miny,maxx,maxy,WGS84) / 404/409 + `{error}` | `cargo test test_preview_ready` | Integration | P0 |
+| API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 返回 MVT（Web Mercator 投影），包含几何和特征属性 | 200 + Content-Type=mvt / 400/404/409 + `{error}` | `cargo test test_tiles_*` | Integration | P0 |
+| API-005 | 特征属性 | GET /api/files/:id/features/:fid 返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序 | 200 + `{fid, properties:[{key,value}]}` / 404/409 + `{error}` | `cargo test test_features_*` | Integration | P0 |
+| API-006 | 测试端点 | POST /api/test/reset 重置数据库和存储，仅在 debug + MAPFLOW_TEST_MODE=1 | 执行成功，仅在 debug 构建 | `cargo test test_reset` | Integration | P2 |
+| STORE-001 | 文件存储 | 原始文件存储在 `./uploads/<id>/`（由 UPLOAD_DIR 控制） | 文件存在且路径正确 | `cargo test test_storage_*` | Integration | P0 |
+| STORE-002 | 数据库 Schema | DuckDB 表 files（元数据）、dataset_columns（列映射）、每个数据集的表（空间数据） | 表结构存在，数据可查询 | `pytest test_db_schema` | Unit | P0 |
+| STORE-003 | 状态机 | 任务状态遵循 uploading → uploaded → processing → ready/failed 生命周期，processing 任务在重启时标记为 failed | 数据库状态转换合法，无非法转换 | `pytest test_state_machine` | Unit | P0 |
+| UI-001 | 预览可用性 | UI 仅在 status=ready 时允许打开预览，非 ready 状态（uploaded/processing/failed）禁用 | 预览按钮状态正确 | `npm run test:e2e` | E2E | P0 |
+| UI-002 | 特征检查器 | 显示基于数据集 schema 的稳定属性字段，NULL 值显示为 `--`（斜体、静音），空字符串显示为 `""`（悬停区分） | NULL 和空字符串正确区分 | `npm run test:e2e` | E2E | P0 |
+| E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
+| E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
+| E2E-003 | 重启持久化 | 重启后之前上传的文件仍可访问 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
+| E2E-004 | 预览集成 | 点击预览 → 新标签页打开 → 地图加载 → 瓦片请求成功（200 OK 且非空） | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
+| CI-001 | 冒烟测试 | 构建 Docker → 上传 GeoJSON → 等待 ready → 获取瓦片 | 与 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64 比较字节 | `scripts/ci/smoke_test.sh` | Integration | P0 |
+| OSM-001 | 瓦片生成（lines） | OSM sf_lines（20,898 道路特征）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_lines_samples` | Integration | P1 |
+| OSM-002 | 瓦片生成（points） | OSM sf_points（交通信号灯、地点）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_points_samples` | Integration | P1 |
+| OSM-003 | 瓦片生成（polygons） | OSM sf_polygons（31,715 建筑/土地利用特征）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_polygons_samples` | Integration | P1 |
 
-### Feature Properties (Stable Schema)
-- `GET /api/files/:id/features/:fid`
-  - **Purpose:** Fetch a single feature's properties from DuckDB by its stable `fid`, using the dataset's captured column schema.
-  - **Why:** MVT feature tags may omit NULL-valued properties; this endpoint guarantees a stable field list per dataset/table.
-  - **Returns (Success):**
-    - `{ "fid": <number>, "properties": [ { "key": <string>, "value": <json|null> }, ... ] }`
-    - `properties` is ordered by the dataset column `ordinal`.
-    - `key` uses original column names (user-facing).
-    - `value` is `null` when the row value is NULL.
-  - **Response (Error):**
-    - 404 Not Found when `:id` does not exist.
-      - Body: `{ "error": "File not found" }`.
-    - 409 Conflict when the file is not ready for preview.
-      - Body: `{ "error": "File is not ready for preview" }`.
-    - 404 Not Found when `:fid` does not exist in the dataset.
-      - Body: `{ "error": "Feature not found" }`.
+## 快速决策指南
 
-### Testing Endpoints (Debug Only)
-- `POST /api/test/reset`
-  - **Behavior:** Resets database and storage.
-  - **Security:** Available ONLY in debug builds with `MAPFLOW_TEST_MODE=1`. NEVER in release.
+添加新测试时，问自己：
 
-## Storage Conventions (DuckDB + Filesystem)
+1. **这是什么类型的行为？**
+   - 纯业务逻辑/数据转换 → Unit Test
+   - HTTP API 契约/DB 状态 → Integration Test
+   - 跨边界用户旅程 → E2E Test
 
-### Filesystem
-- **Raw Files:** Stored in `./uploads/<id>/` (controlled by `UPLOAD_DIR`).
+2. **这个测试稳定且快速吗？**
+   - 是 ✅ 继续使用
+   - 否 → 考虑重构设计
 
-### Database Schema (DuckDB)
-- **Table `files`:** Stores metadata (`id`, `name`, `path`, `status`, `error`, etc.).
-- **Table `dataset_columns`:** Stores per-dataset column mapping (normalized identifier -> original property key) and MVT-compatible types.
-- **Per-dataset tables:** Each upload is imported into its own DuckDB table and referenced by `files.table_name`.
+3. **测试覆盖了稳定的契约还是实现细节？**
+   - 稳定契约（API 响应、状态转换）✅
+   - 实现细节（内部结构、时间字符串）→ 调整测试焦点
 
-### Status Lifecycle
-1. `uploading`: Frontend optimistic state.
-2. `uploaded`: File received and saved to disk.
-3. `processing`: Background import into DuckDB spatial table.
-4. `ready`: Import complete, available for preview.
-5. `failed`: Error occurred (details in `error` column).
-   - **Recovery:** On server startup, any `processing` tasks are marked `failed`.
+详细原则见 `AGENTS.md` 的"验证原则"部分。
 
-Note: Backend currently persists `uploaded`, `processing`, `ready`, `failed`. The `uploading` state exists only on the frontend.
+## 参考
 
-## UI Observable Contracts
-
-### Preview Availability
-
-- The UI MUST allow opening the preview page only when the selected file `status` is `ready`.
-- When the file is not `ready` (`uploaded`, `processing`, `failed`), the UI MUST present the preview action as disabled (not clickable).
-
-### Preview Feature Inspector
-
-- For a given DuckDB table (dataset), the feature inspector MUST display a stable set of property fields based on the dataset schema.
-- Fields with NULL values MUST still be shown (with a UI placeholder value).
-- UI placeholder conventions:
-  - NULL is displayed as `--`.
-  - Empty strings are displayed as `""`.
-  - Visual distinction: placeholder values are muted; NULL is also italic; hover tooltips clarify `NULL` vs `Empty string`.
-
-## Technical Implementation Details
-
-### DuckDB Spatial Usage
-- **CRS Detection:** `ST_Read_Meta(path)` to extract CRS auth code.
-- **Reprojection:** `ST_Transform` to EPSG:3857 for tiles.
-- **MVT Generation:** `ST_AsMVTGeom` (tile extent) -> `ST_AsMVT` (binary).
+- **DuckDB Spatial 函数**：`/Users/zhangyijun/RiderProjects/duckdb-spatial/docs`
