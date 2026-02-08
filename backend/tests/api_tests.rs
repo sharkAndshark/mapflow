@@ -831,67 +831,52 @@ async fn test_schema_endpoint_returns_fields_and_types() {
 
 #[tokio::test]
 async fn test_schema_endpoint_returns_409_for_non_ready_file() {
-    let (app, _temp) = setup_app().await;
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
 
-    // Upload a file (it will be in 'uploaded' or 'processing' state)
-    let geojson_content = r#"{
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "properties": { "name": "Test" },
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [0.0, 0.0]
-                }
-            }
-        ]
-    }"#;
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
 
-    let boundary = "------------------------boundaryNOTREADY";
-    let body_data = format!(
-        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
-    );
+    let state = AppState {
+        upload_dir,
+        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        max_size: 10 * 1024 * 1024,
+        max_size_label: "10MB".to_string(),
+    };
 
-    let request = Request::builder()
-        .method("POST")
-        .uri("/api/uploads")
-        .header(
-            "content-type",
-            format!("multipart/form-data; boundary={boundary}"),
+    let app = build_api_router(state.clone());
+
+    // Insert a file in 'processing' state directly to avoid race condition
+    {
+        let conn = state.db.lock().await;
+        conn.execute(
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)\
+             VALUES (?1, ?2, ?3, ?4, NOW(), ?5, ?6, ?7, ?8, ?9)",
+            duckdb::params![
+                "test-processing-file",
+                "test.geojson",
+                "geojson",
+                100_i64,
+                "processing",
+                None::<String>,
+                "./uploads/test/test.geojson",
+                None::<String>,
+                None::<String>,
+            ],
         )
-        .body(Body::from(body_data))
+        .expect("insert processing file");
+    }
+
+    // Request schema - should return 409 since file is not ready
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files/test-processing-file/schema")
+        .body(Body::empty())
         .unwrap();
 
     let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
-
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
-    let file_id = file_item.id;
-
-    // Immediately request schema (file is not ready yet)
-    // We need to poll since the file might be in 'processing' state
-    let mut found_conflict = false;
-    for _ in 0..10 {
-        let request = Request::builder()
-            .method("GET")
-            .uri(format!("/api/files/{}/schema", file_id))
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.clone().oneshot(request).await.unwrap();
-        if response.status() == axum::http::StatusCode::CONFLICT {
-            found_conflict = true;
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-
-    assert!(
-        found_conflict,
-        "Expected 409 CONFLICT for non-ready file, but file became ready too quickly"
-    );
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
 }
 
 #[tokio::test]

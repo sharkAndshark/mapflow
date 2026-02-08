@@ -133,7 +133,7 @@ function DetailSidebar({ file }) {
               <span style={{ color: '#888', fontSize: '12px' }}>加载中...</span>
             ) : schemaError ? (
               <span style={{ color: '#d32f2f', fontSize: '12px' }}>{schemaError}</span>
-            ) : schema && schema.fields ? (
+            ) : schema?.fields ? (
               <div style={{ fontSize: '13px' }}>
                 {schema.fields.length === 0 ? (
                   <span style={{ color: '#888' }}>无字段</span>
