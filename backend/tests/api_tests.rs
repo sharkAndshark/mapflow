@@ -1480,3 +1480,133 @@ async fn test_upload_geojsonseq_lifecycle() {
     assert!(schema.fields.iter().any(|f| f.name == "name"));
 }
 
+#[tokio::test]
+async fn test_upload_kml_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    let kml_bytes = read_fixture_bytes("testdata/sample/formats/sample.kml");
+    let boundary = "------------------------boundaryKML";
+    let body_data = multipart_body(boundary, "test.kml", &kml_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id.clone();
+
+    assert_eq!(file_item.file_type, "kml");
+    assert_eq!(file_item.name, "test");
+
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Verify schema query works
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
+    // KML may use different field names, just verify schema is populated
+    assert!(!schema.fields.is_empty(), "KML schema should have fields");
+}
+
+#[tokio::test]
+async fn test_upload_gpx_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    let gpx_bytes = read_fixture_bytes("testdata/sample/formats/sample.gpx");
+    let boundary = "------------------------boundaryGPX";
+    let body_data = multipart_body(boundary, "test.gpx", &gpx_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id.clone();
+
+    assert_eq!(file_item.file_type, "gpx");
+    assert_eq!(file_item.name, "test");
+
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Verify schema query works
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(!schema.fields.is_empty());
+}
+
+#[tokio::test]
+async fn test_upload_topojson_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    let topojson_bytes = read_fixture_bytes("testdata/sample/formats/sample.topojson");
+    let boundary = "------------------------boundaryTOPOJSON";
+    let body_data = multipart_body(boundary, "test.topojson", &topojson_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id.clone();
+
+    assert_eq!(file_item.file_type, "topojson");
+    assert_eq!(file_item.name, "test");
+
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Verify schema query works
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(!schema.fields.is_empty());
+}
+

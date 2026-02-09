@@ -1,0 +1,1 @@
+{"type":"Topology","transform":{"scale":[1,1],"translate":[0,0]},"objects":{"output":{"type":"GeometryCollection","geometries":[{"type":"Point","properties":{"name":"Point 1"},"coordinates":[0,0]},{"type":"Point","properties":{"name":"Point 2"},"coordinates":[1,1]}]}},"arcs":[]}
