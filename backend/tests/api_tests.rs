@@ -1762,4 +1762,35 @@ async fn test_upload_topojson_lifecycle() {
     );
 }
 
+#[tokio::test]
+async fn test_tile_golden_osm_simple_polygons_samples() {
+    let config = load_osm_test_config();
+    let dataset_config = config
+        .datasets
+        .iter()
+        .find(|d| d.name == "sf_simple_polygons")
+        .expect("sf_simple_polygons dataset not found in config");
+    test_tile_golden_samples_for_dataset(dataset_config).await;
+}
 
+#[tokio::test]
+async fn test_tile_golden_osm_multipoints_samples() {
+    let config = load_osm_test_config();
+    let dataset_config = config
+        .datasets
+        .iter()
+        .find(|d| d.name == "sf_multipoints")
+        .expect("sf_multipoints dataset not found in config");
+    test_tile_golden_samples_for_dataset(dataset_config).await;
+}
+
+#[tokio::test]
+async fn test_tile_golden_osm_multilinestrings_samples() {
+    let config = load_osm_test_config();
+    let dataset_config = config
+        .datasets
+        .iter()
+        .find(|d| d.name == "sf_multilinestrings")
+        .expect("sf_multilinestrings dataset not found in config");
+    test_tile_golden_samples_for_dataset(dataset_config).await;
+}

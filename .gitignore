@@ -59,6 +59,9 @@ output/
 tests/test_data/
 data/test_data/
 
+# Test data generation scripts (kept for local use, not committed)
+scripts/testdata/
+
 # Environment
 .env
 .env.local

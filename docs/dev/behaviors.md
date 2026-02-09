@@ -14,6 +14,14 @@
 - **GPX：** GPS Exchange Format (`.gpx`)
 - **TopoJSON：** 拓扑优化的 GeoJSON (`.topojson`)
 
+**测试覆盖的几何类型：**
+- ✅ Point (OSM-002: sf_points)
+- ✅ LineString (OSM-001: sf_lines)
+- ✅ Polygon (OSM-004: sf_simple_polygons) 🆕
+- ✅ MultiPoint (OSM-005: sf_multipoints) 🆕
+- ✅ MultiLineString (OSM-006: sf_multilinestrings) 🆕
+- ✅ MultiPolygon (OSM-003: sf_polygons)
+
 > 💡 **启发性提示**：当本表格超过 30 行时，考虑：
 > - 按模块分类（API/存储/UI）
 > - 按层级分类（Unit/Integration/E2E）
@@ -48,7 +56,10 @@
 | CI-001 | 冒烟测试 | 构建 Docker → 上传 GeoJSON → 等待 ready → 获取瓦片 | 与 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64 比较字节 | `scripts/ci/smoke_test.sh` | Integration | P0 |
 | OSM-001 | 瓦片生成（lines） | OSM sf_lines（20,898 道路特征）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_lines_samples` | Integration | P1 |
 | OSM-002 | 瓦片生成（points） | OSM sf_points（交通信号灯、地点）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_points_samples` | Integration | P1 |
-| OSM-003 | 瓦片生成（polygons） | OSM sf_polygons（31,715 建筑/土地利用特征）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_polygons_samples` | Integration | P1 |
+| OSM-003 | 瓦片生成（polygons） | OSM sf_polygons（31,715 建筑/土地利用特征，MultiPolygon几何）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_polygons_samples` | Integration | P1 |
+| OSM-004 | 瓦片生成（simple polygons） | OSM sf_simple_polygons（10,000 简单多边形，Polygon几何）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_simple_polygons_samples` | Integration | P1 |
+| OSM-005 | 瓦片生成（multipoints） | OSM sf_multipoints（402 多点要素，MultiPoint几何）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_multipoints_samples` | Integration | P1 |
+| OSM-006 | 瓦片生成（multilinestrings） | OSM sf_multilinestrings（511 多线要素，MultiLineString几何）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_multilinestrings_samples` | Integration | P1 |
 
 ## 快速决策指南
 
