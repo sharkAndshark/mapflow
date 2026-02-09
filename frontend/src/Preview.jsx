@@ -25,6 +25,7 @@ export default function Preview() {
   const [popupFid, setPopupFid] = useState(null);
   const popupRef = useRef(null);
   const requestSeqRef = useRef(0);
+  const selectedFidRef = useRef(null);
 
   const cancelPopup = useCallback(() => {
     requestSeqRef.current += 1;
@@ -34,6 +35,10 @@ export default function Preview() {
     setPopupFid(null);
     setSelectedFid(null);
   }, []);
+
+  useEffect(() => {
+    selectedFidRef.current = selectedFid;
+  }, [selectedFid]);
 
   const loadFeatureProperties = useCallback(
     async (fid) => {
@@ -125,9 +130,9 @@ export default function Preview() {
   const styleFunction = useCallback(
     (feature) => {
       const fid = feature.getId?.() ?? feature.get('fid') ?? feature.getProperties?.()?.fid;
-      return fid === selectedFid ? selectedStyle : defaultStyle;
+      return fid === selectedFidRef.current ? selectedStyle : defaultStyle;
     },
-    [selectedFid, defaultStyle, selectedStyle],
+    [defaultStyle, selectedStyle],
   );
 
   // Fetch Metadata
