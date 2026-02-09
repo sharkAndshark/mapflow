@@ -501,7 +501,7 @@ async fn upload_file(
         "shapefile" => validate_shapefile_zip(&file_path).await,
         "geojson" => validate_geojson(&file_path).await,
         "geojsonl" | "kml" | "gpx" | "topojson" => Ok(()), // Trust GDAL to validate
-        _ => Ok(()),
+        _ => Ok(()), // Unreachable due to earlier validation, but required for type safety
     };
 
     let uploaded_at = Utc::now().to_rfc3339();

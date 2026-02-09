@@ -1478,6 +1478,32 @@ async fn test_upload_geojsonseq_lifecycle() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
     assert!(schema.fields.iter().any(|f| f.name == "name"));
+
+    // Verify tile endpoint returns data (ensures features were actually imported)
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for GeoJSONSeq data"
+    );
+
+    // Verify at least one feature has the expected "name" property
+    assert!(
+        mvt_has_string_tag(&tile_body, "name", "Point1"),
+        "Expected MVT to include tag name=Point1"
+    );
 }
 
 #[tokio::test]
