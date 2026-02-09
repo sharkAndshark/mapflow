@@ -1548,6 +1548,48 @@ async fn test_upload_kml_lifecycle() {
     let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
     // KML may use different field names, just verify schema is populated
     assert!(!schema.fields.is_empty(), "KML schema should have fields");
+
+    // Verify tile endpoint returns data (ensures features were actually imported)
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for KML data"
+    );
+
+    // Verify MVT tile has at least one feature with properties
+    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
+    let layers = reader.get_layer_names().expect("layers");
+    let mut found_feature_with_props = false;
+    for (layer_idx, _) in layers.iter().enumerate() {
+        if let Ok(features) = reader.get_features(layer_idx) {
+            for f in features {
+                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
+                    found_feature_with_props = true;
+                    break;
+                }
+            }
+            if found_feature_with_props {
+                break;
+            }
+        }
+    }
+    assert!(
+        found_feature_with_props,
+        "Expected MVT to have at least one feature with properties"
+    );
 }
 
 #[tokio::test]
@@ -1591,6 +1633,48 @@ async fn test_upload_gpx_lifecycle() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
     assert!(!schema.fields.is_empty());
+
+    // Verify tile endpoint returns data (ensures features were actually imported)
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for GPX data"
+    );
+
+    // Verify MVT tile has at least one feature with properties
+    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
+    let layers = reader.get_layer_names().expect("layers");
+    let mut found_feature_with_props = false;
+    for (layer_idx, _) in layers.iter().enumerate() {
+        if let Ok(features) = reader.get_features(layer_idx) {
+            for f in features {
+                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
+                    found_feature_with_props = true;
+                    break;
+                }
+            }
+            if found_feature_with_props {
+                break;
+            }
+        }
+    }
+    assert!(
+        found_feature_with_props,
+        "Expected MVT to have at least one feature with properties"
+    );
 }
 
 #[tokio::test]
@@ -1634,5 +1718,48 @@ async fn test_upload_topojson_lifecycle() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
     assert!(!schema.fields.is_empty());
+
+    // Verify tile endpoint returns data (ensures features were actually imported)
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for TopoJSON data"
+    );
+
+    // Verify MVT tile has at least one feature with properties
+    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
+    let layers = reader.get_layer_names().expect("layers");
+    let mut found_feature_with_props = false;
+    for (layer_idx, _) in layers.iter().enumerate() {
+        if let Ok(features) = reader.get_features(layer_idx) {
+            for f in features {
+                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
+                    found_feature_with_props = true;
+                    break;
+                }
+            }
+            if found_feature_with_props {
+                break;
+            }
+        }
+    }
+    assert!(
+        found_feature_with_props,
+        "Expected MVT to have at least one feature with properties"
+    );
 }
+
 
