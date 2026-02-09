@@ -531,7 +531,7 @@ async fn test_upload_invalid_extension() {
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(
         body_json["error"],
-        "Unsupported file type. Use .zip or .geojson"
+        "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson"
     );
 }
 

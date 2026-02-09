@@ -1,6 +1,6 @@
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path as AxumPath, State},
-    http::{header, Method, StatusCode},
+    http::{header, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -39,7 +39,7 @@ pub use db::{
 use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
-pub use models::{AppState, ErrorResponse, FileItem, PreviewMeta};
+pub use models::{AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta};
 use models::{FeaturePropertiesResponse, FeatureProperty};
 pub use password::{hash_password, validate_password_complexity, verify_password, PasswordError};
 pub use session_store::DuckDBStore;
@@ -58,24 +58,23 @@ pub fn build_test_router(state: AppState) -> Router {
 fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::DELETE,
+        ])
         .allow_headers(Any);
 
     let session_layer = SessionManagerLayer::new(state.session_store.clone())
         .with_secure(config::read_cookie_secure())
         .with_same_site(tower_cookies::cookie::SameSite::Lax);
 
-    // 创建认证层
     let auth_layer =
         AuthManagerLayerBuilder::new(state.auth_backend.clone(), session_layer).build();
 
-    // 认证路由 (无需认证)
     let auth_router = build_auth_router();
-
-    // 公开路由 (无需认证)
     let public_router = Router::new().route("/api/test/is-initialized", get(check_is_initialized));
 
-    // 管理路由
     let mut api_router = Router::new()
         .route("/api/files", get(list_files))
         .route("/api/uploads", post(upload_file))
@@ -514,12 +513,18 @@ async fn upload_file(
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| format!(".{}", ext.to_lowercase()))
-        .ok_or_else(|| bad_request("Unsupported file type. Use .zip or .geojson"))?;
+        .ok_or_else(|| bad_request("Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson"))?;
 
     let file_type = match ext.as_str() {
         ".zip" => "shapefile",
-        ".geojson" => "geojson",
-        _ => return Err(bad_request("Unsupported file type. Use .zip or .geojson")),
+        ".geojson" | ".json" => "geojson",
+        ".geojsonl" | ".geojsons" => "geojsonl",
+        ".kml" => "kml",
+        ".gpx" => "gpx",
+        ".topojson" => "topojson",
+        _ => return Err(bad_request(
+            "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson",
+        )),
     };
 
     let upload_id = create_id();
@@ -552,7 +557,8 @@ async fn upload_file(
     let validation = match file_type {
         "shapefile" => validate_shapefile_zip(&file_path).await,
         "geojson" => validate_geojson(&file_path).await,
-        _ => Ok(()),
+        "geojsonl" | "kml" | "gpx" | "topojson" => Ok(()), // Trust GDAL to validate
+        _ => Ok(()), // Unreachable due to earlier validation, but required for type safety
     };
 
     let uploaded_at = Utc::now().to_rfc3339();
