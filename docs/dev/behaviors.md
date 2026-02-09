@@ -25,11 +25,11 @@
 | API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证，返回 MVT | 200 / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
 | API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回属性 | 200 / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
 | API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回字段列表 | 200 / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
-| API-007 | 测试端点 | POST /api/test/reset 重置数据，仅测试模式 | 200 / 403 | `cargo test test_reset` | Integration | P2 |
-| AUTH-001 | 首次设置 | POST /api/auth/init 创建初始管理员 | 200 / 400 / 409 | `cargo test test_init` | Integration | P0 |
-| AUTH-002 | 登录 | POST /api/auth/login 验证凭证，设置会话 | 200 / 401 | `cargo test test_login` | Integration | P0 |
-| AUTH-003 | 登出 | POST /api/auth/logout 清除会话 | 204 / 401 | `cargo test test_logout` | Integration | P0 |
-| AUTH-004 | 检查状态 | GET /api/auth/check 返回当前用户 | 200 / 401 | `cargo test test_check` | Integration | P0 |
+| API-007 | 测试端点 | POST /api/test/reset 重置数据，仅测试模式 | 200 / 500 | `cargo test test_reset` | Integration | P2 |
+| AUTH-001 | 首次设置 | POST /api/auth/init 创建初始管理员 | 200 / 400 / 409 / 500 | `npm run test:e2e` | E2E | P0 |
+| AUTH-002 | 登录 | POST /api/auth/login 验证凭证，设置会话 | 200 / 401 / 500 | `npm run test:e2e` | E2E | P0 |
+| AUTH-003 | 登出 | POST /api/auth/logout 清除会话 | 204 / 500 | `npm run test:e2e` | E2E | P0 |
+| AUTH-004 | 检查状态 | GET /api/auth/check 返回当前用户 | 200 / 401 | `npm run test:e2e` | E2E | P0 |
 | STORE-001 | 文件存储 | 上传的文件存储在文件系统 | 文件存在 | `cargo test test_storage_*` | Integration | P0 |
 | STORE-002 | 数据库 | 元数据存储在数据库，支持查询 | 数据可查询 | `pytest test_db_schema` | Unit | P0 |
 | STORE-003 | 状态机 | 文件状态转换符合生命周期 | 状态转换合法 | `pytest test_state_machine` | Unit | P0 |

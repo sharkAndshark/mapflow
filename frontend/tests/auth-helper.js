@@ -10,8 +10,9 @@ export async function setupTestUser(request) {
     });
   } catch (e) {
     // Ignore if already initialized (409 Conflict)
-    const status = e.response?.().status?.() || e.status;
-    if (status !== 409) {
+    // Playwright throws an error with the response status in the message or as a property
+    const status = e.response?.status?.() || e.response?.status || e.status;
+    if (status !== 409 && !e.message?.includes('409')) {
       throw e;
     }
   }

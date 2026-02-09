@@ -94,7 +94,13 @@ impl AuthnBackend for AuthBackend {
                 Err(AuthError::InvalidCredentials)
             }
         } else {
-            Ok(None)
+            // Timing attack mitigation: perform dummy hash verification
+            // to ensure consistent response time regardless of user existence
+            let _ = crate::password::verify_password(
+                &password,
+                "$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            );
+            Err(AuthError::InvalidCredentials)
         }
     }
 
@@ -182,10 +188,11 @@ mod tests {
 
         let result = backend
             .authenticate(("nonexistent".to_string(), "Test123!@#".to_string()))
-            .await
-            .unwrap();
+            .await;
 
-        assert!(result.is_none());
+        // Should return InvalidCredentials (not Ok(None)) for timing attack mitigation
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidCredentials));
     }
 
     #[tokio::test]

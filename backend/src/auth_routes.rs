@@ -92,7 +92,9 @@ async fn login(
 }
 
 async fn logout(mut auth_session: AuthSession<crate::AuthBackend>) -> impl IntoResponse {
-    auth_session.logout().await.unwrap();
+    if auth_session.logout().await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
     StatusCode::NO_CONTENT
 }
 
