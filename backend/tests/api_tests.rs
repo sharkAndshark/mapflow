@@ -1517,7 +1517,10 @@ async fn test_upload_kml_lifecycle() {
     let request = Request::builder()
         .method("POST")
         .uri("/api/uploads")
-        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
         .body(Body::from(body_data))
         .unwrap();
 
@@ -1603,7 +1606,10 @@ async fn test_upload_gpx_lifecycle() {
     let request = Request::builder()
         .method("POST")
         .uri("/api/uploads")
-        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
         .body(Body::from(body_data))
         .unwrap();
 
@@ -1688,7 +1694,10 @@ async fn test_upload_topojson_lifecycle() {
     let request = Request::builder()
         .method("POST")
         .uri("/api/uploads")
-        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
         .body(Body::from(body_data))
         .unwrap();
 

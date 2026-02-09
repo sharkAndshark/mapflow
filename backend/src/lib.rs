@@ -467,7 +467,9 @@ async fn upload_file(
         ".kml" => "kml",
         ".gpx" => "gpx",
         ".topojson" => "topojson",
-        _ => return Err(bad_request("Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson")),
+        _ => return Err(bad_request(
+            "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson",
+        )),
     };
 
     let upload_id = create_id();
