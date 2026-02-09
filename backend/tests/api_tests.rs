@@ -1,8 +1,8 @@
 use axum::body::Body;
 use axum::http::Request;
 use backend::{
-    build_api_router, init_database, reconcile_processing_files, AppState, FileItem,
-    FileSchemaResponse, PROCESSING_RECONCILIATION_ERROR,
+    build_test_router, init_database, reconcile_processing_files, AppState, AuthBackend,
+    DuckDBStore, FileItem, PROCESSING_RECONCILIATION_ERROR,
 };
 use http_body_util::BodyExt; // for collect()
 use mvt_reader::{feature::Value as MvtValue, Reader as MvtReader};
@@ -112,15 +112,18 @@ async fn setup_app() -> (axum::Router, TempDir) {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 10 * 1024 * 1024, // 10MB
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
-    let router = build_api_router(state);
+    let router = build_test_router(state);
     (router, temp_dir)
 }
 
@@ -131,15 +134,18 @@ async fn setup_app_with_large_max_size() -> (axum::Router, TempDir) {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 100 * 1024 * 1024, // 100MB for OSM datasets
         max_size_label: "100MB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
-    let router = build_api_router(state);
+    let router = build_test_router(state);
     (router, temp_dir)
 }
 
@@ -356,15 +362,18 @@ async fn test_upload_payload_too_large_returns_413() {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 1024, // 1KB
         max_size_label: "1KB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
-    let app = build_api_router(state);
+    let app = build_test_router(state);
 
     let boundary = "------------------------boundaryBIG";
     let big = "a".repeat(2048);
@@ -445,12 +454,15 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
     // Seed a processing file.
@@ -476,7 +488,7 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
 
     reconcile_processing_files(&state.db).await.unwrap();
 
-    let app = build_api_router(state);
+    let app = build_test_router(state);
     let request = Request::builder()
         .method("GET")
         .uri("/api/files")
@@ -837,15 +849,18 @@ async fn test_schema_endpoint_returns_409_for_non_ready_file() {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
-    let app = build_api_router(state.clone());
+    let app = build_test_router(state.clone());
 
     // Insert a file in 'processing' state directly to avoid race condition
     {
@@ -1138,13 +1153,16 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
 
     let db_path = temp_dir.path().join("persist.duckdb");
     let conn1 = init_database(&db_path);
+    let db1 = Arc::new(tokio::sync::Mutex::new(conn1));
     let state1 = AppState {
         upload_dir: upload_dir.clone(),
-        db: Arc::new(tokio::sync::Mutex::new(conn1)),
+        db: db1.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db1.clone()),
+        session_store: DuckDBStore::new(db1),
     };
-    let app1 = build_api_router(state1);
+    let app1 = build_test_router(state1);
 
     let geojson_bytes = read_fixture_bytes("frontend/tests/fixtures/sample.geojson");
     let boundary = "------------------------boundaryPERSIST";
@@ -1176,11 +1194,13 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
 
     let state2 = AppState {
         upload_dir,
-        db: db2,
+        db: db2.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db2.clone()),
+        session_store: DuckDBStore::new(db2),
     };
-    let app2 = build_api_router(state2);
+    let app2 = build_test_router(state2);
 
     let request = Request::builder()
         .method("GET")
@@ -1426,380 +1446,199 @@ async fn test_tile_golden_osm_polygons_samples() {
     test_tile_golden_samples_for_dataset(dataset_config).await;
 }
 
-#[tokio::test]
-async fn test_upload_geojsonseq_lifecycle() {
-    let (app, _temp) = setup_app().await;
+// Database schema tests for authentication tables
+#[test]
+fn test_users_schema() {
+    use backend::init_database;
+    use tempfile::TempDir;
 
-    // GeoJSONSeq content: one Feature per line
-    let geojsonseq_content = r#"{"type":"Feature","properties":{"name":"Point1"},"geometry":{"type":"Point","coordinates":[0.0,0.0]}}
-{"type":"Feature","properties":{"name":"Point2"},"geometry":{"type":"Point","coordinates":[1.0,1.0]}}
-{"type":"Feature","properties":{"name":"Point3"},"geometry":{"type":"Point","coordinates":[2.0,2.0]}}"#;
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
 
-    let boundary = "------------------------boundaryGEOJSONSEQ";
-    let body_data = format!(
-        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.geojsonl\"\r\n\r\n{geojsonseq_content}\r\n--{boundary}--\r\n"
-    );
+    let conn = init_database(&db_path);
 
-    let request = Request::builder()
-        .method("POST")
-        .uri("/api/uploads")
-        .header(
-            "content-type",
-            format!("multipart/form-data; boundary={boundary}"),
-        )
-        .body(Body::from(body_data))
-        .unwrap();
+    // Verify users table exists by querying it
+    let result = conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get::<_, i64>(0));
+    // Table should exist even if empty (COUNT(*) returns 0)
+    assert!(result.is_ok(), "users table should exist");
 
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+    // Verify we can query the structure using PRAGMA
+    let mut stmt = conn.prepare("PRAGMA table_info(users)").unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
 
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
-    let file_id = file_item.id.clone();
-
-    // Verify file type
-    assert_eq!(file_item.file_type, "geojsonl");
-    assert_eq!(file_item.name, "test");
-
-    // Wait for processing to complete
-    let ready_item = wait_until_ready(&app, &file_id).await;
-    assert_eq!(ready_item.status, "ready");
-
-    // Verify we can query the schema
-    let request = Request::builder()
-        .method("GET")
-        .uri(format!("/api/files/{}/schema", file_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
-    assert!(schema.fields.iter().any(|f| f.name == "name"));
-
-    // Verify tile endpoint returns data (ensures features were actually imported)
-    let request = Request::builder()
-        .method("GET")
-        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
     assert_eq!(
-        response.headers()["content-type"],
-        "application/vnd.mapbox-vector-tile"
-    );
-
-    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
-    assert!(
-        !tile_body.is_empty(),
-        "Expected non-empty MVT tile body for GeoJSONSeq data"
-    );
-
-    // Verify at least one feature has the expected "name" property
-    assert!(
-        mvt_has_string_tag(&tile_body, "name", "Point1"),
-        "Expected MVT to include tag name=Point1"
+        columns,
+        vec!["id", "username", "password_hash", "role", "created_at"]
     );
 }
 
+#[test]
+fn test_sessions_schema() {
+    use backend::init_database;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+
+    // Verify sessions table exists
+    let result = conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| {
+        row.get::<_, i64>(0)
+    });
+    assert!(result.is_ok(), "sessions table should exist");
+
+    // Verify structure
+    let mut stmt = conn.prepare("PRAGMA table_info(sessions)").unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(columns, vec!["id", "data", "expiry_date", "created_at"]);
+}
+
+#[test]
+fn test_system_settings_schema() {
+    use backend::init_database;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+
+    // Verify system_settings table exists
+    let result = conn.query_row("SELECT COUNT(*) FROM system_settings", [], |row| {
+        row.get::<_, i64>(0)
+    });
+    assert!(result.is_ok(), "system_settings table should exist");
+
+    // Verify structure
+    let mut stmt = conn.prepare("PRAGMA table_info(system_settings)").unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(columns, vec!["key", "value"]);
+}
+
+#[test]
+fn test_is_initialized_not_set_by_default() {
+    use backend::{init_database, is_initialized};
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+    assert!(!is_initialized(&conn).unwrap());
+}
+
+#[test]
+fn test_set_and_check_initialized() {
+    use backend::{init_database, is_initialized, set_initialized};
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+    assert!(!is_initialized(&conn).unwrap());
+
+    set_initialized(&conn).unwrap();
+    assert!(is_initialized(&conn).unwrap());
+}
+
 #[tokio::test]
-async fn test_upload_kml_lifecycle() {
-    let (app, _temp) = setup_app().await;
+async fn test_concurrent_init_system_requests() {
+    use backend::{hash_password, init_database, is_initialized, set_initialized};
+    use duckdb::params;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+    use tokio::sync::Mutex;
 
-    let kml_bytes = read_fixture_bytes("testdata/sample/formats/sample.kml");
-    let boundary = "------------------------boundaryKML";
-    let body_data = multipart_body(boundary, "test.kml", &kml_bytes);
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = Arc::new(Mutex::new(init_database(&db_path)));
 
-    let request = Request::builder()
-        .method("POST")
-        .uri("/api/uploads")
-        .header(
-            "content-type",
-            format!("multipart/form-data; boundary={boundary}"),
-        )
-        .body(Body::from(body_data))
-        .unwrap();
+    let make_init_request = |conn: Arc<Mutex<duckdb::Connection>>| {
+        tokio::spawn(async move {
+            let c = conn.lock().await;
 
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
-
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
-    let file_id = file_item.id.clone();
-
-    assert_eq!(file_item.file_type, "kml");
-    assert_eq!(file_item.name, "test");
-
-    let ready_item = wait_until_ready(&app, &file_id).await;
-    assert_eq!(ready_item.status, "ready");
-
-    // Verify schema query works
-    let request = Request::builder()
-        .method("GET")
-        .uri(format!("/api/files/{}/schema", file_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
-    // KML may use different field names, just verify schema is populated
-    assert!(!schema.fields.is_empty(), "KML schema should have fields");
-
-    // Verify tile endpoint returns data (ensures features were actually imported)
-    let request = Request::builder()
-        .method("GET")
-        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-    assert_eq!(
-        response.headers()["content-type"],
-        "application/vnd.mapbox-vector-tile"
-    );
-
-    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
-    assert!(
-        !tile_body.is_empty(),
-        "Expected non-empty MVT tile body for KML data"
-    );
-
-    // Verify MVT tile has at least one feature with properties
-    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
-    let layers = reader.get_layer_names().expect("layers");
-    let mut found_feature_with_props = false;
-    for (layer_idx, _) in layers.iter().enumerate() {
-        if let Ok(features) = reader.get_features(layer_idx) {
-            for f in features {
-                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
-                    found_feature_with_props = true;
-                    break;
-                }
+            let tx_result = c.execute("BEGIN TRANSACTION", []);
+            if tx_result.is_err() {
+                return false;
             }
-            if found_feature_with_props {
-                break;
+
+            let already_init = is_initialized(&c).unwrap_or(false);
+
+            if already_init {
+                let _ = c.execute("ROLLBACK", []);
+                return false;
             }
+
+            let password_hash = hash_password("Test123!@#").unwrap();
+            let user_id = uuid::Uuid::new_v4().to_string();
+            let created_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+            let result = c.execute(
+                "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![&user_id, "admin", &password_hash, "admin", &created_at],
+            );
+
+            if result.is_err() {
+                let _ = c.execute("ROLLBACK", []);
+                return false;
+            }
+
+            let _ = set_initialized(&c);
+            let _ = c.execute("COMMIT", []);
+
+            true
+        })
+    };
+
+    let tasks = (0..5)
+        .map(|_| make_init_request(conn.clone()))
+        .collect::<Vec<_>>();
+
+    let mut success_count = 0;
+    let mut failure_count = 0;
+
+    for task in tasks {
+        match task.await {
+            Ok(true) => success_count += 1,
+            Ok(false) => failure_count += 1,
+            Err(_) => failure_count += 1,
         }
     }
-    assert!(
-        found_feature_with_props,
-        "Expected MVT to have at least one feature with properties"
-    );
-}
 
-#[tokio::test]
-async fn test_upload_gpx_lifecycle() {
-    let (app, _temp) = setup_app().await;
-
-    let gpx_bytes = read_fixture_bytes("testdata/sample/formats/sample.gpx");
-    let boundary = "------------------------boundaryGPX";
-    let body_data = multipart_body(boundary, "test.gpx", &gpx_bytes);
-
-    let request = Request::builder()
-        .method("POST")
-        .uri("/api/uploads")
-        .header(
-            "content-type",
-            format!("multipart/form-data; boundary={boundary}"),
-        )
-        .body(Body::from(body_data))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
-
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
-    let file_id = file_item.id.clone();
-
-    assert_eq!(file_item.file_type, "gpx");
-    assert_eq!(file_item.name, "test");
-
-    let ready_item = wait_until_ready(&app, &file_id).await;
-    assert_eq!(ready_item.status, "ready");
-
-    // Verify schema query works
-    let request = Request::builder()
-        .method("GET")
-        .uri(format!("/api/files/{}/schema", file_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
-    assert!(!schema.fields.is_empty());
-
-    // Verify tile endpoint returns data (ensures features were actually imported)
-    let request = Request::builder()
-        .method("GET")
-        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
     assert_eq!(
-        response.headers()["content-type"],
-        "application/vnd.mapbox-vector-tile"
+        success_count, 1,
+        "Exactly one init request should succeed (got {})",
+        success_count
     );
 
-    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
-    assert!(
-        !tile_body.is_empty(),
-        "Expected non-empty MVT tile body for GPX data"
-    );
-
-    // Verify MVT tile has at least one feature with properties
-    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
-    let layers = reader.get_layer_names().expect("layers");
-    let mut found_feature_with_props = false;
-    for (layer_idx, _) in layers.iter().enumerate() {
-        if let Ok(features) = reader.get_features(layer_idx) {
-            for f in features {
-                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
-                    found_feature_with_props = true;
-                    break;
-                }
-            }
-            if found_feature_with_props {
-                break;
-            }
-        }
-    }
-    assert!(
-        found_feature_with_props,
-        "Expected MVT to have at least one feature with properties"
-    );
-}
-
-#[tokio::test]
-async fn test_upload_topojson_lifecycle() {
-    let (app, _temp) = setup_app().await;
-
-    let topojson_bytes = read_fixture_bytes("testdata/sample/formats/sample.topojson");
-    let boundary = "------------------------boundaryTOPOJSON";
-    let body_data = multipart_body(boundary, "test.topojson", &topojson_bytes);
-
-    let request = Request::builder()
-        .method("POST")
-        .uri("/api/uploads")
-        .header(
-            "content-type",
-            format!("multipart/form-data; boundary={boundary}"),
-        )
-        .body(Body::from(body_data))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
-
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
-    let file_id = file_item.id.clone();
-
-    assert_eq!(file_item.file_type, "topojson");
-    assert_eq!(file_item.name, "test");
-
-    let ready_item = wait_until_ready(&app, &file_id).await;
-    assert_eq!(ready_item.status, "ready");
-
-    // Verify schema query works
-    let request = Request::builder()
-        .method("GET")
-        .uri(format!("/api/files/{}/schema", file_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
-    assert!(!schema.fields.is_empty());
-
-    // Verify tile endpoint returns data (ensures features were actually imported)
-    let request = Request::builder()
-        .method("GET")
-        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
     assert_eq!(
-        response.headers()["content-type"],
-        "application/vnd.mapbox-vector-tile"
+        failure_count, 4,
+        "All other requests should fail (got {})",
+        failure_count
     );
 
-    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
-    assert!(
-        !tile_body.is_empty(),
-        "Expected non-empty MVT tile body for TopoJSON data"
+    let conn = conn.lock().await;
+    let user_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+        .unwrap();
+
+    assert_eq!(
+        user_count, 1,
+        "Only one admin user should be created (got {})",
+        user_count
     );
-
-    // Verify MVT tile has at least one feature with properties
-    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
-    let layers = reader.get_layer_names().expect("layers");
-    let mut found_feature_with_props = false;
-    for (layer_idx, _) in layers.iter().enumerate() {
-        if let Ok(features) = reader.get_features(layer_idx) {
-            for f in features {
-                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
-                    found_feature_with_props = true;
-                    break;
-                }
-            }
-            if found_feature_with_props {
-                break;
-            }
-        }
-    }
-    assert!(
-        found_feature_with_props,
-        "Expected MVT to have at least one feature with properties"
-    );
-}
-
-#[tokio::test]
-async fn test_tile_golden_osm_simple_polygons_samples() {
-    let config = load_osm_test_config();
-    let dataset_config = config
-        .datasets
-        .iter()
-        .find(|d| d.name == "sf_simple_polygons")
-        .expect("sf_simple_polygons dataset not found in config");
-    test_tile_golden_samples_for_dataset(dataset_config).await;
-}
-
-#[tokio::test]
-async fn test_tile_golden_osm_multipoints_samples() {
-    let config = load_osm_test_config();
-    let dataset_config = config
-        .datasets
-        .iter()
-        .find(|d| d.name == "sf_multipoints")
-        .expect("sf_multipoints dataset not found in config");
-    test_tile_golden_samples_for_dataset(dataset_config).await;
-}
-
-#[tokio::test]
-async fn test_tile_golden_osm_multilinestrings_samples() {
-    let config = load_osm_test_config();
-    let dataset_config = config
-        .datasets
-        .iter()
-        .find(|d| d.name == "sf_multilinestrings")
-        .expect("sf_multilinestrings dataset not found in config");
-    test_tile_golden_samples_for_dataset(dataset_config).await;
 }

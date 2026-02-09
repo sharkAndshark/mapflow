@@ -1,8 +1,103 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useAuth } from './AuthContext.jsx';
 import {
   hasActiveJobs as computeHasActiveJobs,
   mergeServerFilesWithOptimistic,
 } from './polling.js';
+import { publishFile, unpublishFile } from './api.js';
+
+function PublishModal({ file, onClose, onSuccess }) {
+  const [slug, setSlug] = useState(file?.id || '');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!file) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      const result = await publishFile(file.id, slug.trim() || undefined);
+      onSuccess(file.id, result);
+    } catch (err) {
+      setError(err.message || '发布失败');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  const trimmedSlug = slug.trim();
+  const previewUrl = trimmedSlug
+    ? `/tiles/${trimmedSlug}/{z}/{x}/{y}`
+    : `/tiles/${file.id}/{z}/{x}/{y}`;
+  const slugError =
+    trimmedSlug && !/^[a-zA-Z0-9_-]+$/.test(trimmedSlug) ? '仅支持字母、数字、连字符和下划线' : '';
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>发布文件</h3>
+          <button className="modal-close" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            <div className="form-group">
+              <label>文件名</label>
+              <div className="form-value">{file.name}</div>
+            </div>
+            <div className="form-group">
+              <label htmlFor="slug">URL 标识（可选）</label>
+              <input
+                id="slug"
+                type="text"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder={file.id}
+                className="form-input"
+              />
+              {slugError && (
+                <div className="alert" style={{ marginTop: '8px' }}>
+                  {slugError}
+                </div>
+              )}
+              <small className="form-hint">
+                留空则使用文件 ID。仅支持字母、数字、连字符和下划线
+              </small>
+            </div>
+            {previewUrl && (
+              <div className="form-group">
+                <label>公开地址</label>
+                <div className="form-value code">{previewUrl}</div>
+              </div>
+            )}
+            {error && <div className="alert">{error}</div>}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              取消
+            </button>
+            <button type="submit" className="btn-primary" disabled={isSubmitting}>
+              {isSubmitting ? '发布中...' : '确认发布'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 const STATUS_LABELS = {
   uploading: '上传中',
@@ -203,10 +298,61 @@ function DetailSidebar({ file }) {
 }
 
 export default function App() {
+  const { user, logout } = useAuth();
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [publishModalFile, setPublishModalFile] = useState(null);
+
+  async function handleLogout() {
+    try {
+      await logout();
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  }
+
+  async function handlePublish(file) {
+    setPublishModalFile(file);
+  }
+
+  async function handlePublishSuccess(fileId, result) {
+    setPublishModalFile(null);
+    setFiles((prev) =>
+      prev.map((f) => (f.id === fileId ? { ...f, isPublic: true, publicSlug: result.slug } : f)),
+    );
+  }
+
+  async function handleUnpublish(file) {
+    if (!confirm(`确定取消发布 "${file.name}" 吗？`)) return;
+
+    try {
+      await unpublishFile(file.id);
+      setFiles((prev) =>
+        prev.map((f) => (f.id === file.id ? { ...f, isPublic: false, publicSlug: null } : f)),
+      );
+    } catch (err) {
+      setErrorMessage(err.message || '取消发布失败');
+    }
+  }
+
+  function copyPublicUrl(slug) {
+    if (!slug) {
+      alert('无效的公开地址');
+      return;
+    }
+    const url = `${window.location.origin}/tiles/${slug}/{z}/{x}/{y}`;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        alert('已复制到剪贴板');
+      })
+      .catch(() => {
+        alert('复制失败，请手动复制地址');
+      });
+  }
 
   // Derive selected file object
   const selectedFile = useMemo(
@@ -324,15 +470,27 @@ export default function App() {
           <h1>MapFlow</h1>
           <p className="subtitle">探索版 · 文件上传与列表</p>
         </div>
-        <label className="upload-button">
-          <input
-            type="file"
-            accept=".zip,.geojson,.json,.geojsonl,.geojsons,.kml,.gpx,.topojson"
-            onChange={handleFileChange}
-            data-testid="file-input"
-          />
-          上传
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {user && (
+            <span style={{ fontSize: '14px', color: '#666' }}>
+              {user.username} ({user.role})
+            </span>
+          )}
+          <label className="upload-button">
+            <input
+              type="file"
+              accept=".zip,.geojson,.json,.geojsonl,.geojsons,.kml,.gpx,.topojson"
+              onChange={handleFileChange}
+              data-testid="file-input"
+            />
+            上传
+          </label>
+          {user && (
+            <button type="button" className="btn-secondary" onClick={handleLogout}>
+              登出
+            </button>
+          )}
+        </div>
       </header>
 
       {errorMessage ? <div className="alert">{errorMessage}</div> : null}
@@ -361,6 +519,7 @@ export default function App() {
                   <div>大小</div>
                   <div>上传时间</div>
                   <div>状态</div>
+                  <div></div>
                 </div>
                 {orderedFiles.map((item) => (
                   <button
@@ -379,6 +538,39 @@ export default function App() {
                     <div className={`status ${item.status || 'uploaded'}`}>
                       {STATUS_LABELS[item.status] || item.status}
                     </div>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      {item.status === 'ready' ? (
+                        item.isPublic ? (
+                          <>
+                            <button
+                              type="button"
+                              className="btn-text"
+                              onClick={() => copyPublicUrl(item.publicSlug)}
+                              title="复制地址"
+                            >
+                              复制
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-text"
+                              onClick={() => handleUnpublish(item)}
+                              title="取消发布"
+                            >
+                              取消发布
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-text"
+                            onClick={() => handlePublish(item)}
+                            title="发布"
+                          >
+                            发布
+                          </button>
+                        )
+                      ) : null}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -390,6 +582,14 @@ export default function App() {
           </div>
         </div>
       </section>
+
+      {publishModalFile && (
+        <PublishModal
+          file={publishModalFile}
+          onClose={() => setPublishModalFile(null)}
+          onSuccess={handlePublishSuccess}
+        />
+      )}
     </div>
   );
 }
