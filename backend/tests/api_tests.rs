@@ -2,7 +2,7 @@ use axum::body::Body;
 use axum::http::Request;
 use backend::{
     build_api_router, init_database, reconcile_processing_files, AppState, FileItem,
-    PROCESSING_RECONCILIATION_ERROR,
+    FileSchemaResponse, PROCESSING_RECONCILIATION_ERROR,
 };
 use http_body_util::BodyExt; // for collect()
 use mvt_reader::{feature::Value as MvtValue, Reader as MvtReader};
@@ -519,7 +519,7 @@ async fn test_upload_invalid_extension() {
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(
         body_json["error"],
-        "Unsupported file type. Use .zip or .geojson"
+        "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson"
     );
 }
 
@@ -1424,6 +1424,342 @@ async fn test_tile_golden_osm_polygons_samples() {
         .find(|d| d.name == "sf_polygons")
         .expect("sf_polygons dataset not found in config");
     test_tile_golden_samples_for_dataset(dataset_config).await;
+}
+
+#[tokio::test]
+async fn test_upload_geojsonseq_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    // GeoJSONSeq content: one Feature per line
+    let geojsonseq_content = r#"{"type":"Feature","properties":{"name":"Point1"},"geometry":{"type":"Point","coordinates":[0.0,0.0]}}
+{"type":"Feature","properties":{"name":"Point2"},"geometry":{"type":"Point","coordinates":[1.0,1.0]}}
+{"type":"Feature","properties":{"name":"Point3"},"geometry":{"type":"Point","coordinates":[2.0,2.0]}}"#;
+
+    let boundary = "------------------------boundaryGEOJSONSEQ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.geojsonl\"\r\n\r\n{geojsonseq_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id.clone();
+
+    // Verify file type
+    assert_eq!(file_item.file_type, "geojsonl");
+    assert_eq!(file_item.name, "test");
+
+    // Wait for processing to complete
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Verify we can query the schema
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(schema.fields.iter().any(|f| f.name == "name"));
+
+    // Verify tile endpoint returns data (ensures features were actually imported)
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for GeoJSONSeq data"
+    );
+
+    // Verify at least one feature has the expected "name" property
+    assert!(
+        mvt_has_string_tag(&tile_body, "name", "Point1"),
+        "Expected MVT to include tag name=Point1"
+    );
+}
+
+#[tokio::test]
+async fn test_upload_kml_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    let kml_bytes = read_fixture_bytes("testdata/sample/formats/sample.kml");
+    let boundary = "------------------------boundaryKML";
+    let body_data = multipart_body(boundary, "test.kml", &kml_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id.clone();
+
+    assert_eq!(file_item.file_type, "kml");
+    assert_eq!(file_item.name, "test");
+
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Verify schema query works
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
+    // KML may use different field names, just verify schema is populated
+    assert!(!schema.fields.is_empty(), "KML schema should have fields");
+
+    // Verify tile endpoint returns data (ensures features were actually imported)
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for KML data"
+    );
+
+    // Verify MVT tile has at least one feature with properties
+    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
+    let layers = reader.get_layer_names().expect("layers");
+    let mut found_feature_with_props = false;
+    for (layer_idx, _) in layers.iter().enumerate() {
+        if let Ok(features) = reader.get_features(layer_idx) {
+            for f in features {
+                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
+                    found_feature_with_props = true;
+                    break;
+                }
+            }
+            if found_feature_with_props {
+                break;
+            }
+        }
+    }
+    assert!(
+        found_feature_with_props,
+        "Expected MVT to have at least one feature with properties"
+    );
+}
+
+#[tokio::test]
+async fn test_upload_gpx_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    let gpx_bytes = read_fixture_bytes("testdata/sample/formats/sample.gpx");
+    let boundary = "------------------------boundaryGPX";
+    let body_data = multipart_body(boundary, "test.gpx", &gpx_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id.clone();
+
+    assert_eq!(file_item.file_type, "gpx");
+    assert_eq!(file_item.name, "test");
+
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Verify schema query works
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(!schema.fields.is_empty());
+
+    // Verify tile endpoint returns data (ensures features were actually imported)
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for GPX data"
+    );
+
+    // Verify MVT tile has at least one feature with properties
+    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
+    let layers = reader.get_layer_names().expect("layers");
+    let mut found_feature_with_props = false;
+    for (layer_idx, _) in layers.iter().enumerate() {
+        if let Ok(features) = reader.get_features(layer_idx) {
+            for f in features {
+                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
+                    found_feature_with_props = true;
+                    break;
+                }
+            }
+            if found_feature_with_props {
+                break;
+            }
+        }
+    }
+    assert!(
+        found_feature_with_props,
+        "Expected MVT to have at least one feature with properties"
+    );
+}
+
+#[tokio::test]
+async fn test_upload_topojson_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    let topojson_bytes = read_fixture_bytes("testdata/sample/formats/sample.topojson");
+    let boundary = "------------------------boundaryTOPOJSON";
+    let body_data = multipart_body(boundary, "test.topojson", &topojson_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id.clone();
+
+    assert_eq!(file_item.file_type, "topojson");
+    assert_eq!(file_item.name, "test");
+
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Verify schema query works
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(!schema.fields.is_empty());
+
+    // Verify tile endpoint returns data (ensures features were actually imported)
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.mapbox-vector-tile"
+    );
+
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for TopoJSON data"
+    );
+
+    // Verify MVT tile has at least one feature with properties
+    let reader = MvtReader::new(tile_body.to_vec()).expect("valid MVT");
+    let layers = reader.get_layer_names().expect("layers");
+    let mut found_feature_with_props = false;
+    for (layer_idx, _) in layers.iter().enumerate() {
+        if let Ok(features) = reader.get_features(layer_idx) {
+            for f in features {
+                if f.properties.is_some() && !f.properties.as_ref().unwrap().is_empty() {
+                    found_feature_with_props = true;
+                    break;
+                }
+            }
+            if found_feature_with_props {
+                break;
+            }
+        }
+    }
+    assert!(
+        found_feature_with_props,
+        "Expected MVT to have at least one feature with properties"
+    );
 }
 
 #[tokio::test]

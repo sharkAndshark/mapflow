@@ -5,7 +5,13 @@
 License: Apache-2.0
 
 ## Features
-- **Upload:** Support for Shapefile (zipped) and GeoJSON.
+- **Upload:** Support for multiple spatial data formats:
+  - Shapefile (zipped `.zip`)
+  - GeoJSON (`.geojson`, `.json`)
+  - GeoJSONSeq / Newline-Delimited GeoJSON (`.geojsonl`, `.geojsons`)
+  - KML (`.kml`)
+  - GPX (`.gpx`)
+  - TopoJSON (`.topojson`)
 - **Manage:** Simple file list with status tracking.
 - **Preview:** Instant map preview for uploaded datasets.
 
@@ -46,7 +52,13 @@ docker compose down
 ### Usage
 1. Start the application.
 2. Open `http://localhost:3000` in your browser.
-3. Drag and drop a `.zip` (Shapefile) or `.geojson` file to upload.
+3. Drag and drop a spatial data file to upload:
+   - `.zip` (Shapefile with .shp/.shx/.dbf)
+   - `.geojson` / `.json` (GeoJSON)
+   - `.geojsonl` / `.geojsons` (GeoJSONSeq/NDJSON)
+   - `.kml` (KML)
+   - `.gpx` (GPX)
+   - `.topojson` (TopoJSON)
 4. Click a file in the list to view details or open the map preview.
 
 ### Configuration
