@@ -74,9 +74,24 @@ docker compose down
 ### Configuration
 
 Environment variables (Docker):
-- `UPLOAD_MAX_SIZE_MB` (default: `200`)
-- `PORT` (default: `3000`)
+- `UPLOAD_MAX_SIZE_MB` (default: `200`) - Maximum file upload size in megabytes
+- `PORT` (default: `3000`) - Backend server port
 - `COOKIE_SECURE` (default: `false`) - Set to `true` in production to ensure session cookies are only transmitted over HTTPS
+- `CORS_ALLOWED_ORIGINS` (default: `http://localhost:3000`) - Comma-separated list of allowed origins for CORS
+
+**Important:** For production deployments, set `CORS_ALLOWED_ORIGINS` to your actual domain(s):
+
+```bash
+# Example for production
+docker compose up -d -e CORS_ALLOWED_ORIGINS=https://mapflow.example.com,https://www.mapflow.example.com
+```
+
+Or create a `.env` file:
+
+```bash
+CORS_ALLOWED_ORIGINS=https://mapflow.example.com,https://www.mapflow.example.com
+COOKIE_SECURE=true
+```
 
 ## Development
 
