@@ -99,9 +99,10 @@ impl AuthnBackend for AuthBackend {
             static DUMMY_HASH: OnceLock<String> = OnceLock::new();
 
             let dummy_hash = DUMMY_HASH.get_or_init(|| {
-                crate::password::hash_password("dummy_password_for_timing_attack").unwrap_or_else(
-                    |_| "$2b$12$0000000000000000000000000000000000000000000000000000".to_string(),
-                )
+                // Pre-computed bcrypt hash for "timing_attack_dummy" (cost=12)
+                // Using a pre-computed hash ensures consistent timing characteristics
+                // and avoids the unlikely case where bcrypt hashing fails
+                "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36IgQE0VrqQ6EJdNpO5mLY".to_string()
             });
 
             // Timing attack mitigation: always execute verify_password to equalize response time

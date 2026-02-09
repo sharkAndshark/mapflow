@@ -13,7 +13,7 @@ use tokio::{
     fs,
     io::{AsyncWriteExt, BufWriter},
 };
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_sessions::SessionManagerLayer;
 
 mod auth;
@@ -56,14 +56,30 @@ pub fn build_test_router(state: AppState) -> Router {
 }
 
 fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
+    // Read allowed origins from environment or use defaults
+    let allowed_origins = config::read_cors_origins();
+
+    // Build CORS layer with specific origins
+    // Note: When using credentials, we cannot use wildcards for headers
+    let mut cors = CorsLayer::new()
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,
             axum::http::Method::DELETE,
         ])
-        .allow_headers(Any);
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+            axum::http::header::AUTHORIZATION,
+        ])
+        .allow_credentials(true);
+
+    // Add each allowed origin
+    for origin in allowed_origins {
+        if let Ok(parsed) = origin.parse::<axum::http::HeaderValue>() {
+            cors = cors.allow_origin(parsed);
+        }
+    }
 
     let session_layer = SessionManagerLayer::new(state.session_store.clone())
         .with_secure(config::read_cookie_secure())

@@ -92,9 +92,9 @@ async fn login(
 }
 
 async fn logout(mut auth_session: AuthSession<crate::AuthBackend>) -> impl IntoResponse {
-    if auth_session.logout().await.is_err() {
-        return StatusCode::INTERNAL_SERVER_ERROR;
-    }
+    // Always return 204 NO_CONTENT, even if session is already deleted/expired
+    // The end state (user logged out) is correct regardless of deletion result
+    let _ = auth_session.logout().await;
     StatusCode::NO_CONTENT
 }
 
