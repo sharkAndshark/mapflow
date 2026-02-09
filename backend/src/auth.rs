@@ -107,6 +107,8 @@ impl AuthnBackend for AuthBackend {
                 )
             });
 
+            // Timing attack mitigation: always execute verify_password to equalize response time
+            // The result is intentionally discarded since we always return InvalidCredentials
             let _ = crate::password::verify_password(&password, dummy_hash);
             Err(AuthError::InvalidCredentials)
         }

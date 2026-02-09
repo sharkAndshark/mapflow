@@ -167,7 +167,16 @@ async fn init_system(
             duckdb::params![&req.username],
             |row| row.get(0),
         )
-        .unwrap_or(0);
+        .map_err(|e| {
+            conn.execute("ROLLBACK", []).ok();
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to check if username exists: {}", e),
+                }),
+            )
+                .into_response()
+        })?;
 
     if user_exists > 0 {
         conn.execute("ROLLBACK", []).ok();
@@ -234,8 +243,6 @@ async fn init_system(
         )
             .into_response()
     })?;
-
-    drop(conn);
 
     Ok(Json(InitResponse {
         message: "System initialized successfully".to_string(),
