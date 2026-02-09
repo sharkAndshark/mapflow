@@ -78,6 +78,8 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
     for origin in allowed_origins {
         if let Ok(parsed) = origin.parse::<axum::http::HeaderValue>() {
             cors = cors.allow_origin(parsed);
+        } else {
+            eprintln!("Warning: Failed to parse CORS origin '{}', skipping. Check CORS_ALLOWED_ORIGINS environment variable.", origin);
         }
     }
 
@@ -102,12 +104,12 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         )
         .route("/api/files/{id}/schema", get(get_file_schema));
 
-    // 如果需要认证，添加认证中间件
+    // Add authentication middleware if required
     if with_auth {
         api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));
     }
 
-    // 组合所有路由
+    // Combine all routes
     let router = auth_router
         .merge(public_router)
         .merge(api_router)
@@ -851,19 +853,18 @@ mod tests {
             .lock()
             .expect("env lock");
 
-        // 默认 false
+        // Default to false
         std::env::remove_var("COOKIE_SECURE");
         assert!(!read_cookie_secure());
 
-        // 显式设置 false
+        // Explicitly set to false
         std::env::set_var("COOKIE_SECURE", "false");
         assert!(!read_cookie_secure());
 
-        // 显式设置 true
         std::env::set_var("COOKIE_SECURE", "true");
         assert!(read_cookie_secure());
 
-        // 无效值回退到默认 false
+        // Invalid value falls back to default false
         std::env::set_var("COOKIE_SECURE", "invalid");
         assert!(!read_cookie_secure());
 
