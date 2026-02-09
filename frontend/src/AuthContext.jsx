@@ -6,6 +6,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -13,13 +14,25 @@ export function AuthProvider({ children }) {
     async function checkAuth() {
       try {
         const user = await authApi.checkAuth();
+        // checkAuth returns null for 401 (unauthorized)
+        // and throws for other errors (network, 500, etc.)
         if (!cancelled) {
           setUser(user);
+          setAuthError(null);
         }
       } catch (error) {
         if (!cancelled) {
+          // Only set user to null if it's a 401
+          // For other errors (network, server), keep previous state and set error
           console.error('Auth check failed:', error);
-          setUser(null);
+          if (error.message && error.message.includes('401')) {
+            setUser(null);
+            setAuthError(null);
+          } else {
+            // Network error or server error - don't clear user, but set error state
+            // This allows the app to continue with cached user data while showing error
+            setAuthError(error.message || 'Auth check failed');
+          }
         }
       } finally {
         if (!cancelled) {
@@ -53,6 +66,7 @@ export function AuthProvider({ children }) {
   const value = {
     user,
     isLoading,
+    authError,
     login,
     logout,
     initSystem,

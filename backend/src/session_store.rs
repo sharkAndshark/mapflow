@@ -101,7 +101,9 @@ impl SessionStore for DuckDBStore {
 
         let now = chrono::Utc::now();
         if expiry_date < now {
-            self.delete(session_id).await.ok();
+            if let Err(e) = self.delete(session_id).await {
+                eprintln!("Failed to delete expired session {}: {}", session_id, e);
+            }
             return Ok(None);
         }
 

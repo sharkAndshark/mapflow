@@ -113,7 +113,7 @@ async fn init_system(
     State(state): State<AppState>,
     Json(req): Json<InitRequest>,
 ) -> Result<impl IntoResponse, Response> {
-    // 验证密码复杂度
+    // Validate password complexity
     if let Err(e) = crate::validate_password_complexity(&req.password) {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -124,10 +124,22 @@ async fn init_system(
             .into_response());
     }
 
+    // Hash password BEFORE beginning transaction to avoid long-running transaction
+    // Bcrypt with cost=12 can take ~500ms, during which the DB lock would be held
+    let password_hash = crate::hash_password(&req.password).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to hash password: {}", e),
+            }),
+        )
+            .into_response()
+    })?;
+
     let conn = state.db.lock().await;
 
-    // 使用事务防止 TOCTOU 竞态条件
-    // 确保检查和插入是原子操作
+    // Use transaction to prevent TOCTOU race condition
+    // Ensures check and insert are atomic operations
     conn.execute("BEGIN TRANSACTION", []).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -138,7 +150,7 @@ async fn init_system(
             .into_response()
     })?;
 
-    // 检查系统是否已初始化（在事务内）
+    // Check if system is already initialized (within transaction)
     let already_initialized = is_initialized(&conn).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -160,7 +172,7 @@ async fn init_system(
             .into_response());
     }
 
-    // 检查用户名是否已存在（防止重复）
+    // Check if username already exists (prevent duplicates)
     let user_exists: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM users WHERE username = ?",
@@ -189,19 +201,7 @@ async fn init_system(
             .into_response());
     }
 
-    // 创建管理员用户
-    let password_hash = crate::hash_password(&req.password).map_err(|e| {
-        conn.execute("ROLLBACK", []).ok();
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to hash password: {}", e),
-            }),
-        )
-            .into_response()
-    })?;
-
-    // 使用当前的UTC时间作为created_at
+    // Create admin user using pre-hashed password
     use chrono::Utc;
     let created_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let user_id = uuid::Uuid::new_v4().to_string();
@@ -221,7 +221,7 @@ async fn init_system(
             .into_response()
     })?;
 
-    // 标记系统为已初始化
+    // Mark system as initialized
     set_initialized(&conn).map_err(|e| {
         conn.execute("ROLLBACK", []).ok();
         (
@@ -233,7 +233,7 @@ async fn init_system(
             .into_response()
     })?;
 
-    // 提交事务
+    // Commit transaction
     conn.execute("COMMIT", []).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
