@@ -32,6 +32,39 @@
         {"z": 14, "x": 2620, "y": 6332, "type": "hit", "expected_features": 4103},
         {"z": 14, "x": 2720, "y": 6432, "type": "empty", "expected_features": 0}
       ]
+    },
+    {
+      "name": "sf_simple_polygons",
+      "fixture": "testdata/osm_medium/geojson/sf_simple_polygons.geojson",
+      "sample_tiles": [
+        {"z": 0, "x": 0, "y": 0, "type": "hit", "expected_features": 0},
+        {"z": 10, "x": 163, "y": 395, "type": "hit", "expected_features": 9866},
+        {"z": 10, "x": 263, "y": 495, "type": "empty", "expected_features": 0},
+        {"z": 14, "x": 2620, "y": 6332, "type": "hit", "expected_features": 2608},
+        {"z": 14, "x": 2720, "y": 6432, "type": "empty", "expected_features": 0}
+      ]
+    },
+    {
+      "name": "sf_multipoints",
+      "fixture": "testdata/osm_medium/geojson/sf_multipoints.geojson",
+      "sample_tiles": [
+        {"z": 0, "x": 0, "y": 0, "type": "hit", "expected_features": 402},
+        {"z": 10, "x": 163, "y": 395, "type": "hit", "expected_features": 402},
+        {"z": 10, "x": 263, "y": 495, "type": "empty", "expected_features": 0},
+        {"z": 14, "x": 2620, "y": 6332, "type": "hit", "expected_features": 83},
+        {"z": 14, "x": 2720, "y": 6432, "type": "empty", "expected_features": 0}
+      ]
+    },
+    {
+      "name": "sf_multilinestrings",
+      "fixture": "testdata/osm_medium/geojson/sf_multilinestrings.geojson",
+      "sample_tiles": [
+        {"z": 0, "x": 0, "y": 0, "type": "hit", "expected_features": 23},
+        {"z": 10, "x": 163, "y": 395, "type": "hit", "expected_features": 511},
+        {"z": 10, "x": 263, "y": 495, "type": "empty", "expected_features": 0},
+        {"z": 14, "x": 2620, "y": 6332, "type": "hit", "expected_features": 125},
+        {"z": 14, "x": 2720, "y": 6432, "type": "empty", "expected_features": 0}
+      ]
     }
   ]
 }
