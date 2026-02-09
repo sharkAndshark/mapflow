@@ -458,7 +458,7 @@ async fn upload_file(
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| format!(".{}", ext.to_lowercase()))
-        .ok_or_else(|| bad_request("Unsupported file type. Use .zip, .geojson, .geojsonl, .kml, .gpx, or .topojson"))?;
+        .ok_or_else(|| bad_request("Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson"))?;
 
     let file_type = match ext.as_str() {
         ".zip" => "shapefile",
@@ -467,7 +467,7 @@ async fn upload_file(
         ".kml" => "kml",
         ".gpx" => "gpx",
         ".topojson" => "topojson",
-        _ => return Err(bad_request("Unsupported file type. Use .zip, .geojson, .geojsonl, .kml, .gpx, or .topojson")),
+        _ => return Err(bad_request("Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson")),
     };
 
     let upload_id = create_id();
