@@ -18,12 +18,14 @@ export default function Preview() {
   const mapRef = useRef(null); // Store the OL map instance
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState(null);
+  const [selectedFid, setSelectedFid] = useState(null);
   const [popupContent, setPopupContent] = useState(null);
   const [popupLoading, setPopupLoading] = useState(false);
   const [popupError, setPopupError] = useState(null);
   const [popupFid, setPopupFid] = useState(null);
   const popupRef = useRef(null);
   const requestSeqRef = useRef(0);
+  const selectedFidRef = useRef(null);
 
   const cancelPopup = useCallback(() => {
     requestSeqRef.current += 1;
@@ -31,7 +33,13 @@ export default function Preview() {
     setPopupError(null);
     setPopupLoading(false);
     setPopupFid(null);
+    selectedFidRef.current = null;
+    setSelectedFid(null);
   }, []);
+
+  useEffect(() => {
+    selectedFidRef.current = selectedFid;
+  }, [selectedFid]);
 
   const loadFeatureProperties = useCallback(
     async (fid) => {
@@ -101,6 +109,33 @@ export default function Preview() {
     [],
   );
 
+  const selectedStyle = useMemo(
+    () =>
+      new Style({
+        fill: new Fill({
+          color: 'rgba(255, 200, 0, 0.7)',
+        }),
+        stroke: new Stroke({
+          color: '#ffc800',
+          width: 4,
+        }),
+        image: new CircleStyle({
+          radius: 8,
+          fill: new Fill({ color: '#ffc800' }),
+          stroke: new Stroke({ color: '#fff', width: 2 }),
+        }),
+      }),
+    [],
+  );
+
+  const styleFunction = useCallback(
+    (feature) => {
+      const fid = feature.getId?.() ?? feature.get('fid') ?? feature.getProperties?.()?.fid;
+      return fid === selectedFidRef.current ? selectedStyle : defaultStyle;
+    },
+    [defaultStyle, selectedStyle],
+  );
+
   // Fetch Metadata
   useEffect(() => {
     async function fetchMeta() {
@@ -152,9 +187,12 @@ export default function Preview() {
           setPopupContent(null);
           setPopupLoading(false);
           setPopupFid(null);
+          setSelectedFid(null);
           return;
         }
 
+        selectedFidRef.current = fid;
+        setSelectedFid(fid);
         // Load full row properties from DuckDB to ensure stable schema + NULL visibility.
         loadFeatureProperties(fid);
       } else {
@@ -186,7 +224,7 @@ export default function Preview() {
         format: new MVT(),
         url: tileUrl,
       }),
-      style: defaultStyle,
+      style: styleFunction,
     });
 
     map.addLayer(vectorLayer);
@@ -203,7 +241,7 @@ export default function Preview() {
         maxZoom: 14, // Don't zoom in too close for single points
       });
     }
-  }, [meta, id, defaultStyle]);
+  }, [meta, id, styleFunction]);
 
   return (
     <div
