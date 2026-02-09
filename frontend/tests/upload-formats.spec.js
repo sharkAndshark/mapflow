@@ -1,19 +1,23 @@
 import { test, expect } from './fixtures';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { setupTestUser } from './auth-helper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
 
-test.beforeEach(async ({ workerServer }) => {
+test.beforeEach(async ({ workerServer, request }) => {
   await workerServer.reset();
+  await setupTestUser(request);
 });
 
 // Sample E2E test for new formats (strategy: test one format as representative)
-test('upload geojsonseq and show in list', async ({ page, workerServer }) => {
+test('upload geojsonseq and show in list', async ({ page }) => {
   const geojsonlPath = path.join(fixturesDir, 'sample.geojsonl');
 
   await page.goto('/');
+  await expect(page.locator('.page')).toBeVisible();
+
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonlPath);
 
