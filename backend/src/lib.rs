@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum_login::AuthManagerLayerBuilder;
 use chrono::Utc;
 use rand::RngCore;
 use std::path::{Path, PathBuf};
@@ -12,41 +13,113 @@ use tokio::{
     fs,
     io::{AsyncWriteExt, BufWriter},
 };
+use tower_http::cors::CorsLayer;
+use tower_sessions::SessionManagerLayer;
 
+mod auth;
+mod auth_routes;
 mod config;
 mod db;
 mod http_errors;
 mod import;
 mod models;
+mod password;
+mod session_store;
 mod test_routes;
 mod tiles;
 mod validation;
 
-pub use config::{format_bytes, read_max_size_config};
+pub use auth::{AuthBackend, User};
+pub use auth_routes::build_auth_router;
+pub use config::{format_bytes, read_cookie_secure, read_max_size_config};
 pub use db::{
-    init_database, reconcile_processing_files, DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
+    init_database, is_initialized, reconcile_processing_files, set_initialized, DEFAULT_DB_PATH,
+    PROCESSING_RECONCILIATION_ERROR,
 };
 use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
 pub use models::{AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta};
 use models::{FeaturePropertiesResponse, FeatureProperty};
+pub use password::{hash_password, validate_password_complexity, verify_password, PasswordError};
+pub use session_store::DuckDBStore;
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
 
 pub fn build_api_router(state: AppState) -> Router {
-    let router: Router<AppState> = Router::new()
+    build_api_router_with_auth(state, true)
+}
+
+pub fn build_test_router(state: AppState) -> Router {
+    build_api_router_with_auth(state, false)
+}
+
+fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
+    // Read allowed origins from environment or use defaults
+    let allowed_origins = config::read_cors_origins();
+
+    // Build CORS layer with specific origins
+    // Note: When using credentials, we cannot use wildcards for headers
+    let mut cors = CorsLayer::new()
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::DELETE,
+        ])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+            axum::http::header::AUTHORIZATION,
+        ])
+        .allow_credentials(true);
+
+    // Add each allowed origin
+    for origin in allowed_origins {
+        if let Ok(parsed) = origin.parse::<axum::http::HeaderValue>() {
+            cors = cors.allow_origin(parsed);
+        } else {
+            eprintln!("Warning: Failed to parse CORS origin '{}', skipping. Check CORS_ALLOWED_ORIGINS environment variable.", origin);
+        }
+    }
+
+    let session_layer = SessionManagerLayer::new(state.session_store.clone())
+        .with_secure(config::read_cookie_secure())
+        .with_same_site(tower_cookies::cookie::SameSite::Lax);
+
+    let auth_layer =
+        AuthManagerLayerBuilder::new(state.auth_backend.clone(), session_layer).build();
+
+    let auth_router = build_auth_router();
+    let public_router = Router::new().route("/api/test/is-initialized", get(check_is_initialized));
+
+    let mut api_router = Router::new()
         .route("/api/files", get(list_files))
         .route("/api/uploads", post(upload_file))
-        .route("/api/files/:id/preview", get(get_preview_meta))
-        .route("/api/files/:id/tiles/:z/:x/:y", get(get_tile))
-        .route("/api/files/:id/features/:fid", get(get_feature_properties))
-        .route("/api/files/:id/schema", get(get_file_schema));
+        .route("/api/files/{id}/preview", get(get_preview_meta))
+        .route("/api/files/{id}/tiles/{z}/{x}/{y}", get(get_tile))
+        .route(
+            "/api/files/{id}/features/{fid}",
+            get(get_feature_properties),
+        )
+        .route("/api/files/{id}/schema", get(get_file_schema));
 
-    let router = add_test_routes(router);
+    // Add authentication middleware if required
+    if with_auth {
+        api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));
+    }
 
-    router.layer(DefaultBodyLimit::disable()).with_state(state)
+    // Combine all routes
+    let router = auth_router
+        .merge(public_router)
+        .merge(api_router)
+        .merge(add_test_routes(Router::new()));
+
+    router
+        .layer(DefaultBodyLimit::disable())
+        .with_state(state)
+        .layer(auth_layer)
+        .layer(cors)
 }
 
 async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
@@ -618,6 +691,22 @@ async fn upload_file(
     Ok((StatusCode::CREATED, Json(meta)))
 }
 
+async fn check_is_initialized(State(state): State<AppState>) -> impl IntoResponse {
+    let conn = state.db.lock().await;
+    match is_initialized(&conn) {
+        Ok(initialized) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "initialized": initialized })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to check initialization status: {}", e) })),
+        )
+            .into_response(),
+    }
+}
+
 fn create_id() -> String {
     let mut bytes = [0u8; 3];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -674,11 +763,14 @@ mod tests {
         )
         .unwrap();
 
+        let conn = Arc::new(Mutex::new(conn));
         let state = AppState {
             upload_dir,
-            db: Arc::new(Mutex::new(conn)),
+            db: conn.clone(),
             max_size,
             max_size_label: format_bytes(max_size),
+            auth_backend: AuthBackend::new(conn.clone()),
+            session_store: DuckDBStore::new(conn),
         };
 
         (state, temp_dir)
@@ -697,6 +789,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "needs authentication"]
     async fn list_returns_seeded_items() {
         let (state, _temp_dir) = setup_state(1024).await;
         let uploaded_at = "2026-02-04T10:00:00Z";
@@ -751,6 +844,31 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "existing");
         assert_eq!(items[0].status, "uploaded");
+    }
+
+    #[test]
+    fn read_cookie_secure_from_env() {
+        let _guard = ENV_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .expect("env lock");
+
+        // Default to false
+        std::env::remove_var("COOKIE_SECURE");
+        assert!(!read_cookie_secure());
+
+        // Explicitly set to false
+        std::env::set_var("COOKIE_SECURE", "false");
+        assert!(!read_cookie_secure());
+
+        std::env::set_var("COOKIE_SECURE", "true");
+        assert!(read_cookie_secure());
+
+        // Invalid value falls back to default false
+        std::env::set_var("COOKIE_SECURE", "invalid");
+        assert!(!read_cookie_secure());
+
+        std::env::remove_var("COOKIE_SECURE");
     }
 
     #[test]

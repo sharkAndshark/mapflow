@@ -5,6 +5,7 @@
 License: Apache-2.0
 
 ## Features
+- **Authentication:** Secure user authentication with session-based login.
 - **Upload:** Support for multiple spatial data formats:
   - Shapefile (zipped `.zip`)
   - GeoJSON (`.geojson`, `.json`)
@@ -50,24 +51,84 @@ docker compose down
 ```
 
 ### Usage
+
+#### First-Time Setup
+
 1. Start the application.
 2. Open `http://localhost:3000` in your browser.
-3. Drag and drop a spatial data file to upload:
+3. **Create an admin account** on the initialization page (first-time only).
+   - Password must be at least 8 characters and include uppercase, lowercase, number, and special character.
+4. **Login** with your admin credentials.
+
+#### Daily Usage
+
+1. Drag and drop a spatial data file to upload:
    - `.zip` (Shapefile with .shp/.shx/.dbf)
    - `.geojson` / `.json` (GeoJSON)
    - `.geojsonl` / `.geojsons` (GeoJSONSeq/NDJSON)
    - `.kml` (KML)
    - `.gpx` (GPX)
    - `.topojson` (TopoJSON)
-4. Click a file in the list to view details or open the map preview.
+2. Click a file in the list to view details or open the map preview.
 
 ### Configuration
 
 Environment variables (Docker):
-- `UPLOAD_MAX_SIZE_MB` (default: `200`)
-- `PORT` (default: `3000`)
+- `UPLOAD_MAX_SIZE_MB` (default: `200`) - Maximum file upload size in megabytes
+- `PORT` (default: `3000`) - Backend server port
+- `COOKIE_SECURE` (default: `false`) - Set to `true` in production to ensure session cookies are only transmitted over HTTPS
+- `CORS_ALLOWED_ORIGINS` (default: `http://localhost:3000`) - Comma-separated list of allowed origins for CORS
+
+**Important:** For production deployments, set `CORS_ALLOWED_ORIGINS` to your actual domain(s):
+
+```bash
+# Example for production
+docker compose up -d -e CORS_ALLOWED_ORIGINS=https://mapflow.example.com,https://www.mapflow.example.com
+```
+
+Or create a `.env` file:
+
+```bash
+CORS_ALLOWED_ORIGINS=https://mapflow.example.com,https://www.mapflow.example.com
+COOKIE_SECURE=true
+```
 
 ## Development
 
 - [behaviors.md](./docs/dev/behaviors.md) - System contracts and verification
 - [AGENTS.md](./AGENTS.md) - Agent collaboration guidelines
+
+## Authentication
+
+MapFlow uses session-based authentication with secure password hashing (bcrypt).
+
+### API Endpoints
+
+**Public Endpoints** (no authentication required):
+- `POST /api/auth/init` - Initialize system (first-time setup)
+- `POST /api/auth/login` - Login with username/password
+- `POST /api/auth/logout` - Logout current user
+- `GET /api/auth/check` - Check authentication status
+
+**Protected Endpoints** (require authentication):
+- `GET /api/files` - List all files
+- `POST /api/uploads` - Upload a new file
+- `GET /api/files/:id/preview` - Get file preview metadata
+- `GET /api/files/:id/tiles/:z/:x/:y` - Get map tiles
+- `GET /api/files/:id/schema` - Get file schema
+- `GET /api/files/:id/features/:fid` - Get feature properties
+
+### Password Requirements
+
+Passwords must meet the following complexity requirements:
+- Minimum 8 characters
+- At least one uppercase letter (A-Z)
+- At least one lowercase letter (a-z)
+- At least one digit (0-9)
+- At least one special character (!@#$%^&* etc.)
+
+### Session Management
+
+- Sessions are stored in the database with automatic expiration
+- Session cookies are HTTP-only and use secure flags in production
+- Sessions persist across server restarts

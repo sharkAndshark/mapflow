@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.7", features = ["multipart"] }
+axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.5", features = ["fs"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
@@ -16,6 +16,15 @@ zip = "0.6"
 hex = "0.4"
 duckdb = { version = "1.4.4", features = ["bundled", "chrono"] }
 axum-extra = { version = "0.12.5", features = ["query"] }
+bcrypt = "0.15"
+regex = "1.10"
+uuid = { version = "1.11", features = ["v4", "serde"] }
+axum-login = "0.18"
+tower-sessions = "0.14"
+tower-cookies = "0.11"
+time = "0.3"
+async-trait = "0.1"
+thiserror = "2.0"
 
 [dev-dependencies]
 http-body-util = "0.1"
