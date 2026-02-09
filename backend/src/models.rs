@@ -56,13 +56,13 @@ pub struct FeaturePropertiesResponse {
     pub properties: Vec<FeatureProperty>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FieldInfo {
     pub name: String,
     pub r#type: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileSchemaResponse {
     pub fields: Vec<FieldInfo>,
 }

@@ -29,7 +29,7 @@ pub use db::{
 use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
-pub use models::{AppState, ErrorResponse, FileItem, PreviewMeta};
+pub use models::{AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta};
 use models::{FeaturePropertiesResponse, FeatureProperty};
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
@@ -458,12 +458,16 @@ async fn upload_file(
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| format!(".{}", ext.to_lowercase()))
-        .ok_or_else(|| bad_request("Unsupported file type. Use .zip or .geojson"))?;
+        .ok_or_else(|| bad_request("Unsupported file type. Use .zip, .geojson, .geojsonl, .kml, .gpx, or .topojson"))?;
 
     let file_type = match ext.as_str() {
         ".zip" => "shapefile",
-        ".geojson" => "geojson",
-        _ => return Err(bad_request("Unsupported file type. Use .zip or .geojson")),
+        ".geojson" | ".json" => "geojson",
+        ".geojsonl" | ".geojsons" => "geojsonl",
+        ".kml" => "kml",
+        ".gpx" => "gpx",
+        ".topojson" => "topojson",
+        _ => return Err(bad_request("Unsupported file type. Use .zip, .geojson, .geojsonl, .kml, .gpx, or .topojson")),
     };
 
     let upload_id = create_id();
@@ -496,6 +500,7 @@ async fn upload_file(
     let validation = match file_type {
         "shapefile" => validate_shapefile_zip(&file_path).await,
         "geojson" => validate_geojson(&file_path).await,
+        "geojsonl" | "kml" | "gpx" | "topojson" => Ok(()), // Trust GDAL to validate
         _ => Ok(()),
     };
 

@@ -2,7 +2,7 @@ use axum::body::Body;
 use axum::http::Request;
 use backend::{
     build_api_router, init_database, reconcile_processing_files, AppState, FileItem,
-    PROCESSING_RECONCILIATION_ERROR,
+    FileSchemaResponse, PROCESSING_RECONCILIATION_ERROR,
 };
 use http_body_util::BodyExt; // for collect()
 use mvt_reader::{feature::Value as MvtValue, Reader as MvtReader};
@@ -519,7 +519,7 @@ async fn test_upload_invalid_extension() {
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(
         body_json["error"],
-        "Unsupported file type. Use .zip or .geojson"
+        "Unsupported file type. Use .zip, .geojson, .geojsonl, .kml, .gpx, or .topojson"
     );
 }
 
@@ -1425,3 +1425,58 @@ async fn test_tile_golden_osm_polygons_samples() {
         .expect("sf_polygons dataset not found in config");
     test_tile_golden_samples_for_dataset(dataset_config).await;
 }
+
+#[tokio::test]
+async fn test_upload_geojsonseq_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    // GeoJSONSeq content: one Feature per line
+    let geojsonseq_content = r#"{"type":"Feature","properties":{"name":"Point1"},"geometry":{"type":"Point","coordinates":[0.0,0.0]}}
+{"type":"Feature","properties":{"name":"Point2"},"geometry":{"type":"Point","coordinates":[1.0,1.0]}}
+{"type":"Feature","properties":{"name":"Point3"},"geometry":{"type":"Point","coordinates":[2.0,2.0]}}"#;
+
+    let boundary = "------------------------boundaryGEOJSONSEQ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.geojsonl\"\r\n\r\n{geojsonseq_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id.clone();
+
+    // Verify file type
+    assert_eq!(file_item.file_type, "geojsonl");
+    assert_eq!(file_item.name, "test");
+
+    // Wait for processing to complete
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+
+    // Verify we can query the schema
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let schema: FileSchemaResponse = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(schema.fields.iter().any(|f| f.name == "name"));
+}
+
