@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useAuth } from './AuthContext.jsx';
 import {
   hasActiveJobs as computeHasActiveJobs,
   mergeServerFilesWithOptimistic,
@@ -199,10 +200,20 @@ function DetailSidebar({ file }) {
 }
 
 export default function App() {
+  const { user, logout } = useAuth();
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+
+  async function handleLogout() {
+    try {
+      await logout();
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  }
 
   // Derive selected file object
   const selectedFile = useMemo(
@@ -320,15 +331,27 @@ export default function App() {
           <h1>MapFlow</h1>
           <p className="subtitle">探索版 · 文件上传与列表</p>
         </div>
-        <label className="upload-button">
-          <input
-            type="file"
-            accept=".zip,.geojson"
-            onChange={handleFileChange}
-            data-testid="file-input"
-          />
-          上传
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {user && (
+            <span style={{ fontSize: '14px', color: '#666' }}>
+              {user.username} ({user.role})
+            </span>
+          )}
+          <label className="upload-button">
+            <input
+              type="file"
+              accept=".zip,.geojson"
+              onChange={handleFileChange}
+              data-testid="file-input"
+            />
+            上传
+          </label>
+          {user && (
+            <button type="button" className="btn-secondary" onClick={handleLogout}>
+              登出
+            </button>
+          )}
+        </div>
       </header>
 
       {errorMessage ? <div className="alert">{errorMessage}</div> : null}

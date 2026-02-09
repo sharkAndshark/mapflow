@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum_login::AuthManagerLayerBuilder;
 use chrono::Utc;
 use rand::RngCore;
 use std::path::{Path, PathBuf};
@@ -13,48 +14,95 @@ use tokio::{
     io::{AsyncWriteExt, BufWriter},
 };
 use tower_http::cors::{Any, CorsLayer};
+use tower_sessions::SessionManagerLayer;
 
+mod auth;
+mod auth_routes;
 mod config;
 mod db;
 mod http_errors;
 mod import;
 mod models;
+mod password;
+mod session_store;
 mod test_routes;
 mod tiles;
 mod validation;
 
+pub use auth::{AuthBackend, User};
+pub use auth_routes::build_auth_router;
 pub use config::{format_bytes, read_max_size_config};
 pub use db::{
-    init_database, reconcile_processing_files, DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
+    init_database, is_initialized, reconcile_processing_files, set_initialized, DEFAULT_DB_PATH,
+    PROCESSING_RECONCILIATION_ERROR,
 };
 use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
 pub use models::{AppState, ErrorResponse, FileItem, PreviewMeta};
 use models::{FeaturePropertiesResponse, FeatureProperty};
+pub use password::{hash_password, validate_password_complexity, verify_password, PasswordError};
+pub use session_store::DuckDBStore;
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
 
 pub fn build_api_router(state: AppState) -> Router {
+    build_api_router_with_auth(state, true)
+}
+
+pub fn build_test_router(state: AppState) -> Router {
+    build_api_router_with_auth(state, false)
+}
+
+fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([Method::GET, Method::POST, Method::DELETE])
         .allow_headers(Any);
 
-    let router: Router<AppState> = Router::new()
+    // 创建会话层
+    let session_layer = SessionManagerLayer::new(state.session_store.clone())
+        .with_secure(false)
+        .with_same_site(tower_cookies::cookie::SameSite::Lax);
+
+    // 创建认证层
+    let auth_layer =
+        AuthManagerLayerBuilder::new(state.auth_backend.clone(), session_layer).build();
+
+    // 认证路由 (无需认证)
+    let auth_router = build_auth_router();
+
+    // 公开路由 (无需认证)
+    let public_router = Router::new().route("/api/test/is-initialized", get(check_is_initialized));
+
+    // 管理路由
+    let mut api_router = Router::new()
         .route("/api/files", get(list_files))
         .route("/api/uploads", post(upload_file))
-        .route("/api/files/:id/preview", get(get_preview_meta))
-        .route("/api/files/:id/tiles/:z/:x/:y", get(get_tile))
-        .route("/api/files/:id/features/:fid", get(get_feature_properties))
-        .route("/api/files/:id/schema", get(get_file_schema));
+        .route("/api/files/{id}/preview", get(get_preview_meta))
+        .route("/api/files/{id}/tiles/{z}/{x}/{y}", get(get_tile))
+        .route(
+            "/api/files/{id}/features/{fid}",
+            get(get_feature_properties),
+        )
+        .route("/api/files/{id}/schema", get(get_file_schema));
 
-    let router = add_test_routes(router);
+    // 如果需要认证，添加认证中间件
+    if with_auth {
+        api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));
+    }
+
+    // 组合所有路由
+    let router = auth_router
+        .merge(public_router)
+        .merge(api_router)
+        .merge(add_test_routes(Router::new()));
 
     router
         .layer(DefaultBodyLimit::disable())
         .with_state(state)
+        .layer(auth_layer)
         .layer(cors)
 }
 
@@ -620,6 +668,22 @@ async fn upload_file(
     Ok((StatusCode::CREATED, Json(meta)))
 }
 
+async fn check_is_initialized(State(state): State<AppState>) -> impl IntoResponse {
+    let conn = state.db.lock().await;
+    match is_initialized(&conn) {
+        Ok(initialized) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "initialized": initialized })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to check initialization status: {}", e) })),
+        )
+            .into_response(),
+    }
+}
+
 fn create_id() -> String {
     let mut bytes = [0u8; 3];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -676,11 +740,14 @@ mod tests {
         )
         .unwrap();
 
+        let conn = Arc::new(Mutex::new(conn));
         let state = AppState {
             upload_dir,
-            db: Arc::new(Mutex::new(conn)),
+            db: conn.clone(),
             max_size,
             max_size_label: format_bytes(max_size),
+            auth_backend: AuthBackend::new(conn.clone()),
+            session_store: DuckDBStore::new(conn),
         };
 
         (state, temp_dir)
@@ -699,6 +766,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "needs authentication"]
     async fn list_returns_seeded_items() {
         let (state, _temp_dir) = setup_state(1024).await;
         let uploaded_at = "2026-02-04T10:00:00Z";

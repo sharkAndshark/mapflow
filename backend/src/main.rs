@@ -14,11 +14,19 @@ async fn main() {
 
     let (max_size, max_size_label) = backend::read_max_size_config();
 
+    let db = Arc::new(Mutex::new(conn));
+
+    // 创建认证 backend 和 session store
+    let auth_backend = backend::AuthBackend::new(db.clone());
+    let session_store = backend::DuckDBStore::new(db.clone());
+
     let state = backend::AppState {
         upload_dir,
-        db: Arc::new(Mutex::new(conn)),
+        db: db.clone(),
         max_size,
         max_size_label,
+        auth_backend,
+        session_store,
     };
 
     // Reconciliation: Mark any 'processing' files as 'failed' on startup

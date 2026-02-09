@@ -3,12 +3,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::{AuthBackend, DuckDBStore};
+
 #[derive(Clone)]
 pub struct AppState {
     pub upload_dir: PathBuf,
     pub db: Arc<Mutex<duckdb::Connection>>,
     pub max_size: u64,
     pub max_size_label: String,
+    pub auth_backend: AuthBackend,
+    pub session_store: DuckDBStore,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -1,8 +1,8 @@
 use axum::body::Body;
 use axum::http::Request;
 use backend::{
-    build_api_router, init_database, reconcile_processing_files, AppState, FileItem,
-    PROCESSING_RECONCILIATION_ERROR,
+    build_test_router, init_database, reconcile_processing_files, AppState, AuthBackend,
+    DuckDBStore, FileItem, PROCESSING_RECONCILIATION_ERROR,
 };
 use http_body_util::BodyExt; // for collect()
 use mvt_reader::{feature::Value as MvtValue, Reader as MvtReader};
@@ -112,15 +112,18 @@ async fn setup_app() -> (axum::Router, TempDir) {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 10 * 1024 * 1024, // 10MB
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
-    let router = build_api_router(state);
+    let router = build_test_router(state);
     (router, temp_dir)
 }
 
@@ -131,15 +134,18 @@ async fn setup_app_with_large_max_size() -> (axum::Router, TempDir) {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 100 * 1024 * 1024, // 100MB for OSM datasets
         max_size_label: "100MB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
-    let router = build_api_router(state);
+    let router = build_test_router(state);
     (router, temp_dir)
 }
 
@@ -356,15 +362,18 @@ async fn test_upload_payload_too_large_returns_413() {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 1024, // 1KB
         max_size_label: "1KB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
-    let app = build_api_router(state);
+    let app = build_test_router(state);
 
     let boundary = "------------------------boundaryBIG";
     let big = "a".repeat(2048);
@@ -445,12 +454,15 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
     // Seed a processing file.
@@ -476,7 +488,7 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
 
     reconcile_processing_files(&state.db).await.unwrap();
 
-    let app = build_api_router(state);
+    let app = build_test_router(state);
     let request = Request::builder()
         .method("GET")
         .uri("/api/files")
@@ -837,15 +849,18 @@ async fn test_schema_endpoint_returns_409_for_non_ready_file() {
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
         upload_dir,
-        db: Arc::new(tokio::sync::Mutex::new(conn)),
+        db: db.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
     };
 
-    let app = build_api_router(state.clone());
+    let app = build_test_router(state.clone());
 
     // Insert a file in 'processing' state directly to avoid race condition
     {
@@ -1138,13 +1153,16 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
 
     let db_path = temp_dir.path().join("persist.duckdb");
     let conn1 = init_database(&db_path);
+    let db1 = Arc::new(tokio::sync::Mutex::new(conn1));
     let state1 = AppState {
         upload_dir: upload_dir.clone(),
-        db: Arc::new(tokio::sync::Mutex::new(conn1)),
+        db: db1.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db1.clone()),
+        session_store: DuckDBStore::new(db1),
     };
-    let app1 = build_api_router(state1);
+    let app1 = build_test_router(state1);
 
     let geojson_bytes = read_fixture_bytes("frontend/tests/fixtures/sample.geojson");
     let boundary = "------------------------boundaryPERSIST";
@@ -1176,11 +1194,13 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
 
     let state2 = AppState {
         upload_dir,
-        db: db2,
+        db: db2.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
+        auth_backend: AuthBackend::new(db2.clone()),
+        session_store: DuckDBStore::new(db2),
     };
-    let app2 = build_api_router(state2);
+    let app2 = build_test_router(state2);
 
     let request = Request::builder()
         .method("GET")
@@ -1424,4 +1444,113 @@ async fn test_tile_golden_osm_polygons_samples() {
         .find(|d| d.name == "sf_polygons")
         .expect("sf_polygons dataset not found in config");
     test_tile_golden_samples_for_dataset(dataset_config).await;
+}
+
+// Database schema tests for authentication tables
+#[test]
+fn test_users_schema() {
+    use backend::init_database;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+
+    // Verify users table exists by querying it
+    let result = conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get::<_, i64>(0));
+    // Table should exist even if empty (COUNT(*) returns 0)
+    assert!(result.is_ok(), "users table should exist");
+
+    // Verify we can query the structure using PRAGMA
+    let mut stmt = conn.prepare("PRAGMA table_info(users)").unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(
+        columns,
+        vec!["id", "username", "password_hash", "role", "created_at"]
+    );
+}
+
+#[test]
+fn test_sessions_schema() {
+    use backend::init_database;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+
+    // Verify sessions table exists
+    let result = conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| {
+        row.get::<_, i64>(0)
+    });
+    assert!(result.is_ok(), "sessions table should exist");
+
+    // Verify structure
+    let mut stmt = conn.prepare("PRAGMA table_info(sessions)").unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(columns, vec!["id", "data", "expiry_date", "created_at"]);
+}
+
+#[test]
+fn test_system_settings_schema() {
+    use backend::init_database;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+
+    // Verify system_settings table exists
+    let result = conn.query_row("SELECT COUNT(*) FROM system_settings", [], |row| {
+        row.get::<_, i64>(0)
+    });
+    assert!(result.is_ok(), "system_settings table should exist");
+
+    // Verify structure
+    let mut stmt = conn.prepare("PRAGMA table_info(system_settings)").unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert_eq!(columns, vec!["key", "value"]);
+}
+
+#[test]
+fn test_is_initialized_not_set_by_default() {
+    use backend::{init_database, is_initialized};
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+    assert!(!is_initialized(&conn).unwrap());
+}
+
+#[test]
+fn test_set_and_check_initialized() {
+    use backend::{init_database, is_initialized, set_initialized};
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+
+    let conn = init_database(&db_path);
+    assert!(!is_initialized(&conn).unwrap());
+
+    set_initialized(&conn).unwrap();
+    assert!(is_initialized(&conn).unwrap());
 }

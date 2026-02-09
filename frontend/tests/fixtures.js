@@ -14,7 +14,7 @@ const waitForPort = async (port, timeout = 30000) => {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     try {
-      const res = await fetch(`http://localhost:${port}/api/files`);
+      const res = await fetch(`http://localhost:${port}/api/test/is-initialized`);
       if (res.ok) return true;
     } catch (e) {
       // ignore
@@ -147,7 +147,24 @@ export const test = base.extend({
 
       // 5. Cleanup
       console.log(`[Worker ${workerId}] Stopping backend...`);
-      backendProcess.kill();
+      backendProcess.kill('SIGTERM');
+
+      // Wait for port to be released
+      let retries = 50;
+      while (retries > 0) {
+        try {
+          await fetch(`http://localhost:${port}/api/test/is-initialized`);
+          await new Promise((r) => setTimeout(r, 100));
+          retries--;
+        } catch (e) {
+          break;
+        }
+      }
+
+      if (retries === 0) {
+        console.log(`[Worker ${workerId}] Force killing backend...`);
+        backendProcess.kill('SIGKILL');
+      }
     },
     { scope: 'worker', auto: true },
   ], // auto: true means it starts for every worker automatically
@@ -179,12 +196,30 @@ export const test = base.extend({
     await use(page);
   },
 
-  request: async ({ playwright, workerServer }, use) => {
-    const newContext = await playwright.request.newContext({
-      baseURL: workerServer.url,
-    });
-    await use(newContext);
-    await newContext.dispose();
+  request: async ({ page, workerServer }, use) => {
+    // Use page's request context to share cookies/session with the browser
+    // But wrap it to support relative URLs
+    const originalPost = page.request.post.bind(page.request);
+    const originalGet = page.request.get.bind(page.request);
+    const originalFetch = page.request.fetch.bind(page.request);
+
+    const wrappedRequest = {
+      ...page.request,
+      post: async (url, options) => {
+        const fullUrl = url.startsWith('/') ? `${workerServer.url}${url}` : url;
+        return originalPost(fullUrl, options);
+      },
+      get: async (url, options) => {
+        const fullUrl = url.startsWith('/') ? `${workerServer.url}${url}` : url;
+        return originalGet(fullUrl, options);
+      },
+      fetch: async (url, options) => {
+        const fullUrl = url.startsWith('/') ? `${workerServer.url}${url}` : url;
+        return originalFetch(fullUrl, options);
+      },
+    };
+
+    await use(wrappedRequest);
   },
 });
 

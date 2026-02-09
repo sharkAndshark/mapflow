@@ -60,5 +60,63 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     )
     .expect("Failed to create dataset metadata tables");
 
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS users (
+            id VARCHAR PRIMARY KEY,
+            username VARCHAR UNIQUE NOT NULL,
+            password_hash VARCHAR NOT NULL,
+            role VARCHAR NOT NULL,
+            created_at TIMESTAMP NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_users_username
+            ON users(username);
+        ",
+    )
+    .expect("Failed to create users table");
+
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS sessions (
+            id VARCHAR PRIMARY KEY,
+            data VARCHAR NOT NULL,
+            expiry_date TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sessions_expiry_date
+            ON sessions(expiry_date);
+        ",
+    )
+    .expect("Failed to create sessions table");
+
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key VARCHAR PRIMARY KEY,
+            value VARCHAR NOT NULL
+        );
+        ",
+    )
+    .expect("Failed to create system_settings table");
+
     conn
+}
+
+pub fn is_initialized(conn: &duckdb::Connection) -> Result<bool, duckdb::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT COUNT(*) FROM system_settings WHERE key = 'initialized' AND value = '1'",
+    )?;
+
+    let count: i64 = stmt.query_row([], |row| row.get(0))?;
+    Ok(count > 0)
+}
+
+pub fn set_initialized(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
+    conn.execute(
+        "INSERT OR REPLACE INTO system_settings (key, value) VALUES ('initialized', '1')",
+        [],
+    )?;
+    Ok(())
 }
