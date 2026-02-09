@@ -64,6 +64,7 @@ docker compose down
 Environment variables (Docker):
 - `UPLOAD_MAX_SIZE_MB` (default: `200`)
 - `PORT` (default: `3000`)
+- `COOKIE_SECURE` (default: `false`) - Set to `true` in production to ensure session cookies are only transmitted over HTTPS
 
 ## Development
 

@@ -1,6 +1,13 @@
 const DEFAULT_MAX_SIZE_MB: u64 = 200;
 const BYTES_PER_MB: u64 = 1024 * 1024;
 
+pub fn read_cookie_secure() -> bool {
+    std::env::var("COOKIE_SECURE")
+        .ok()
+        .and_then(|value| value.parse::<bool>().ok())
+        .unwrap_or(false)
+}
+
 pub fn read_max_size_config() -> (u64, String) {
     let max_size_mb = std::env::var("UPLOAD_MAX_SIZE_MB")
         .ok()

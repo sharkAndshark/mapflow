@@ -94,12 +94,20 @@ impl AuthnBackend for AuthBackend {
                 Err(AuthError::InvalidCredentials)
             }
         } else {
-            // Timing attack mitigation: perform dummy hash verification
-            // to ensure consistent response time regardless of user existence
-            let _ = crate::password::verify_password(
-                &password,
-                "$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-            );
+            use std::sync::OnceLock;
+
+            static DUMMY_HASH: OnceLock<String> = OnceLock::new();
+
+            let dummy_hash = DUMMY_HASH.get_or_init(|| {
+                crate::password::hash_password("dummy_password_for_timing_attack").unwrap_or_else(
+                    |_| {
+                        "$2b$12$00000000000000000000000000000000000000000000000000000000"
+                            .to_string()
+                    },
+                )
+            });
+
+            let _ = crate::password::verify_password(&password, dummy_hash);
             Err(AuthError::InvalidCredentials)
         }
     }
@@ -226,5 +234,50 @@ mod tests {
             .unwrap();
 
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_timing_attack_mitigation() {
+        let (backend, _temp_dir) = create_test_backend().await;
+        create_test_user(&backend, "existinguser", "Test123!@#", "admin").await;
+
+        use std::time::Instant;
+
+        let mut times_wrong_password = Vec::with_capacity(5);
+        let mut times_nonexistent_user = Vec::with_capacity(5);
+
+        for _ in 0..5 {
+            let start = Instant::now();
+            let _ = backend
+                .authenticate(("existinguser".to_string(), "WrongPassword123!".to_string()))
+                .await;
+            times_wrong_password.push(start.elapsed());
+
+            let start = Instant::now();
+            let _ = backend
+                .authenticate(("nonexistent".to_string(), "Test123!@#".to_string()))
+                .await;
+            times_nonexistent_user.push(start.elapsed());
+        }
+
+        let avg_wrong: std::time::Duration = times_wrong_password.iter().sum();
+        let avg_wrong = avg_wrong / 5;
+
+        let avg_nonexistent: std::time::Duration = times_nonexistent_user.iter().sum();
+        let avg_nonexistent = avg_nonexistent / 5;
+
+        let ratio = if avg_wrong > avg_nonexistent {
+            avg_wrong.as_nanos() as f64 / avg_nonexistent.as_nanos() as f64
+        } else {
+            avg_nonexistent.as_nanos() as f64 / avg_wrong.as_nanos() as f64
+        };
+
+        assert!(
+            ratio < 2.0,
+            "Timing attack mitigation failed: ratio={}, wrong_password={:?}, nonexistent_user={:?}",
+            ratio,
+            avg_wrong,
+            avg_nonexistent
+        );
     }
 }

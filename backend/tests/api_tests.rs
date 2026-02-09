@@ -1554,3 +1554,91 @@ fn test_set_and_check_initialized() {
     set_initialized(&conn).unwrap();
     assert!(is_initialized(&conn).unwrap());
 }
+
+#[tokio::test]
+async fn test_concurrent_init_system_requests() {
+    use backend::{hash_password, init_database, is_initialized, set_initialized};
+    use duckdb::params;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+    use tokio::sync::Mutex;
+
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = Arc::new(Mutex::new(init_database(&db_path)));
+
+    let make_init_request = |conn: Arc<Mutex<duckdb::Connection>>| {
+        tokio::spawn(async move {
+            let c = conn.lock().await;
+
+            let tx_result = c.execute("BEGIN TRANSACTION", []);
+            if tx_result.is_err() {
+                return false;
+            }
+
+            let already_init = is_initialized(&c).unwrap_or(false);
+
+            if already_init {
+                let _ = c.execute("ROLLBACK", []);
+                return false;
+            }
+
+            let password_hash = hash_password("Test123!@#").unwrap();
+            let user_id = uuid::Uuid::new_v4().to_string();
+            let created_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+            let result = c.execute(
+                "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![&user_id, "admin", &password_hash, "admin", &created_at],
+            );
+
+            if result.is_err() {
+                let _ = c.execute("ROLLBACK", []);
+                return false;
+            }
+
+            let _ = set_initialized(&c);
+            let _ = c.execute("COMMIT", []);
+
+            true
+        })
+    };
+
+    let tasks = (0..5)
+        .map(|_| make_init_request(conn.clone()))
+        .collect::<Vec<_>>();
+
+    let mut success_count = 0;
+    let mut failure_count = 0;
+
+    for task in tasks {
+        match task.await {
+            Ok(true) => success_count += 1,
+            Ok(false) => failure_count += 1,
+            Err(_) => failure_count += 1,
+        }
+    }
+
+    assert_eq!(
+        success_count, 1,
+        "Exactly one init request should succeed (got {})",
+        success_count
+    );
+
+    assert_eq!(
+        failure_count, 4,
+        "All other requests should fail (got {})",
+        failure_count
+    );
+
+    let conn = conn.lock().await;
+    let user_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+        .unwrap();
+
+    assert_eq!(
+        user_count, 1,
+        "Only one admin user should be created (got {})",
+        user_count
+    );
+}

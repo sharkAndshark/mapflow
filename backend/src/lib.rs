@@ -31,7 +31,7 @@ mod validation;
 
 pub use auth::{AuthBackend, User};
 pub use auth_routes::build_auth_router;
-pub use config::{format_bytes, read_max_size_config};
+pub use config::{format_bytes, read_cookie_secure, read_max_size_config};
 pub use db::{
     init_database, is_initialized, reconcile_processing_files, set_initialized, DEFAULT_DB_PATH,
     PROCESSING_RECONCILIATION_ERROR,
@@ -61,9 +61,8 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .allow_methods([Method::GET, Method::POST, Method::DELETE])
         .allow_headers(Any);
 
-    // 创建会话层
     let session_layer = SessionManagerLayer::new(state.session_store.clone())
-        .with_secure(false)
+        .with_secure(config::read_cookie_secure())
         .with_same_site(tower_cookies::cookie::SameSite::Lax);
 
     // 创建认证层
@@ -821,6 +820,32 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "existing");
         assert_eq!(items[0].status, "uploaded");
+    }
+
+    #[test]
+    fn read_cookie_secure_from_env() {
+        let _guard = ENV_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .expect("env lock");
+
+        // 默认 false
+        std::env::remove_var("COOKIE_SECURE");
+        assert!(!read_cookie_secure());
+
+        // 显式设置 false
+        std::env::set_var("COOKIE_SECURE", "false");
+        assert!(!read_cookie_secure());
+
+        // 显式设置 true
+        std::env::set_var("COOKIE_SECURE", "true");
+        assert!(read_cookie_secure());
+
+        // 无效值回退到默认 false
+        std::env::set_var("COOKIE_SECURE", "invalid");
+        assert!(!read_cookie_secure());
+
+        std::env::remove_var("COOKIE_SECURE");
     }
 
     #[test]

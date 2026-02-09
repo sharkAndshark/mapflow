@@ -126,8 +126,20 @@ async fn init_system(
 
     let conn = state.db.lock().await;
 
-    // 检查系统是否已初始化
-    if is_initialized(&conn).map_err(|e| {
+    // 使用事务防止 TOCTOU 竞态条件
+    // 确保检查和插入是原子操作
+    conn.execute("BEGIN TRANSACTION", []).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to begin transaction: {}", e),
+            }),
+        )
+            .into_response()
+    })?;
+
+    // 检查系统是否已初始化（在事务内）
+    let already_initialized = is_initialized(&conn).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -135,7 +147,10 @@ async fn init_system(
             }),
         )
             .into_response()
-    })? {
+    })?;
+
+    if already_initialized {
+        conn.execute("ROLLBACK", []).ok();
         return Err((
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -145,8 +160,29 @@ async fn init_system(
             .into_response());
     }
 
+    // 检查用户名是否已存在（防止重复）
+    let user_exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM users WHERE username = ?",
+            duckdb::params![&req.username],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if user_exists > 0 {
+        conn.execute("ROLLBACK", []).ok();
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: format!("Username '{}' already exists", req.username),
+            }),
+        )
+            .into_response());
+    }
+
     // 创建管理员用户
     let password_hash = crate::hash_password(&req.password).map_err(|e| {
+        conn.execute("ROLLBACK", []).ok();
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -166,6 +202,7 @@ async fn init_system(
         duckdb::params![&user_id, &req.username, &password_hash, "admin", &created_at,],
     )
     .map_err(|e| {
+        conn.execute("ROLLBACK", []).ok();
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -177,10 +214,22 @@ async fn init_system(
 
     // 标记系统为已初始化
     set_initialized(&conn).map_err(|e| {
+        conn.execute("ROLLBACK", []).ok();
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
                 error: format!("Failed to mark system as initialized: {}", e),
+            }),
+        )
+            .into_response()
+    })?;
+
+    // 提交事务
+    conn.execute("COMMIT", []).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to commit transaction: {}", e),
             }),
         )
             .into_response()

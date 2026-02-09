@@ -93,6 +93,11 @@ impl SessionStore for DuckDBStore {
                 .get(2)
                 .map_err(|e| Error::Backend(format!("Failed to read expiry date: {}", e)))?;
 
+            let now = chrono::Utc::now();
+            if expiry_date < now {
+                return Ok(None);
+            }
+
             let record = Self::json_to_record(&id, &data, expiry_date)?;
             Ok(Some(record))
         } else {
@@ -225,5 +230,27 @@ mod tests {
         let loaded = loaded.unwrap();
         assert_eq!(loaded.id, record.id);
         assert_eq!(loaded.data, data);
+    }
+
+    #[tokio::test]
+    async fn test_expired_session_returns_none() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let mut data = HashMap::new();
+        data.insert("user_id".to_string(), serde_json::json!("123"));
+
+        let id = Id::default();
+        let expiry_date = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
+
+        let record = Record {
+            id,
+            data,
+            expiry_date,
+        };
+
+        store.save(&record).await.unwrap();
+
+        let loaded = store.load(&record.id).await.unwrap();
+        assert_eq!(loaded, None, "Expired session should return None");
     }
 }

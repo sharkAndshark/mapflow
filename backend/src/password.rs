@@ -121,7 +121,7 @@ pub fn validate_password_complexity(password: &str) -> Result<(), PasswordError>
 
 /// Hash a password using bcrypt
 ///
-/// Uses bcrypt with default cost factor (10)
+/// Uses bcrypt with DEFAULT_COST
 pub fn hash_password(password: &str) -> Result<String, PasswordError> {
     hash(password, DEFAULT_COST).map_err(|e| PasswordError::HashFailed(e.to_string()))
 }
@@ -215,5 +215,39 @@ mod tests {
             hash.starts_with("$2b$"),
             "Bcrypt hash should start with $2b$ prefix"
         );
+    }
+
+    #[test]
+    fn test_validate_password_too_long() {
+        let password = "a".repeat(129);
+        assert!(matches!(
+            validate_password_complexity(&password),
+            Err(PasswordError::TooLong)
+        ));
+    }
+
+    #[test]
+    fn test_validate_password_boundary_min() {
+        let password = "Test1!@#";
+        assert_eq!(password.len(), 8);
+        assert!(validate_password_complexity(password).is_ok());
+    }
+
+    #[test]
+    fn test_validate_password_boundary_max() {
+        let password = "Aa1!";
+        let mut long_password = password.repeat(32);
+        long_password.truncate(128);
+        assert_eq!(long_password.len(), 128);
+        assert!(validate_password_complexity(&long_password).is_ok());
+    }
+
+    #[test]
+    fn test_validate_password_empty() {
+        let password = "";
+        assert!(matches!(
+            validate_password_complexity(password),
+            Err(PasswordError::TooShort)
+        ));
     }
 }
