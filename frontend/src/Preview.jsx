@@ -33,6 +33,7 @@ export default function Preview() {
     setPopupError(null);
     setPopupLoading(false);
     setPopupFid(null);
+    selectedFidRef.current = null;
     setSelectedFid(null);
   }, []);
 
@@ -190,6 +191,7 @@ export default function Preview() {
           return;
         }
 
+        selectedFidRef.current = fid;
         setSelectedFid(fid);
         // Load full row properties from DuckDB to ensure stable schema + NULL visibility.
         loadFeatureProperties(fid);
