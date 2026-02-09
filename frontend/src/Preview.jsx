@@ -16,6 +16,7 @@ export default function Preview() {
   const { id } = useParams();
   const mapElement = useRef(null);
   const mapRef = useRef(null); // Store the OL map instance
+  const vectorLayerRef = useRef(null); // Store the vector tile layer for style updates
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState(null);
   const [selectedFid, setSelectedFid] = useState(null);
@@ -193,16 +194,21 @@ export default function Preview() {
 
         selectedFidRef.current = fid;
         setSelectedFid(fid);
+        // Trigger layer re-render to show highlight immediately
+        vectorLayerRef.current?.changed();
         // Load full row properties from DuckDB to ensure stable schema + NULL visibility.
         loadFeatureProperties(fid);
       } else {
         cancelPopup();
+        // Trigger layer re-render to clear highlight when clicking empty space
+        vectorLayerRef.current?.changed();
       }
     });
 
     return () => {
       olMap.setTarget(null);
       mapRef.current = null;
+      vectorLayerRef.current = null;
     };
   }, [cancelPopup, loadFeatureProperties]);
 
@@ -227,6 +233,7 @@ export default function Preview() {
       style: styleFunction,
     });
 
+    vectorLayerRef.current = vectorLayer;
     map.addLayer(vectorLayer);
 
     // 2. Fit bounds
