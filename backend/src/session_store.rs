@@ -68,41 +68,45 @@ impl SessionStore for DuckDBStore {
     }
 
     async fn load(&self, session_id: &Id) -> Result<Option<Record>, Error> {
-        let conn = self.conn.lock().await;
-        let id = session_id.to_string();
+        let (id, data, expiry_date) = {
+            let conn = self.conn.lock().await;
+            let id = session_id.to_string();
 
-        let mut stmt = conn
-            .prepare("SELECT id, data, expiry_date FROM sessions WHERE id = ?")
-            .map_err(|e| Error::Backend(format!("Failed to prepare load query: {}", e)))?;
+            let mut stmt = conn
+                .prepare("SELECT id, data, expiry_date FROM sessions WHERE id = ?")
+                .map_err(|e| Error::Backend(format!("Failed to prepare load query: {}", e)))?;
 
-        let mut rows = stmt
-            .query(duckdb::params![id])
-            .map_err(|e| Error::Backend(format!("Failed to load session: {}", e)))?;
+            let mut rows = stmt
+                .query(duckdb::params![id])
+                .map_err(|e| Error::Backend(format!("Failed to load session: {}", e)))?;
 
-        if let Some(row) = rows
-            .next()
-            .map_err(|e| Error::Backend(format!("Failed to read session row: {}", e)))?
-        {
-            let id: String = row
-                .get(0)
-                .map_err(|e| Error::Backend(format!("Failed to read session ID: {}", e)))?;
-            let data: String = row
-                .get(1)
-                .map_err(|e| Error::Backend(format!("Failed to read session data: {}", e)))?;
-            let expiry_date: chrono::DateTime<chrono::Utc> = row
-                .get(2)
-                .map_err(|e| Error::Backend(format!("Failed to read expiry date: {}", e)))?;
-
-            let now = chrono::Utc::now();
-            if expiry_date < now {
+            if let Some(row) = rows
+                .next()
+                .map_err(|e| Error::Backend(format!("Failed to read session row: {}", e)))?
+            {
+                let id: String = row
+                    .get(0)
+                    .map_err(|e| Error::Backend(format!("Failed to read session ID: {}", e)))?;
+                let data: String = row
+                    .get(1)
+                    .map_err(|e| Error::Backend(format!("Failed to read session data: {}", e)))?;
+                let expiry_date: chrono::DateTime<chrono::Utc> = row
+                    .get(2)
+                    .map_err(|e| Error::Backend(format!("Failed to read expiry date: {}", e)))?;
+                (id, data, expiry_date)
+            } else {
                 return Ok(None);
             }
+        };
 
-            let record = Self::json_to_record(&id, &data, expiry_date)?;
-            Ok(Some(record))
-        } else {
-            Ok(None)
+        let now = chrono::Utc::now();
+        if expiry_date < now {
+            self.delete(session_id).await.ok();
+            return Ok(None);
         }
+
+        let record = Self::json_to_record(&id, &data, expiry_date)?;
+        Ok(Some(record))
     }
 
     async fn delete(&self, session_id: &Id) -> Result<(), Error> {

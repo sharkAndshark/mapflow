@@ -100,10 +100,7 @@ impl AuthnBackend for AuthBackend {
 
             let dummy_hash = DUMMY_HASH.get_or_init(|| {
                 crate::password::hash_password("dummy_password_for_timing_attack").unwrap_or_else(
-                    |_| {
-                        "$2b$12$00000000000000000000000000000000000000000000000000000000"
-                            .to_string()
-                    },
+                    |_| "$2b$12$0000000000000000000000000000000000000000000000000000".to_string(),
                 )
             });
 

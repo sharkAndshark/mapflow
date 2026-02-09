@@ -66,14 +66,14 @@ export async function initSystem(username, password) {
 }
 
 export async function isInitialized() {
-  try {
-    const res = await fetch('/api/test/is-initialized', {
-      credentials: 'include',
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.initialized === true;
-  } catch {
-    return null;
+  const res = await fetch('/api/test/is-initialized', {
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to check initialization: ${res.status}`);
   }
+
+  const data = await res.json();
+  return data.initialized === true;
 }

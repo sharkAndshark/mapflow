@@ -6,7 +6,6 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isInitialized, setIsInitialized] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,15 +47,12 @@ export function AuthProvider({ children }) {
   };
 
   const initSystem = async (username, password) => {
-    const result = await authApi.initSystem(username, password);
-    setIsInitialized(true);
-    return result;
+    return await authApi.initSystem(username, password);
   };
 
   const value = {
     user,
     isLoading,
-    isInitialized,
     login,
     logout,
     initSystem,

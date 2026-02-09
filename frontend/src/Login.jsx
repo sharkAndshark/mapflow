@@ -15,9 +15,14 @@ export default function Login() {
 
   useEffect(() => {
     async function checkInit() {
-      const initialized = await isInitialized();
-      setIsSystemInitialized(initialized);
-      setInitChecked(true);
+      try {
+        const initialized = await isInitialized();
+        setIsSystemInitialized(initialized ?? false);
+        setInitChecked(true);
+      } catch {
+        setIsSystemInitialized(false);
+        setInitChecked(true);
+      }
     }
     checkInit();
   }, []);
