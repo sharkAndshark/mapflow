@@ -785,10 +785,8 @@ async fn publish_file(
             if err_msg.contains("PRIMARY KEY") || err_msg.contains("Constraint Error") {
                 // Immediately rollback the failed transaction
                 conn.execute_batch("ROLLBACK").ok();
-                drop(conn);
 
-                // Re-acquire connection to query for existing slug (no transaction state)
-                let conn = state.db.lock().await;
+                // Query for existing slug (connection now in autocommit mode)
                 let existing_slug: Option<String> = conn
                     .query_row(
                         "SELECT slug FROM published_files WHERE file_id = ?",
@@ -854,6 +852,7 @@ async fn unpublish_file(
         .map_err(internal_error)?;
 
     if rows_affected == 0 {
+        conn.execute_batch("ROLLBACK").map_err(internal_error)?;
         drop(conn);
         return Err((
             StatusCode::NOT_FOUND,

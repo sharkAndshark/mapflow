@@ -92,7 +92,7 @@ function PublishModal({ file, onClose, onSuccess }) {
             <button type="button" className="btn-secondary" onClick={onClose}>
               取消
             </button>
-            <button type="submit" className="btn-primary" disabled={isSubmitting}>
+            <button type="submit" className="btn-primary" disabled={isSubmitting || !!slugError}>
               {isSubmitting ? '发布中...' : '确认发布'}
             </button>
           </div>
