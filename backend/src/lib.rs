@@ -1011,7 +1011,7 @@ fn validate_slug(slug: &str) -> Result<String, String> {
 
     if !slug
         .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
         return Err("Slug can only contain letters, numbers, hyphens, and underscores".to_string());
     }
