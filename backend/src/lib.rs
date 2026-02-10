@@ -781,12 +781,21 @@ async fn publish_file(
             .map_err(|e| e.to_string()),
         Err(e) => {
             let err_msg = e.to_string();
-            // Check for PRIMARY KEY constraint (file already published) vs UNIQUE constraint (slug in use)
-            if err_msg.contains("PRIMARY KEY") || err_msg.contains("Constraint Error") {
+            // Check for PRIMARY KEY constraint on file_id (file already published) vs UNIQUE constraint on slug
+            // More specific detection: PRIMARY KEY on file_id, or constraint error mentioning file
+            let is_file_already_published = err_msg.contains("PRIMARY KEY")
+                || (err_msg.contains("Constraint Error") && err_msg.contains("file_id"));
+
+            if is_file_already_published {
                 // Immediately rollback the failed transaction
-                conn.execute_batch("ROLLBACK").ok();
+                conn.execute_batch("ROLLBACK").map_err(internal_error)?;
 
                 // Query for existing slug (connection now in autocommit mode)
+                // We use .ok() here to convert "not found" to None. Any other error is also
+                // converted to None, which is acceptable given:
+                // - PRIMARY KEY constraint just confirmed the file exists
+                // - Query is simple and likely to succeed
+                // - If query fails, we return a generic but accurate error message
                 let existing_slug: Option<String> = conn
                     .query_row(
                         "SELECT slug FROM published_files WHERE file_id = ?",
@@ -794,6 +803,8 @@ async fn publish_file(
                         |row| row.get(0),
                     )
                     .ok();
+
+                drop(conn);
 
                 let error_msg = if let Some(existing) = existing_slug {
                     format!(
@@ -808,7 +819,9 @@ async fn publish_file(
                     StatusCode::CONFLICT,
                     Json(ErrorResponse { error: error_msg }),
                 ));
-            } else if err_msg.contains("UNIQUE") || err_msg.contains("slug") {
+            } else if err_msg.contains("UNIQUE")
+                || (err_msg.contains("slug") && err_msg.contains("unique"))
+            {
                 Err("Slug already in use".to_string())
             } else {
                 Err(err_msg)
