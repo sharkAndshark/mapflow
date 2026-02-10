@@ -812,24 +812,32 @@ async fn unpublish_file(
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_error)?;
 
-    let delete_result: Result<(), String> = conn
+    let rows_affected = conn
         .execute(
             "DELETE FROM published_files WHERE file_id = ?",
             duckdb::params![&id],
         )
-        .map(|_| {
-            conn.execute(
-                "UPDATE files SET is_public = FALSE WHERE id = ?",
-                duckdb::params![&id],
-            )
-            .map_err(|e| e.to_string())?;
-            Ok(())
-        })
-        .map_err(|e| e.to_string())
-        .and_then(|r| r);
+        .map_err(internal_error)?;
 
-    match delete_result {
-        Ok(()) => {
+    if rows_affected == 0 {
+        drop(conn);
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "File not published".to_string(),
+            }),
+        ));
+    }
+
+    let update_result = conn
+        .execute(
+            "UPDATE files SET is_public = FALSE WHERE id = ?",
+            duckdb::params![&id],
+        )
+        .map_err(|e| e.to_string());
+
+    match update_result {
+        Ok(_) => {
             conn.execute_batch("COMMIT").map_err(internal_error)?;
             drop(conn);
             Ok(Json(serde_json::json!({ "message": "File unpublished" })))
@@ -837,14 +845,7 @@ async fn unpublish_file(
         Err(err_msg) => {
             conn.execute_batch("ROLLBACK").map_err(internal_error)?;
             drop(conn);
-            if err_msg == "File not published" {
-                Err((
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse { error: err_msg }),
-                ))
-            } else {
-                Err(internal_error(err_msg.as_str()))
-            }
+            Err(internal_error(err_msg.as_str()))
         }
     }
 }
