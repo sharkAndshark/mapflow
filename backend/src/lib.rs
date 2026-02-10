@@ -134,8 +134,8 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, public_slug
-         FROM files ORDER BY uploaded_at DESC",
+            "SELECT id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public
+          FROM files ORDER BY uploaded_at DESC",
         )
         .unwrap();
 
@@ -144,7 +144,6 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
             let table_name: Option<String> = row.get(8)?;
             let error: Option<String> = row.get(9)?;
             let is_public: bool = row.get(10).unwrap_or(false);
-            let public_slug: Option<String> = row.get(11).ok();
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -160,7 +159,6 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
                 table_name,
                 error,
                 is_public: Some(is_public),
-                public_slug,
             })
         })
         .unwrap()
@@ -608,8 +606,8 @@ async fn upload_file(
     if let Err(message) = validation {
         let size_i64 = size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, public_slug)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             duckdb::params![
                 &upload_id,
                 &base_name,
@@ -622,7 +620,6 @@ async fn upload_file(
                 &None::<String>,
                 &Some(message.clone()),
                 false,
-                &None::<String>,
             ],
         )
         .map_err(internal_error)?;
@@ -633,8 +630,8 @@ async fn upload_file(
 
     let size_i64 = size as i64;
     conn.execute(
-        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, public_slug)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         duckdb::params![
             &upload_id,
             &base_name,
@@ -647,7 +644,6 @@ async fn upload_file(
             &None::<String>,
             &None::<String>,
             false,
-            &None::<String>,
         ],
     )
     .map_err(internal_error)?;
@@ -703,7 +699,6 @@ async fn upload_file(
         table_name: None,
         error: None,
         is_public: Some(false),
-        public_slug: None,
     };
 
     Ok((StatusCode::CREATED, Json(meta)))
@@ -761,42 +756,50 @@ async fn publish_file(
         None => validate_slug(&id).map_err(|e| bad_request(&e))?,
     };
 
-    let existing: Option<String> = conn
-        .query_row(
-            "SELECT id FROM files WHERE public_slug = ? AND id != ?",
-            duckdb::params![&slug, &id],
-            |row| row.get(0),
-        )
-        .ok();
+    // Use transaction to ensure atomicity: insert into published_files first (enforces uniqueness),
+    // then update files table. This eliminates race conditions for concurrent publish requests.
+    conn.execute_batch("BEGIN TRANSACTION")
+        .map_err(internal_error)?;
 
-    if existing.is_some() {
-        return Err(bad_request("Slug already in use"));
-    }
+    let insert_result = conn.execute(
+        "INSERT INTO published_files (file_id, slug) VALUES (?, ?)",
+        duckdb::params![&id, &slug],
+    );
 
-    // NOTE: Due to DuckDB not supporting partial indexes, we cannot add a UNIQUE constraint
-    // on public_slug (would break multiple NULL values). This manual check reduces but doesn't
-    // eliminate race conditions for concurrent publishes with the same slug. See db.rs for details.
-    conn.execute(
-        "UPDATE files SET is_public = TRUE, public_slug = ? WHERE id = ?",
-        duckdb::params![&slug, &id],
-    )
-    .map_err(|e| {
-        // Future-proofing: if we add proper uniqueness enforcement later
-        let err_msg = e.to_string().to_lowercase();
-        if err_msg.contains("constraint") || err_msg.contains("unique") {
-            bad_request("Slug already in use")
-        } else {
-            internal_error(e)
+    let publish_result: Result<(), String> = match insert_result {
+        Ok(_) => conn
+            .execute(
+                "UPDATE files SET is_public = TRUE WHERE id = ?",
+                duckdb::params![&id],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        Err(e) => {
+            let err_msg = e.to_string();
+            if err_msg.contains("constraint") || err_msg.contains("UNIQUE") {
+                Err("Slug already in use".to_string())
+            } else {
+                Err(err_msg)
+            }
         }
-    })?;
+    };
 
-    drop(conn);
-
-    Ok(Json(PublishResponse {
-        url: format!("/tiles/{slug}/{{z}}/{{x}}/{{y}}"),
-        slug,
-        is_public: true,
-    }))
+    match publish_result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT").map_err(internal_error)?;
+            drop(conn);
+            Ok(Json(PublishResponse {
+                url: format!("/tiles/{slug}/{{z}}/{{x}}/{{y}}"),
+                slug,
+                is_public: true,
+            }))
+        }
+        Err(err_msg) => {
+            conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+            drop(conn);
+            Err(bad_request(&err_msg))
+        }
+    }
 }
 
 async fn unpublish_file(
@@ -805,32 +808,45 @@ async fn unpublish_file(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let exists: Option<String> = conn
-        .query_row(
-            "SELECT id FROM files WHERE id = ?",
+    // Use transaction to ensure atomicity: delete from published_files and update files table
+    conn.execute_batch("BEGIN TRANSACTION")
+        .map_err(internal_error)?;
+
+    let delete_result: Result<(), String> = conn
+        .execute(
+            "DELETE FROM published_files WHERE file_id = ?",
             duckdb::params![&id],
-            |row| row.get(0),
         )
-        .ok();
+        .map(|_| {
+            conn.execute(
+                "UPDATE files SET is_public = FALSE WHERE id = ?",
+                duckdb::params![&id],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+        .and_then(|r| r);
 
-    if exists.is_none() {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "File not found".to_string(),
-            }),
-        ));
+    match delete_result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT").map_err(internal_error)?;
+            drop(conn);
+            Ok(Json(serde_json::json!({ "message": "File unpublished" })))
+        }
+        Err(err_msg) => {
+            conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+            drop(conn);
+            if err_msg == "File not published" {
+                Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse { error: err_msg }),
+                ))
+            } else {
+                Err(internal_error(err_msg.as_str()))
+            }
+        }
     }
-
-    conn.execute(
-        "UPDATE files SET is_public = FALSE, public_slug = NULL WHERE id = ?",
-        duckdb::params![&id],
-    )
-    .map_err(internal_error)?;
-
-    drop(conn);
-
-    Ok(Json(serde_json::json!({ "message": "File unpublished" })))
 }
 
 async fn get_public_url(
@@ -839,22 +855,22 @@ async fn get_public_url(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let result: Option<(bool, Option<String>)> = conn
+    let result: Option<(String, String)> = conn
         .query_row(
-            "SELECT is_public, public_slug FROM files WHERE id = ?",
+            "SELECT pf.slug, pf.published_at FROM published_files pf JOIN files f ON pf.file_id = f.id WHERE f.id = ?",
             duckdb::params![&id],
-            |row| Ok((row.get(0)?, row.get(1).ok())),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .ok();
 
     drop(conn);
 
     match result {
-        Some((true, Some(slug))) => Ok(Json(PublicTileUrl {
+        Some((slug, _published_at)) => Ok(Json(PublicTileUrl {
             slug: slug.clone(),
             url: format!("/tiles/{slug}/{{z}}/{{x}}/{{y}}"),
         })),
-        _ => Err((
+        None => Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
                 error: "File not published".to_string(),
@@ -871,25 +887,37 @@ async fn get_public_tile(
 
     let conn = state.db.lock().await;
 
-    let file_data: Option<(String, Option<String>, String, Option<String>)> = conn
+    // Step 1: Get file_id from published_files using slug (enforces uniqueness)
+    let file_id: String = conn
         .query_row(
-            "SELECT id, crs, status, table_name FROM files WHERE public_slug = ? AND is_public = TRUE",
+            "SELECT file_id FROM published_files WHERE slug = ?",
             duckdb::params![&slug],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| row.get(0),
         )
-        .ok();
-
-    let (id, crs, status, table_name) = match file_data {
-        Some(data) => data,
-        None => {
-            return Err((
+        .map_err(|_| {
+            (
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
                     error: "Public tile not found".to_string(),
                 }),
-            ))
-        }
-    };
+            )
+        })?;
+
+    // Step 2: Get file metadata from files table
+    let (crs, status, table_name): (Option<String>, String, Option<String>) = conn
+        .query_row(
+            "SELECT crs, status, table_name FROM files WHERE id = ?",
+            duckdb::params![&file_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
 
     let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
         (
@@ -903,7 +931,7 @@ async fn get_public_tile(
     let source_crs = crs.as_deref().unwrap_or("EPSG:4326");
 
     let select_sql =
-        build_mvt_select_sql(&conn, &id, &table_name, source_crs).map_err(internal_error)?;
+        build_mvt_select_sql(&conn, &file_id, &table_name, source_crs).map_err(internal_error)?;
 
     let mvt_blob: Option<Vec<u8>> =
         match conn.query_row(&select_sql, duckdb::params![z, x, y, z, x, y], |row| {
@@ -999,8 +1027,7 @@ mod tests {
             path VARCHAR NOT NULL,
             table_name VARCHAR,
             error VARCHAR,
-            is_public BOOLEAN DEFAULT FALSE,
-            public_slug VARCHAR
+            is_public BOOLEAN DEFAULT FALSE
         );
 
         CREATE TABLE dataset_columns (
@@ -1058,14 +1085,13 @@ mod tests {
             table_name: None,
             error: None,
             is_public: Some(false),
-            public_slug: None,
         };
 
         let conn = state.db.lock().await;
         let size = item.size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, public_slug)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             duckdb::params![
                 &item.id,
                 &item.name,
@@ -1078,7 +1104,6 @@ mod tests {
                 &item.table_name,
                 &item.error,
                 false,
-                &None::<String>,
             ],
         )
         .unwrap();

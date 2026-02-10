@@ -34,9 +34,6 @@ pub struct FileItem {
     #[serde(rename = "isPublic")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_public: Option<bool>,
-    #[serde(rename = "publicSlug")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub public_slug: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -93,4 +90,12 @@ pub struct PublishResponse {
 pub struct PublicTileUrl {
     pub slug: String,
     pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
+pub struct PublishedFile {
+    pub file_id: String,
+    pub slug: String,
+    pub published_at: String,
 }
