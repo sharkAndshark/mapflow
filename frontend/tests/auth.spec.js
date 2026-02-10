@@ -107,7 +107,15 @@ test.describe('Authentication Flow', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('protected routes redirect to login when not authenticated', async ({ page }) => {
+  test('protected routes redirect to login when not authenticated', async ({ page, request }) => {
+    // First initialize the system
+    await request.post('/api/auth/init', {
+      data: {
+        username: 'admin',
+        password: 'Test123!@#',
+      },
+    });
+
     // Try to visit home page without auth
     await page.goto('/');
     await expect(page).toHaveURL(/\/login/);
