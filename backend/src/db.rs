@@ -45,8 +45,6 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         -- Add new columns if table already exists (migration for existing databases)
         ALTER TABLE files ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
         ALTER TABLE files ADD COLUMN IF NOT EXISTS public_slug VARCHAR;
-
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_public_slug ON files(public_slug) WHERE public_slug IS NOT NULL;
         ",
     )
     .expect("Failed to create files table");

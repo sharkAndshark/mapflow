@@ -996,7 +996,7 @@ mod tests {
             table_name VARCHAR,
             error VARCHAR,
             is_public BOOLEAN DEFAULT FALSE,
-            public_slug VARCHAR UNIQUE
+            public_slug VARCHAR
         );
 
         CREATE TABLE dataset_columns (
