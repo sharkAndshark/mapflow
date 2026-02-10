@@ -39,7 +39,7 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             table_name VARCHAR,
             error VARCHAR,
             is_public BOOLEAN DEFAULT FALSE,
-            public_slug VARCHAR UNIQUE
+            public_slug VARCHAR
         );
 
         -- Add new columns if table already exists (migration for existing databases)
