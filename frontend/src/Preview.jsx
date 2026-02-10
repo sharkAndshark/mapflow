@@ -8,6 +8,8 @@ import OLMap from 'ol/Map';
 import View from 'ol/View';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
+import TileLayer from 'ol/layer/Tile';
+import TileDebug from 'ol/source/TileDebug';
 import MVT from 'ol/format/MVT';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { Fill, Stroke, Style, Circle as CircleStyle } from 'ol/style';
@@ -27,6 +29,8 @@ export default function Preview() {
   const popupRef = useRef(null);
   const requestSeqRef = useRef(0);
   const selectedFidRef = useRef(null);
+  const [showTileGrid, setShowTileGrid] = useState(false);
+  const tileGridLayerRef = useRef(null);
 
   const cancelPopup = useCallback(() => {
     requestSeqRef.current += 1;
@@ -205,21 +209,37 @@ export default function Preview() {
       }
     });
 
+    // Add Tile Grid debug layer (initially hidden)
+    const tileGridLayer = new TileLayer({
+      source: new TileDebug({
+        template: 'z:{z} x:{x} y:{y}',
+        zDirection: 1,
+      }),
+      visible: false,
+    });
+    tileGridLayerRef.current = tileGridLayer;
+    olMap.addLayer(tileGridLayer);
+
     return () => {
       olMap.setTarget(null);
       mapRef.current = null;
       vectorLayerRef.current = null;
+      tileGridLayerRef.current = null;
     };
   }, [cancelPopup, loadFeatureProperties]);
 
-  // Update Layer and View when Meta changes
+  // Update VectorTile Layer and View when Meta changes
   useEffect(() => {
     if (!mapRef.current || !meta) return;
 
     const map = mapRef.current;
 
-    // Clear existing layers (except maybe a base layer if we added one)
-    map.getLayers().clear();
+    // Remove existing vector layer only, keep tile grid
+    const existingVectorLayer = vectorLayerRef.current;
+    if (existingVectorLayer) {
+      map.removeLayer(existingVectorLayer);
+      vectorLayerRef.current = null;
+    }
 
     // 1. Tile Layer source
     // URL pattern: /api/files/{id}/tiles/{z}/{x}/{y} (no .mvt extension)
@@ -234,7 +254,8 @@ export default function Preview() {
     });
 
     vectorLayerRef.current = vectorLayer;
-    map.addLayer(vectorLayer);
+    // Insert vector layer at index 0, tile grid stays on top
+    map.getLayers().insertAt(0, vectorLayer);
 
     // 2. Fit bounds
     if (meta.bbox && meta.bbox.length === 4) {
@@ -249,6 +270,11 @@ export default function Preview() {
       });
     }
   }, [meta, id, styleFunction]);
+
+  // Toggle tile grid visibility
+  useEffect(() => {
+    tileGridLayerRef.current?.setVisible(showTileGrid);
+  }, [showTileGrid]);
 
   return (
     <div
@@ -275,6 +301,26 @@ export default function Preview() {
             {meta.crs && <span className="badge">{meta.crs}</span>}
           </div>
         )}
+
+        {/* Tile Grid Toggle */}
+        <label
+          style={{
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '13px',
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={showTileGrid}
+            onChange={(e) => setShowTileGrid(e.target.checked)}
+          />
+          Show Tile Grid
+        </label>
       </header>
 
       <div style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden' }}>
