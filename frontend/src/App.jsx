@@ -40,8 +40,13 @@ function PublishModal({ file, onClose, onSuccess }) {
   const previewUrl = trimmedSlug
     ? `/tiles/${trimmedSlug}/{z}/{x}/{y}`
     : `/tiles/${file.id}/{z}/{x}/{y}`;
-  const slugError =
-    trimmedSlug && !/^[a-zA-Z0-9_-]+$/.test(trimmedSlug) ? '仅支持字母、数字、连字符和下划线' : '';
+  const slugError = !trimmedSlug
+    ? 'URL 标识不能为空或仅包含空格'
+    : trimmedSlug.length > 100
+      ? 'URL 标识不能超过 100 个字符'
+      : !/^[a-zA-Z0-9_-]+$/.test(trimmedSlug)
+        ? '仅支持字母、数字、连字符和下划线'
+        : '';
 
   return (
     <div className="modal-overlay" onClick={onClose}>
