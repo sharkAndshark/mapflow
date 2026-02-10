@@ -880,7 +880,7 @@ async fn get_public_url(
 
     let result: Option<(String, String)> = conn
         .query_row(
-            "SELECT pf.slug, pf.published_at FROM published_files pf JOIN files f ON pf.file_id = f.id WHERE f.id = ?",
+            "SELECT pf.slug, pf.published_at FROM published_files pf JOIN files f ON pf.file_id = f.id WHERE f.id = ? AND f.is_public = TRUE",
             duckdb::params![&id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
