@@ -894,6 +894,7 @@ async fn unpublish_file(
     let rows_affected = conn
         .execute(
             "DELETE FROM published_files pf
+            JOIN files f ON pf.file_id = f.id
             WHERE pf.file_id = ? AND f.is_public = TRUE",
             duckdb::params![&id],
         )
