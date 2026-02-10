@@ -732,30 +732,6 @@ async fn publish_file(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let (status, _name): (String, String) = conn
-        .query_row(
-            "SELECT status, name FROM files WHERE id = ?",
-            duckdb::params![&id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "File not found".to_string(),
-                }),
-            )
-        })?;
-
-    if status != "ready" {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "File is not ready for publishing".to_string(),
-            }),
-        ));
-    }
-
     let slug = match req.slug {
         Some(s) => validate_slug(&s).map_err(|e| bad_request(&e))?,
         None => validate_slug(&id).map_err(|e| bad_request(&e))?,

@@ -10,21 +10,12 @@ export async function setupTestUser(request) {
     });
   } catch (e) {
     // Ignore if already initialized (409 Conflict)
-    // Playwright throws an error with the response status in the message or as a property
+    // Playwright throws an error with response status in message or as a property
     const status = e.response?.status?.() || e.response?.status || e.status;
     if (status !== 409 && !e.message?.includes('409')) {
       throw e;
     }
-  }
-
-  // Login
-  await request.post('/api/auth/login', {
-    data: {
-      username: 'admin',
-      password: 'Test123!@#',
-    },
-  });
-}
+  }};
 
 export async function loginUser(request, username = 'admin', password = 'Test123!@#') {
   await request.post('/api/auth/login', {
