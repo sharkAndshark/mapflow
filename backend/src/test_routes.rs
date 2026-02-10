@@ -39,7 +39,7 @@ async fn reset_test_state(State(state): State<AppState>) -> impl axum::response:
         }
     }
 
-    if let Err(e) = conn.execute_batch("DELETE FROM dataset_columns;\nDELETE FROM files;\nDELETE FROM sessions;\nDELETE FROM users;\nDELETE FROM system_settings;") {
+    if let Err(e) = conn.execute_batch("DELETE FROM dataset_columns;\nDELETE FROM files;\nDELETE FROM sessions;\nDELETE FROM users;\nDELETE FROM system_settings;\nDELETE FROM published_files;") {
         eprintln!("Test Reset DB Error: {:?}", e);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,

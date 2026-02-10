@@ -14,8 +14,9 @@ export async function setupTestUser(request) {
     const status = e.response?.status?.() || e.response?.status || e.status;
     if (status !== 409 && !e.message?.includes('409')) {
       throw e;
-    }
-  }};
+      }
+  }
+};
 
 export async function loginUser(request, username = 'admin', password = 'Test123!@#') {
   await request.post('/api/auth/login', {
