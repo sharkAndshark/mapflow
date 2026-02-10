@@ -104,6 +104,46 @@ fn mvt_has_string_tag(tile: &[u8], want_key: &str, want_value: &str) -> bool {
     false
 }
 
+// Helper to upload a simple GeoJSON file and return the file_id
+async fn upload_geojson_file(app: &axum::Router) -> String {
+    let boundary = "------------------------boundaryXYZ";
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": { "name": "Test Point" },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"points.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    file_item.id
+}
+
 // Helper to setup the app for testing
 async fn setup_app() -> (axum::Router, TempDir) {
     let temp_dir = TempDir::new().expect("temp dir");
@@ -352,6 +392,14 @@ async fn test_tile_invalid_coords_returns_400() {
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid tile coordinates"));
 }
 
 #[tokio::test]
@@ -1641,4 +1689,447 @@ async fn test_concurrent_init_system_requests() {
         "Only one admin user should be created (got {})",
         user_count
     );
+}
+
+#[tokio::test]
+async fn test_publish_file_with_custom_slug() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-custom-map"}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["url"], "/tiles/my-custom-map/{z}/{x}/{y}");
+    assert_eq!(body_json["slug"], "my-custom-map");
+    assert_eq!(body_json["is_public"], true);
+}
+
+#[tokio::test]
+async fn test_publish_file_with_default_slug() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    eprintln!(
+        "Response JSON: {}",
+        serde_json::to_string_pretty(&body_json).unwrap()
+    );
+
+    assert_eq!(
+        body_json["url"],
+        format!("/tiles/{}/{{z}}/{{x}}/{{y}}", file_id)
+    );
+    assert_eq!(body_json["slug"], file_id);
+    assert_eq!(body_json["is_public"], true);
+}
+
+#[tokio::test]
+async fn test_publish_file_with_empty_body_uses_file_id() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(
+        body_json["url"],
+        format!("/tiles/{}/{{z}}/{{x}}/{{y}}", file_id)
+    );
+    assert_eq!(body_json["slug"], file_id);
+}
+
+#[tokio::test]
+async fn test_publish_file_already_published() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-map"}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let publish_again_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "another-slug"}"#))
+        .unwrap();
+
+    let response = app.oneshot(publish_again_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("already published"));
+}
+
+#[tokio::test]
+async fn test_publish_file_not_ready() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-map"}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"].as_str().unwrap().contains("not ready"));
+}
+
+#[tokio::test]
+async fn test_publish_file_slug_conflict() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id_1 = upload_geojson_file(&app).await;
+    let file_id_2 = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id_1).await;
+    wait_until_ready(&app, &file_id_2).await;
+
+    let publish_request_1 = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id_1))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "same-slug"}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request_1).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let publish_request_2 = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id_2))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "same-slug"}"#))
+        .unwrap();
+
+    let response = app.oneshot(publish_request_2).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("already in use"));
+}
+
+#[tokio::test]
+async fn test_publish_file_invalid_slug() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "invalid slug!"}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    eprintln!(
+        "Error response for invalid slug: {}",
+        body_json["error"].as_str().unwrap()
+    );
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("Slug can only contain letters, numbers, hyphens, and underscores"));
+}
+
+#[tokio::test]
+async fn test_publish_file_slug_too_long() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let long_slug = "a".repeat(101);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(r#"{{"slug": "{}"}}"#, long_slug)))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    eprintln!(
+        "Error response for slug too long: {}",
+        body_json["error"].as_str().unwrap()
+    );
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("Slug must be 100 characters or less"));
+}
+
+#[tokio::test]
+async fn test_unpublish_file() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-map"}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let unpublish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/unpublish", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(unpublish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["message"], "File unpublished");
+}
+
+#[tokio::test]
+async fn test_unpublish_file_not_published() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/public-url", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["error"], "File not published");
+}
+
+#[tokio::test]
+async fn test_public_url_endpoint() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-map"}"#))
+        .unwrap();
+
+    app.clone().oneshot(publish_request).await.unwrap();
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/public-url", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["slug"], "my-map");
+    assert_eq!(body_json["url"], "/tiles/my-map/{z}/{x}/{y}");
+}
+
+#[tokio::test]
+async fn test_public_url_endpoint_not_published() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/public-url", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["error"], "File not published");
+}
+
+#[tokio::test]
+async fn test_public_tiles_endpoint() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-map"}"#))
+        .unwrap();
+
+    app.clone().oneshot(publish_request).await.unwrap();
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/tiles/my-map/10/527/351")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "application/vnd.mapbox-vector-tile"
+    );
+    assert_eq!(
+        response.headers().get("cache-control").unwrap(),
+        "public, max-age=300"
+    );
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(!body_bytes.is_empty(), "Tile data should not be empty");
+}
+
+#[tokio::test]
+async fn test_public_tiles_endpoint_nonexistent_slug() {
+    let (app, _temp) = setup_app().await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/tiles/nonexistent-slug/10/527/351")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["error"], "Public tile not found");
+}
+
+#[tokio::test]
+async fn test_public_tiles_endpoint_unpublished_file() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-map"}"#))
+        .unwrap();
+
+    app.clone().oneshot(publish_request).await.unwrap();
+
+    let unpublish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/unpublish", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    app.clone().oneshot(unpublish_request).await.unwrap();
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/tiles/my-map/10/527/351")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
 }
