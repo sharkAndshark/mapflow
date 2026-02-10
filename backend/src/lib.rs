@@ -761,27 +761,6 @@ async fn publish_file(
         None => validate_slug(&id).map_err(|e| bad_request(&e))?,
     };
 
-    // Check if file is already published before attempting to publish again
-    let existing_slug: Option<String> = conn
-        .query_row(
-            "SELECT slug FROM published_files WHERE file_id = ?",
-            duckdb::params![&id],
-            |row| row.get(0),
-        )
-        .ok();
-
-    if let Some(existing) = existing_slug {
-        drop(conn);
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: format!(
-                    "File already published with slug '{existing}'. Unpublish first to change slug."
-                ),
-            }),
-        ));
-    }
-
     // Use transaction to ensure atomicity: insert into published_files first (enforces uniqueness),
     // then update files table. This eliminates race conditions for concurrent publish requests.
     conn.execute_batch("BEGIN TRANSACTION")
@@ -802,7 +781,24 @@ async fn publish_file(
             .map_err(|e| e.to_string()),
         Err(e) => {
             let err_msg = e.to_string();
-            if err_msg.contains("constraint") || err_msg.contains("UNIQUE") {
+            // Check for PRIMARY KEY constraint (file already published) vs UNIQUE constraint (slug in use)
+            if err_msg.contains("PRIMARY KEY") || err_msg.contains("Constraint Error") {
+                // Try to get the existing slug for a better error message
+                let existing_slug: Option<String> = conn
+                    .query_row(
+                        "SELECT slug FROM published_files WHERE file_id = ?",
+                        duckdb::params![&id],
+                        |row| row.get(0),
+                    )
+                    .ok();
+                if let Some(existing) = existing_slug {
+                    Err(format!(
+                        "File already published with slug '{existing}'. Unpublish first to change slug."
+                    ))
+                } else {
+                    Err("File already published. Unpublish first to change slug.".to_string())
+                }
+            } else if err_msg.contains("UNIQUE") || err_msg.contains("slug") {
                 Err("Slug already in use".to_string())
             } else {
                 Err(err_msg)
