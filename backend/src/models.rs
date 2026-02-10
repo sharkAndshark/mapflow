@@ -31,6 +31,12 @@ pub struct FileItem {
     pub table_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(rename = "isPublic")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_public: Option<bool>,
+    #[serde(rename = "publicSlug")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_slug: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -69,4 +75,22 @@ pub struct FieldInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileSchemaResponse {
     pub fields: Vec<FieldInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PublishRequest {
+    pub slug: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublishResponse {
+    pub url: String,
+    pub slug: String,
+    pub is_public: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicTileUrl {
+    pub slug: String,
+    pub url: String,
 }

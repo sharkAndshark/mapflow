@@ -24,3 +24,27 @@ export async function fetchWithAuth(url, options = {}) {
 
   return response;
 }
+
+export async function publishFile(fileId, slug) {
+  const res = await fetchWithAuth(`/api/files/${fileId}/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(slug ? { slug } : {}),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '发布失败');
+  }
+  return res.json();
+}
+
+export async function unpublishFile(fileId) {
+  const res = await fetchWithAuth(`/api/files/${fileId}/unpublish`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '取消发布失败');
+  }
+  return res.json();
+}

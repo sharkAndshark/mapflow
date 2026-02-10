@@ -39,7 +39,10 @@ pub use db::{
 use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
-pub use models::{AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta};
+pub use models::{
+    AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta, PublicTileUrl,
+    PublishRequest, PublishResponse,
+};
 use models::{FeaturePropertiesResponse, FeatureProperty};
 pub use password::{hash_password, validate_password_complexity, verify_password, PasswordError};
 pub use session_store::DuckDBStore;
@@ -91,7 +94,9 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         AuthManagerLayerBuilder::new(state.auth_backend.clone(), session_layer).build();
 
     let auth_router = build_auth_router();
-    let public_router = Router::new().route("/api/test/is-initialized", get(check_is_initialized));
+    let public_router = Router::new()
+        .route("/api/test/is-initialized", get(check_is_initialized))
+        .route("/tiles/{slug}/{z}/{x}/{y}", get(get_public_tile));
 
     let mut api_router = Router::new()
         .route("/api/files", get(list_files))
@@ -102,7 +107,10 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
             "/api/files/{id}/features/{fid}",
             get(get_feature_properties),
         )
-        .route("/api/files/{id}/schema", get(get_file_schema));
+        .route("/api/files/{id}/schema", get(get_file_schema))
+        .route("/api/files/{id}/publish", post(publish_file))
+        .route("/api/files/{id}/unpublish", post(unpublish_file))
+        .route("/api/files/{id}/public-url", get(get_public_url));
 
     // Add authentication middleware if required
     if with_auth {
@@ -126,8 +134,10 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, type, size, uploaded_at, status, crs, path, table_name, error 
-         FROM files ORDER BY uploaded_at DESC",
+            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.path, f.table_name, f.error, f.is_public, pf.slug
+          FROM files f
+          LEFT JOIN published_files pf ON f.id = pf.file_id
+          ORDER BY f.uploaded_at DESC",
         )
         .unwrap();
 
@@ -135,6 +145,8 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
         .query_map([], |row| {
             let table_name: Option<String> = row.get(8)?;
             let error: Option<String> = row.get(9)?;
+            let is_public: bool = row.get(10).unwrap_or(false);
+            let public_slug: Option<String> = row.get(11).ok();
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -149,6 +161,8 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
                 path: row.get(7)?,
                 table_name,
                 error,
+                is_public: Some(is_public),
+                public_slug,
             })
         })
         .unwrap()
@@ -596,8 +610,8 @@ async fn upload_file(
     if let Err(message) = validation {
         let size_i64 = size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             duckdb::params![
                 &upload_id,
                 &base_name,
@@ -609,6 +623,7 @@ async fn upload_file(
                 &rel_string,
                 &None::<String>,
                 &Some(message.clone()),
+                false,
             ],
         )
         .map_err(internal_error)?;
@@ -619,19 +634,20 @@ async fn upload_file(
 
     let size_i64 = size as i64;
     conn.execute(
-        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         duckdb::params![
             &upload_id,
             &base_name,
             file_type,
             size_i64,
             &uploaded_at,
-            "uploaded", // Initial status: uploaded (processing happens in background)
+            "uploaded",
             &None::<String>,
             &rel_string,
             &None::<String>,
             &None::<String>,
+            false,
         ],
     )
     .map_err(internal_error)?;
@@ -681,11 +697,13 @@ async fn upload_file(
         file_type: file_type.to_string(),
         size,
         uploaded_at,
-        status: "uploaded".to_string(), // Keep consistent with DB initial state
+        status: "uploaded".to_string(),
         crs: None,
         path: rel_string,
         table_name: None,
         error: None,
+        is_public: Some(false),
+        public_slug: None,
     };
 
     Ok((StatusCode::CREATED, Json(meta)))
@@ -705,6 +723,324 @@ async fn check_is_initialized(State(state): State<AppState>) -> impl IntoRespons
         )
             .into_response(),
     }
+}
+
+async fn publish_file(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(req): Json<PublishRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    let slug = match req.slug {
+        Some(s) => validate_slug(&s).map_err(|e| bad_request(&e))?,
+        None => validate_slug(&id).map_err(|e| bad_request(&e))?,
+    };
+
+    // Use transaction to ensure atomicity: insert into published_files first (enforces uniqueness),
+    // then update files table. This eliminates race conditions for concurrent publish requests.
+    conn.execute_batch("BEGIN TRANSACTION")
+        .map_err(internal_error)?;
+
+    // Check file status within transaction to provide better error messages
+    let (status, _name): (String, String) = conn
+        .query_row(
+            "SELECT status, name FROM files WHERE id = ?",
+            duckdb::params![&id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    if status != "ready" {
+        conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+        drop(conn);
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: format!("File is not ready for publishing (status: {})", status),
+            }),
+        ));
+    }
+
+    let insert_result = conn.execute(
+        "INSERT INTO published_files (file_id, slug) VALUES (?, ?)",
+        duckdb::params![&id, &slug],
+    );
+
+    let publish_result: Result<(), String> = match insert_result {
+        Ok(_) => conn
+            .execute(
+                "UPDATE files SET is_public = TRUE WHERE id = ?",
+                duckdb::params![&id],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        Err(e) => {
+            let err_msg = e.to_string();
+            // Check for PRIMARY KEY constraint on file_id (file already published) vs UNIQUE constraint on slug
+            // More specific detection: PRIMARY KEY on file_id, or constraint error mentioning file
+            let is_file_already_published = err_msg.contains("PRIMARY KEY")
+                || (err_msg.contains("Constraint Error") && err_msg.contains("file_id"));
+
+            if is_file_already_published {
+                // Immediately rollback the failed transaction
+                // After ROLLBACK, the connection returns to autocommit mode, allowing us to query
+                // without an active transaction. This is safe because:
+                // - The INSERT failed, so the transaction is aborted
+                // - We need to query for the existing slug to provide a helpful error message
+                // - The subsequent query runs in autocommit mode and does not affect database state
+                conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+
+                // Query for existing slug (connection now in autocommit mode)
+                // We use .ok() here to convert "not found" to None. Any other error is also
+                // converted to None, which is acceptable given:
+                // - PRIMARY KEY constraint just confirmed the file exists
+                // - Query is simple and likely to succeed
+                // - If query fails, we return a generic but accurate error message
+                let existing_slug: Option<String> = conn
+                    .query_row(
+                        "SELECT slug FROM published_files WHERE file_id = ?",
+                        duckdb::params![&id],
+                        |row| row.get(0),
+                    )
+                    .ok();
+
+                drop(conn);
+
+                let error_msg = if let Some(existing) = existing_slug {
+                    format!(
+                        "File already published with slug '{existing}'. Unpublish first to change slug."
+                    )
+                } else {
+                    "File already published. Unpublish first to change slug.".to_string()
+                };
+
+                // Return early with the error (skip the outer match's ROLLBACK)
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse { error: error_msg }),
+                ));
+            } else if err_msg.contains("UNIQUE")
+                || (err_msg.contains("slug") && err_msg.contains("unique"))
+            {
+                Err("Slug already in use".to_string())
+            } else {
+                Err(err_msg)
+            }
+        }
+    };
+
+    match publish_result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT").map_err(internal_error)?;
+            drop(conn);
+            Ok(Json(PublishResponse {
+                url: format!("/tiles/{slug}/{{z}}/{{x}}/{{y}}"),
+                slug,
+                is_public: true,
+            }))
+        }
+        Err(err_msg) => {
+            conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+            drop(conn);
+            Err(bad_request(&err_msg))
+        }
+    }
+}
+
+async fn unpublish_file(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    // Use transaction to ensure atomicity: delete from published_files and update files table
+    conn.execute_batch("BEGIN TRANSACTION")
+        .map_err(internal_error)?;
+
+    // Delete from published_files and verify file is actually published (is_public=TRUE)
+    // This ensures we don't leave orphaned published_files entries if files.is_public is FALSE
+    let rows_affected = conn
+        .execute(
+            "DELETE FROM published_files 
+            WHERE file_id = ? AND file_id IN (SELECT id FROM files WHERE is_public = TRUE)",
+            duckdb::params![&id],
+        )
+        .map_err(internal_error)?;
+
+    if rows_affected == 0 {
+        conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+        drop(conn);
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "File not published".to_string(),
+            }),
+        ));
+    }
+
+    let update_result = conn
+        .execute(
+            "UPDATE files SET is_public = FALSE WHERE id = ?",
+            duckdb::params![&id],
+        )
+        .map_err(|e| e.to_string());
+
+    match update_result {
+        Ok(_) => {
+            conn.execute_batch("COMMIT").map_err(internal_error)?;
+            drop(conn);
+            Ok(Json(serde_json::json!({ "message": "File unpublished" })))
+        }
+        Err(err_msg) => {
+            conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+            drop(conn);
+            Err(internal_error(err_msg.as_str()))
+        }
+    }
+}
+
+async fn get_public_url(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    let result: Option<(String, String)> = conn
+        .query_row(
+            "SELECT pf.slug, pf.published_at FROM published_files pf JOIN files f ON pf.file_id = f.id WHERE f.id = ? AND f.is_public = TRUE",
+            duckdb::params![&id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
+    drop(conn);
+
+    match result {
+        Some((slug, _published_at)) => Ok(Json(PublicTileUrl {
+            slug: slug.clone(),
+            url: format!("/tiles/{slug}/{{z}}/{{x}}/{{y}}"),
+        })),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "File not published".to_string(),
+            }),
+        )),
+    }
+}
+
+async fn get_public_tile(
+    State(state): State<AppState>,
+    AxumPath((slug, z, x, y)): AxumPath<(String, i32, i32, i32)>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    validate_tile_coords(z, x, y)?;
+
+    let conn = state.db.lock().await;
+
+    // Step 1: Get file_id from published_files using slug (enforces uniqueness)
+    let file_id: String = conn
+        .query_row(
+            "SELECT file_id FROM published_files WHERE slug = ?",
+            duckdb::params![&slug],
+            |row| row.get(0),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Public tile not found".to_string(),
+                }),
+            )
+        })?;
+
+    // Step 2: Get file metadata from files table, verifying is_public flag
+    let (crs, status, table_name): (Option<String>, String, Option<String>) = conn
+        .query_row(
+            "SELECT crs, status, table_name FROM files WHERE id = ? AND is_public = TRUE",
+            duckdb::params![&file_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready".to_string(),
+            }),
+        )
+    })?;
+
+    let source_crs = crs.as_deref().unwrap_or("EPSG:4326");
+
+    let select_sql =
+        build_mvt_select_sql(&conn, &file_id, &table_name, source_crs).map_err(internal_error)?;
+
+    let mvt_blob: Option<Vec<u8>> =
+        match conn.query_row(&select_sql, duckdb::params![z, x, y, z, x, y], |row| {
+            row.get(0)
+        }) {
+            Ok(blob) => Some(blob),
+            Err(e) => {
+                eprintln!("Tile Error (z={z}, x={x}, y={y}): {:?}", e);
+                return Err(internal_error(format!("Tile generation failed: {}", e)));
+            }
+        };
+
+    match mvt_blob {
+        Some(blob) if !blob.is_empty() => Ok((
+            [
+                (header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile"),
+                (header::CACHE_CONTROL, "public, max-age=300"),
+            ],
+            blob,
+        )
+            .into_response()),
+        _ => Ok((
+            [
+                (header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile"),
+                (header::CACHE_CONTROL, "public, max-age=300"),
+            ],
+            Vec::new(),
+        )
+            .into_response()),
+    }
+}
+
+fn validate_slug(slug: &str) -> Result<String, String> {
+    let slug = slug.trim().to_string();
+
+    if slug.is_empty() {
+        return Err("Slug cannot be empty".to_string());
+    }
+
+    if slug.len() > 100 {
+        return Err("Slug must be 100 characters or less".to_string());
+    }
+
+    if !slug
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("Slug can only contain letters, numbers, hyphens, and underscores".to_string());
+    }
+
+    Ok(slug)
 }
 
 fn create_id() -> String {
@@ -748,7 +1084,15 @@ mod tests {
             crs VARCHAR,
             path VARCHAR NOT NULL,
             table_name VARCHAR,
-            error VARCHAR
+            error VARCHAR,
+            is_public BOOLEAN DEFAULT FALSE
+        );
+
+        CREATE TABLE IF NOT EXISTS published_files (
+            file_id VARCHAR PRIMARY KEY,
+            slug VARCHAR UNIQUE NOT NULL,
+            published_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (file_id) REFERENCES files(id)
         );
 
         CREATE TABLE dataset_columns (
@@ -805,13 +1149,15 @@ mod tests {
             path: file_path.to_string_lossy().to_string(),
             table_name: None,
             error: None,
+            is_public: Some(false),
+            public_slug: None,
         };
 
         let conn = state.db.lock().await;
         let size = item.size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             duckdb::params![
                 &item.id,
                 &item.name,
@@ -823,6 +1169,7 @@ mod tests {
                 &item.path,
                 &item.table_name,
                 &item.error,
+                false,
             ],
         )
         .unwrap();

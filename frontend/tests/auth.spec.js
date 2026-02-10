@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { setupTestUser } from './auth-helper';
 
 test.describe('Authentication Flow', () => {
   test.beforeEach(async ({ workerServer }) => {
@@ -107,7 +108,10 @@ test.describe('Authentication Flow', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('protected routes redirect to login when not authenticated', async ({ page }) => {
+  test('protected routes redirect to login when not authenticated', async ({ page, request }) => {
+    // Initialize the system using the helper function
+    await setupTestUser(request);
+
     // Try to visit home page without auth
     await page.goto('/');
     await expect(page).toHaveURL(/\/login/);

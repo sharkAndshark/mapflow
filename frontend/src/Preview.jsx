@@ -192,6 +192,7 @@ export default function Preview() {
           setPopupContent(null);
           setPopupLoading(false);
           setPopupFid(null);
+          cancelPopup();
           setSelectedFid(null);
           return;
         }
