@@ -773,11 +773,15 @@ async fn publish_file(
         return Err(bad_request("Slug already in use"));
     }
 
+    // NOTE: Due to DuckDB not supporting partial indexes, we cannot add a UNIQUE constraint
+    // on public_slug (would break multiple NULL values). This manual check reduces but doesn't
+    // eliminate race conditions for concurrent publishes with the same slug. See db.rs for details.
     conn.execute(
         "UPDATE files SET is_public = TRUE, public_slug = ? WHERE id = ?",
         duckdb::params![&slug, &id],
     )
     .map_err(|e| {
+        // Future-proofing: if we add proper uniqueness enforcement later
         let err_msg = e.to_string().to_lowercase();
         if err_msg.contains("constraint") || err_msg.contains("unique") {
             bad_request("Slug already in use")

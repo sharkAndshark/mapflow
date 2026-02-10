@@ -38,7 +38,7 @@
 | API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证，返回 MVT（Web Mercator 投影），包含几何和特征属性 | 200 / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
 | API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序 | 200 / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
 | API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{fields:[{name,type}]}`，type 为 MVT 兼容类型，按 ordinal 排序，仅 ready 状态可访问 | 200 / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
-| API-007 | 发布文件 | POST /api/files/:id/publish 需要认证，设置 `is_public=TRUE` 并分配 `public_slug`，可选自定义 slug（默认文件 ID），返回公开 URL 模板 | 200 + `{url,slug,isPublic}` / 400（slug 无效/冲突） / 401 / 404 / 409 | `cargo test test_publish_*` | Integration | P0 |
+| API-007 | 发布文件 | POST /api/files/:id/publish 需要认证，设置 `is_public=TRUE` 并分配 `public_slug`，可选自定义 slug（默认文件 ID），返回公开 URL 模板。注意：由于 DuckDB 不支持部分索引，slug 唯一性在 INSERT 前手动检查，存在小概率竞态条件（Phase 1 可接受） | 200 + `{url,slug,isPublic}` / 400（slug 无效/冲突） / 401 / 404 / 409 | `cargo test test_publish_*` | Integration | P0 |
 | API-008 | 取消发布 | POST /api/files/:id/unpublish 需要认证，设置 `is_public=FALSE` 并清空 `public_slug` | 200 / 401 / 404 | `cargo test test_unpublish_*` | Integration | P0 |
 | API-009 | 公开地址 | GET /api/files/:id/public-url 需要认证，返回当前文件的公开 URL 模板 | 200 + `{slug,url}` / 401 / 404 | `cargo test test_public_url_*` | Integration | P1 |
 | API-010 | 公开瓦片 | GET /tiles/:slug/:z/:x/:y **无需认证**，验证 `public_slug` 存在且 `is_public=TRUE`，返回 MVT 瓦片 | 200 + MVT / 400 / 404 | `cargo test test_public_tiles_*` | Integration | P0 |

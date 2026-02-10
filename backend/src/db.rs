@@ -45,6 +45,13 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         -- Add new columns if table already exists (migration for existing databases)
         ALTER TABLE files ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
         ALTER TABLE files ADD COLUMN IF NOT EXISTS public_slug VARCHAR;
+
+        -- NOTE: DuckDB doesn't support partial indexes (WHERE clause), so we cannot create
+        -- a unique index that only applies to non-NULL values. Slug uniqueness is enforced at
+        -- application level with a manual check before INSERT. This creates a small race
+        -- condition window for concurrent publish requests with the same slug, which is
+        -- acceptable for Phase 1 / small team usage. Can be improved in Phase 2 with
+        -- application-level locking or migration to a database that supports partial indexes.
         ",
     )
     .expect("Failed to create files table");
