@@ -41,9 +41,6 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             is_public BOOLEAN DEFAULT FALSE
         );
 
-        -- Add new columns if table already exists (migration for existing databases)
-        ALTER TABLE files ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
-
         CREATE TABLE IF NOT EXISTS published_files (
             file_id VARCHAR PRIMARY KEY,
             slug VARCHAR UNIQUE NOT NULL,

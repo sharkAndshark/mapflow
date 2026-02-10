@@ -94,11 +94,3 @@ pub struct PublicTileUrl {
     pub slug: String,
     pub url: String,
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct PublishedFile {
-    pub file_id: String,
-    pub slug: String,
-    pub published_at: String,
-}

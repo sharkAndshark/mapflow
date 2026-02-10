@@ -766,6 +766,33 @@ async fn publish_file(
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_error)?;
 
+    // Check file status within transaction to provide better error messages
+    let (status, _name): (String, String) = conn
+        .query_row(
+            "SELECT status, name FROM files WHERE id = ?",
+            duckdb::params![&id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    if status != "ready" {
+        conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+        drop(conn);
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: format!("File is not ready for publishing (status: {})", status),
+            }),
+        ));
+    }
+
     let insert_result = conn.execute(
         "INSERT INTO published_files (file_id, slug) VALUES (?, ?)",
         duckdb::params![&id, &slug],
@@ -862,9 +889,12 @@ async fn unpublish_file(
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_error)?;
 
+    // Delete from published_files and verify file is actually published (is_public=TRUE)
+    // This ensures we don't leave orphaned published_files entries if files.is_public is FALSE
     let rows_affected = conn
         .execute(
-            "DELETE FROM published_files WHERE file_id = ?",
+            "DELETE FROM published_files pf, files f
+            WHERE pf.file_id = ? AND f.is_public = TRUE",
             duckdb::params![&id],
         )
         .map_err(internal_error)?;
