@@ -926,10 +926,10 @@ async fn get_public_tile(
             )
         })?;
 
-    // Step 2: Get file metadata from files table
+    // Step 2: Get file metadata from files table, verifying is_public flag
     let (crs, status, table_name): (Option<String>, String, Option<String>) = conn
         .query_row(
-            "SELECT crs, status, table_name FROM files WHERE id = ?",
+            "SELECT crs, status, table_name FROM files WHERE id = ? AND is_public = TRUE",
             duckdb::params![&file_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
