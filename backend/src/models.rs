@@ -34,6 +34,9 @@ pub struct FileItem {
     #[serde(rename = "isPublic")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_public: Option<bool>,
+    #[serde(rename = "publicSlug")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_slug: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

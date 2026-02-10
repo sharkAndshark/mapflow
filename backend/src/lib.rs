@@ -134,8 +134,10 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public
-          FROM files ORDER BY uploaded_at DESC",
+            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.path, f.table_name, f.error, f.is_public, pf.slug
+          FROM files f
+          LEFT JOIN published_files pf ON f.id = pf.file_id
+          ORDER BY f.uploaded_at DESC",
         )
         .unwrap();
 
@@ -144,6 +146,7 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
             let table_name: Option<String> = row.get(8)?;
             let error: Option<String> = row.get(9)?;
             let is_public: bool = row.get(10).unwrap_or(false);
+            let public_slug: Option<String> = row.get(11).ok();
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -159,6 +162,7 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
                 table_name,
                 error,
                 is_public: Some(is_public),
+                public_slug,
             })
         })
         .unwrap()
@@ -699,6 +703,7 @@ async fn upload_file(
         table_name: None,
         error: None,
         is_public: Some(false),
+        public_slug: None,
     };
 
     Ok((StatusCode::CREATED, Json(meta)))
@@ -755,6 +760,27 @@ async fn publish_file(
         Some(s) => validate_slug(&s).map_err(|e| bad_request(&e))?,
         None => validate_slug(&id).map_err(|e| bad_request(&e))?,
     };
+
+    // Check if file is already published before attempting to publish again
+    let existing_slug: Option<String> = conn
+        .query_row(
+            "SELECT slug FROM published_files WHERE file_id = ?",
+            duckdb::params![&id],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if let Some(existing) = existing_slug {
+        drop(conn);
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: format!(
+                    "File already published with slug '{existing}'. Unpublish first to change slug."
+                ),
+            }),
+        ));
+    }
 
     // Use transaction to ensure atomicity: insert into published_files first (enforces uniqueness),
     // then update files table. This eliminates race conditions for concurrent publish requests.
@@ -1086,6 +1112,7 @@ mod tests {
             table_name: None,
             error: None,
             is_public: Some(false),
+            public_slug: None,
         };
 
         let conn = state.db.lock().await;
