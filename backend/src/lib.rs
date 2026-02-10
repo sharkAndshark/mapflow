@@ -783,7 +783,12 @@ async fn publish_file(
             let err_msg = e.to_string();
             // Check for PRIMARY KEY constraint (file already published) vs UNIQUE constraint (slug in use)
             if err_msg.contains("PRIMARY KEY") || err_msg.contains("Constraint Error") {
-                // Try to get the existing slug for a better error message
+                // Immediately rollback the failed transaction
+                conn.execute_batch("ROLLBACK").ok();
+                drop(conn);
+
+                // Re-acquire connection to query for existing slug (no transaction state)
+                let conn = state.db.lock().await;
                 let existing_slug: Option<String> = conn
                     .query_row(
                         "SELECT slug FROM published_files WHERE file_id = ?",
@@ -791,13 +796,20 @@ async fn publish_file(
                         |row| row.get(0),
                     )
                     .ok();
-                if let Some(existing) = existing_slug {
-                    Err(format!(
+
+                let error_msg = if let Some(existing) = existing_slug {
+                    format!(
                         "File already published with slug '{existing}'. Unpublish first to change slug."
-                    ))
+                    )
                 } else {
-                    Err("File already published. Unpublish first to change slug.".to_string())
-                }
+                    "File already published. Unpublish first to change slug.".to_string()
+                };
+
+                // Return early with the error (skip the outer match's ROLLBACK)
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse { error: error_msg }),
+                ));
             } else if err_msg.contains("UNIQUE") || err_msg.contains("slug") {
                 Err("Slug already in use".to_string())
             } else {
