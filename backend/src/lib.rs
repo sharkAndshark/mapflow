@@ -788,6 +788,11 @@ async fn publish_file(
 
             if is_file_already_published {
                 // Immediately rollback the failed transaction
+                // After ROLLBACK, the connection returns to autocommit mode, allowing us to query
+                // without an active transaction. This is safe because:
+                // - The INSERT failed, so the transaction is aborted
+                // - We need to query for the existing slug to provide a helpful error message
+                // - The subsequent query runs in autocommit mode and does not affect database state
                 conn.execute_batch("ROLLBACK").map_err(internal_error)?;
 
                 // Query for existing slug (connection now in autocommit mode)
