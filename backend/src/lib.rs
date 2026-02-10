@@ -869,9 +869,8 @@ async fn unpublish_file(
     // This ensures we don't leave orphaned published_files entries if files.is_public is FALSE
     let rows_affected = conn
         .execute(
-            "DELETE FROM published_files pf
-            JOIN files f ON pf.file_id = f.id
-            WHERE pf.file_id = ? AND f.is_public = TRUE",
+            "DELETE FROM published_files 
+            WHERE file_id = ? AND file_id IN (SELECT id FROM files WHERE is_public = TRUE)",
             duckdb::params![&id],
         )
         .map_err(internal_error)?;
