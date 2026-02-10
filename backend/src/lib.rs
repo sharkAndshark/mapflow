@@ -1057,6 +1057,13 @@ mod tests {
             is_public BOOLEAN DEFAULT FALSE
         );
 
+        CREATE TABLE IF NOT EXISTS published_files (
+            file_id VARCHAR PRIMARY KEY,
+            slug VARCHAR UNIQUE NOT NULL,
+            published_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (file_id) REFERENCES files(id)
+        );
+
         CREATE TABLE dataset_columns (
             source_id VARCHAR NOT NULL,
             normalized_name VARCHAR NOT NULL,
