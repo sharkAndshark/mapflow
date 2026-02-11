@@ -844,11 +844,24 @@ async fn test_schema_endpoint_returns_fields_and_types() {
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     // Verify response structure
-    assert!(body_json["fields"].is_array());
+    assert!(body_json["layers"].is_array());
 
-    let fields = body_json["fields"]
+    let layers = body_json["layers"]
         .as_array()
-        .expect("fields should be an array");
+        .expect("layers should be an array");
+    assert_eq!(
+        layers.len(),
+        1,
+        "Regular datasets should return a single default layer"
+    );
+
+    let layer = &layers[0];
+    assert_eq!(layer["id"], "default");
+    assert!(layer["description"].is_null() || layer["description"].is_array());
+
+    let fields = layer["fields"]
+        .as_array()
+        .expect("layer fields should be an array");
 
     // We expect to find our property fields
     let mut found_name = false;
@@ -1012,11 +1025,23 @@ async fn test_schema_endpoint_handles_minimal_fields() {
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     // Verify response structure
-    assert!(body_json["fields"].is_array());
+    assert!(body_json["layers"].is_array());
 
-    let fields = body_json["fields"]
+    let layers = body_json["layers"]
         .as_array()
-        .expect("fields should be an array");
+        .expect("layers should be an array");
+    assert_eq!(
+        layers.len(),
+        1,
+        "Regular datasets should return a single default layer"
+    );
+
+    let layer = &layers[0];
+    assert_eq!(layer["id"], "default");
+
+    let fields = layer["fields"]
+        .as_array()
+        .expect("layer fields should be an array");
 
     // With no properties, dataset_columns should only have metadata fields (fid, geom excluded)
     // So we expect an empty array or only metadata
@@ -1090,11 +1115,23 @@ async fn test_schema_endpoint_handles_many_fields() {
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     // Verify response structure
-    assert!(body_json["fields"].is_array());
+    assert!(body_json["layers"].is_array());
 
-    let fields = body_json["fields"]
+    let layers = body_json["layers"]
         .as_array()
-        .expect("fields should be an array");
+        .expect("layers should be an array");
+    assert_eq!(
+        layers.len(),
+        1,
+        "Regular datasets should return a single default layer"
+    );
+
+    let layer = &layers[0];
+    assert_eq!(layer["id"], "default");
+
+    let fields = layer["fields"]
+        .as_array()
+        .expect("layer fields should be an array");
 
     // Should have all 50 fields
     assert_eq!(fields.len(), 50, "Expected 50 property fields");
@@ -2214,6 +2251,27 @@ fn create_test_mbtiles_with_format(temp_dir: &Path, name: &str, format: &str) ->
     )
     .expect("Failed to insert test tile");
 
+    // Add json metadata with vector_layers
+    let json_metadata = serde_json::json!({
+        "vector_layers": [{
+            "id": name,
+            "description": format!("Test layer: {}", name),
+            "minzoom": 0,
+            "maxzoom": 2,
+            "fields": {
+                "name": "String",
+                "class": "String",
+                "speed_limit": "Number"
+            }
+        }]
+    });
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('json', ?1)",
+        [json_metadata.to_string()],
+    )
+    .expect("Failed to insert json metadata");
+
     mbtiles_path
 }
 
@@ -2230,6 +2288,210 @@ fn create_invalid_mbtiles(temp_dir: &Path) -> PathBuf {
         [],
     )
     .expect("Failed to create tiles table");
+
+    mbtiles_path
+}
+
+// Helper to create MBTiles file with multiple layers
+fn create_test_mbtiles_with_multiple_layers(temp_dir: &Path) -> PathBuf {
+    use rusqlite::Connection;
+    use std::io::Write;
+
+    let mbtiles_path = temp_dir.join("multi_layer.mbtiles");
+    let conn = Connection::open(&mbtiles_path).expect("Failed to create test MBTiles");
+
+    // Create metadata table
+    conn.execute(
+        "CREATE TABLE metadata (name TEXT PRIMARY KEY, value TEXT)",
+        [],
+    )
+    .expect("Failed to create metadata table");
+
+    // Insert required metadata
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('format', 'pbf')",
+        [],
+    )
+    .expect("Failed to insert format");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('name', 'multi_layer_test')",
+        [],
+    )
+    .expect("Failed to insert name");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('minzoom', '0')",
+        [],
+    )
+    .expect("Failed to insert minzoom");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('maxzoom', '2')",
+        [],
+    )
+    .expect("Failed to insert maxzoom");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('bounds', '-180.0,-85.0,180.0,85.0')",
+        [],
+    )
+    .expect("Failed to insert bounds");
+
+    // Create tiles table
+    conn.execute(
+        "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB, PRIMARY KEY (zoom_level, tile_column, tile_row))",
+        [],
+    )
+    .expect("Failed to create tiles table");
+
+    // Insert a simple MVT tile at z=0, x=0, y=0
+    let empty_mvt = vec![0x1d, 0x00, 0x08, 0x00];
+
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&empty_mvt).expect("Failed to compress");
+    let gzipped_data = encoder.finish().expect("Failed to finish compression");
+
+    conn.execute(
+        "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (0, 0, 0, ?1)",
+        [gzipped_data],
+    )
+    .expect("Failed to insert test tile");
+
+    // Add json metadata with multiple vector_layers
+    let json_metadata = serde_json::json!({
+        "vector_layers": [
+            {
+                "id": "roads",
+                "description": "Road network layer",
+                "minzoom": 0,
+                "maxzoom": 2,
+                "fields": {
+                    "name": "String",
+                    "highway": "String",
+                    "speed_limit": "Number"
+                }
+            },
+            {
+                "id": "buildings",
+                "description": "Building footprint layer",
+                "minzoom": 0,
+                "maxzoom": 2,
+                "fields": {
+                    "height": "Number",
+                    "building_type": "String",
+                    "address": "String"
+                }
+            }
+        ]
+    });
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('json', ?1)",
+        [json_metadata.to_string()],
+    )
+    .expect("Failed to insert json metadata");
+
+    mbtiles_path
+}
+
+// Helper to create MBTiles file with malformed json
+fn create_test_mbtiles_with_malformed_json(temp_dir: &Path) -> PathBuf {
+    use rusqlite::Connection;
+    use std::io::Write;
+
+    let mbtiles_path = temp_dir.join("malformed_json.mbtiles");
+    let conn = Connection::open(&mbtiles_path).expect("Failed to create test MBTiles");
+
+    conn.execute(
+        "CREATE TABLE metadata (name TEXT PRIMARY KEY, value TEXT)",
+        [],
+    )
+    .expect("Failed to create metadata table");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('format', 'pbf')",
+        [],
+    )
+    .expect("Failed to insert format");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('name', 'malformed_test')",
+        [],
+    )
+    .expect("Failed to insert name");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('minzoom', '0')",
+        [],
+    )
+    .expect("Failed to insert minzoom");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('maxzoom', '2')",
+        [],
+    )
+    .expect("Failed to insert maxzoom");
+
+    conn.execute(
+        "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB, PRIMARY KEY (zoom_level, tile_column, tile_row))",
+        [],
+    )
+    .expect("Failed to create tiles table");
+
+    let empty_mvt = vec![0x1d, 0x00, 0x08, 0x00];
+
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&empty_mvt).expect("Failed to compress");
+    let gzipped_data = encoder.finish().expect("Failed to finish compression");
+
+    conn.execute(
+        "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (0, 0, 0, ?1)",
+        [gzipped_data],
+    )
+    .expect("Failed to insert test tile");
+
+    // Insert malformed JSON (missing closing brace)
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('json', ?1)",
+        ["{\"vector_layers\": [{\"id\": \"test\"}]"], // malformed JSON
+    )
+    .expect("Failed to insert json metadata");
+
+    mbtiles_path
+}
+
+// Helper to create MBTiles file without json metadata
+fn create_mbtiles_without_json(temp_dir: &Path) -> PathBuf {
+    use rusqlite::Connection;
+
+    let mbtiles_path = temp_dir.join("no_json.mbtiles");
+    let conn = Connection::open(&mbtiles_path).expect("Failed to create test MBTiles");
+
+    conn.execute(
+        "CREATE TABLE metadata (name TEXT PRIMARY KEY, value TEXT)",
+        [],
+    )
+    .expect("Failed to create metadata table");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('format', 'pbf')",
+        [],
+    )
+    .expect("Failed to insert format");
+
+    conn.execute(
+        "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB, PRIMARY KEY (zoom_level, tile_column, tile_row))",
+        [],
+    )
+    .expect("Failed to create tiles table");
+
+    let empty_mvt = vec![0x1d, 0x00, 0x08, 0x00];
+    conn.execute(
+        "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (0, 0, 0, ?1)",
+        [empty_mvt],
+    )
+    .expect("Failed to insert test tile");
 
     mbtiles_path
 }
@@ -2670,7 +2932,7 @@ async fn test_mbtiles_feature_properties_returns_400() {
 }
 
 #[tokio::test]
-async fn test_mbtiles_schema_returns_empty() {
+async fn test_mbtiles_schema_returns_layers() {
     let (app, temp) = setup_app().await;
 
     let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
@@ -2725,9 +2987,242 @@ async fn test_mbtiles_schema_returns_empty() {
         .to_bytes();
     let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).unwrap();
 
-    // Should return empty fields array
-    assert!(schema["fields"].is_array());
-    assert_eq!(schema["fields"].as_array().unwrap().len(), 0);
+    // Verify layers structure
+    assert!(schema["layers"].is_array());
+    let layers = schema["layers"].as_array().unwrap();
+    assert_eq!(layers.len(), 1);
+
+    let layer = &layers[0];
+    assert_eq!(layer["id"], "test_tiles");
+    assert_eq!(layer["description"], "Test layer: test_tiles");
+
+    // Verify fields
+    assert!(layer["fields"].is_array());
+    let fields = layer["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 3);
+
+    // Verify field types are lowercase
+    let field_map: std::collections::HashMap<&str, &str> = fields
+        .iter()
+        .filter_map(|f| f["name"].as_str().zip(f["type"].as_str()))
+        .collect();
+
+    assert_eq!(field_map.get("name"), Some(&"string"));
+    assert_eq!(field_map.get("class"), Some(&"string"));
+    assert_eq!(field_map.get("speed_limit"), Some(&"number"));
+}
+
+#[tokio::test]
+async fn test_mbtiles_schema_without_json_returns_empty() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_mbtiles_without_json(temp.path());
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"no_json.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Get schema
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+
+    let schema_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).unwrap();
+
+    // Should return empty layers array
+    assert!(schema["layers"].is_array());
+    assert_eq!(schema["layers"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn test_mbtiles_schema_with_multiple_layers() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles_with_multiple_layers(temp.path());
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"multi_layer.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Get schema
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+
+    let schema_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).unwrap();
+
+    // Verify layers structure
+    assert!(schema["layers"].is_array());
+    let layers = schema["layers"].as_array().unwrap();
+    assert_eq!(layers.len(), 2, "Should have 2 layers");
+
+    // Verify first layer (roads)
+    let roads_layer = &layers[0];
+    assert_eq!(roads_layer["id"], "roads");
+    assert_eq!(roads_layer["description"], "Road network layer");
+    let roads_fields = roads_layer["fields"].as_array().unwrap();
+    assert_eq!(roads_fields.len(), 3);
+
+    let roads_field_map: std::collections::HashMap<&str, &str> = roads_fields
+        .iter()
+        .filter_map(|f| f["name"].as_str().zip(f["type"].as_str()))
+        .collect();
+
+    assert_eq!(roads_field_map.get("name"), Some(&"string"));
+    assert_eq!(roads_field_map.get("highway"), Some(&"string"));
+    assert_eq!(roads_field_map.get("speed_limit"), Some(&"number"));
+
+    // Verify second layer (buildings)
+    let buildings_layer = &layers[1];
+    assert_eq!(buildings_layer["id"], "buildings");
+    assert_eq!(buildings_layer["description"], "Building footprint layer");
+    let buildings_fields = buildings_layer["fields"].as_array().unwrap();
+    assert_eq!(buildings_fields.len(), 3);
+
+    let buildings_field_map: std::collections::HashMap<&str, &str> = buildings_fields
+        .iter()
+        .filter_map(|f| f["name"].as_str().zip(f["type"].as_str()))
+        .collect();
+
+    assert_eq!(buildings_field_map.get("height"), Some(&"number"));
+    assert_eq!(buildings_field_map.get("building_type"), Some(&"string"));
+    assert_eq!(buildings_field_map.get("address"), Some(&"string"));
+}
+
+#[tokio::test]
+async fn test_mbtiles_schema_with_malformed_json() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles_with_malformed_json(temp.path());
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"malformed_json.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Get schema - should return empty layers due to parse error
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+
+    let schema_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).unwrap();
+
+    // Should return empty layers array (graceful degradation)
+    assert!(schema["layers"].is_array());
+    assert_eq!(schema["layers"].as_array().unwrap().len(), 0);
 }
 
 #[tokio::test]

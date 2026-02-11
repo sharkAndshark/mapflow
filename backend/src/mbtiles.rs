@@ -123,6 +123,64 @@ pub fn extract_mbtiles_metadata(file_path: &Path) -> Result<MbtilesMetadata, Str
     })
 }
 
+/// Extract vector layers from MBTiles json metadata
+/// Returns list of layers with their fields
+pub fn extract_mbtiles_layers(file_path: &Path) -> Result<Vec<crate::models::LayerInfo>, String> {
+    use crate::models::FieldInfo;
+
+    let conn = Connection::open(file_path).map_err(|e| format!("Cannot open MBTiles: {}", e))?;
+
+    // Query json metadata
+    let json_metadata: Option<String> = conn
+        .query_row("SELECT value FROM metadata WHERE name='json'", [], |row| {
+            row.get(0)
+        })
+        .optional()
+        .map_err(|e| format!("Failed to query json metadata: {}", e))?;
+
+    let json_str = json_metadata.ok_or("No json metadata found")?;
+
+    // Parse JSON
+    let json_value: serde_json::Value = serde_json::from_str(&json_str)
+        .map_err(|e| format!("Failed to parse json metadata: {}", e))?;
+
+    // Extract vector_layers
+    let vector_layers = json_value["vector_layers"]
+        .as_array()
+        .ok_or("Missing vector_layers in json metadata")?;
+
+    let mut layers = Vec::new();
+    for layer in vector_layers {
+        let id = layer["id"].as_str().ok_or("Layer missing id")?.to_string();
+
+        let description = layer["description"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        let fields_obj = layer["fields"]
+            .as_object()
+            .ok_or("Layer missing fields object")?;
+
+        let mut fields = Vec::new();
+        for (field_name, field_type) in fields_obj {
+            let type_str = field_type.as_str().unwrap_or("String").to_lowercase();
+            fields.push(FieldInfo {
+                name: field_name.clone(),
+                r#type: type_str,
+            });
+        }
+
+        layers.push(crate::models::LayerInfo {
+            id,
+            description,
+            fields,
+        });
+    }
+
+    Ok(layers)
+}
+
 /// Import MBTiles metadata into the database
 /// This doesn't import the actual tiles - they stay in the SQLite file
 pub async fn import_mbtiles(

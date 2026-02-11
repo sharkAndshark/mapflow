@@ -237,34 +237,65 @@ function DetailSidebar({ file }) {
               <span style={{ color: '#888', fontSize: '12px' }}>加载中...</span>
             ) : schemaError ? (
               <span style={{ color: '#d32f2f', fontSize: '12px' }}>{schemaError}</span>
-            ) : schema?.fields ? (
+            ) : schema?.layers ? (
               <div style={{ fontSize: '13px' }}>
-                {schema.fields.length === 0 ? (
+                {schema.layers.length === 0 ? (
                   <span style={{ color: '#888' }}>无字段</span>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {schema.fields.map((field) => (
-                      <div
-                        key={field.name}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '2px 0',
-                        }}
-                      >
-                        <span style={{ fontWeight: 500 }}>{field.name}</span>
-                        <span
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {schema.layers.map((layer) => (
+                      <div key={layer.id}>
+                        <div
                           style={{
-                            fontSize: '11px',
-                            color: '#666',
-                            background: '#f5f5f5',
-                            padding: '1px 6px',
-                            borderRadius: '3px',
+                            fontWeight: 600,
+                            fontSize: '12px',
+                            color: '#444',
+                            marginBottom: '4px',
+                            paddingBottom: '4px',
+                            borderBottom: '1px solid #e0e0e0',
                           }}
                         >
-                          {field.type}
-                        </span>
+                          {layer.description ? `${layer.id} - ${layer.description}` : layer.id}
+                        </div>
+                        <div
+                          style={{
+                            paddingLeft: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                          }}
+                        >
+                          {layer.fields.length === 0 ? (
+                            <span style={{ color: '#999', fontSize: '12px', fontStyle: 'italic' }}>
+                              无字段
+                            </span>
+                          ) : (
+                            layer.fields.map((field) => (
+                              <div
+                                key={field.name}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  padding: '2px 0',
+                                }}
+                              >
+                                <span style={{ fontWeight: 500 }}>{field.name}</span>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    color: '#666',
+                                    background: '#f5f5f5',
+                                    padding: '1px 6px',
+                                    borderRadius: '3px',
+                                  }}
+                                >
+                                  {field.type}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

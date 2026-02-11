@@ -551,11 +551,11 @@ async fn get_file_schema(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let (status, tile_format): (String, Option<String>) = conn
+    let (status, tile_format, file_path): (String, Option<String>, String) = conn
         .query_row(
-            "SELECT status, tile_format FROM files WHERE id = ?",
+            "SELECT status, tile_format, path FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|_| {
             (
@@ -566,12 +566,8 @@ async fn get_file_schema(
             )
         })?;
 
-    // MBTiles files don't have schema information
-    if tile_format.is_some() {
-        return Ok(Json(FileSchemaResponse { fields: vec![] }));
-    }
-
     if status != "ready" {
+        drop(conn);
         return Err((
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -580,6 +576,28 @@ async fn get_file_schema(
         ));
     }
 
+    // Handle MBTiles files
+    if let Some(format) = tile_format {
+        drop(conn);
+        if format == "mvt" {
+            let full_path = mbtiles::resolve_mbtiles_path(&file_path);
+            match mbtiles::extract_mbtiles_layers(&full_path) {
+                Ok(layers) => {
+                    return Ok(Json(models::FileSchemaResponse { layers }));
+                }
+                Err(e) => {
+                    eprintln!("Failed to extract MBTiles layers for {}: {}", id, e);
+                    eprintln!("  File path: {}", full_path.display());
+                    eprintln!("  Tile format: {}", format);
+                    return Ok(Json(models::FileSchemaResponse { layers: vec![] }));
+                }
+            }
+        } else {
+            return Ok(Json(models::FileSchemaResponse { layers: vec![] }));
+        }
+    }
+
+    // Handle regular datasets (GeoJSON, Shapefile, etc.)
     let mut cols_stmt = conn
         .prepare(
             "SELECT original_name, mvt_type\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
@@ -601,7 +619,15 @@ async fn get_file_schema(
     }
 
     drop(conn);
-    Ok(Json(models::FileSchemaResponse { fields }))
+
+    let default_layer = models::LayerInfo {
+        id: "default".to_string(),
+        description: None,
+        fields,
+    };
+    Ok(Json(models::FileSchemaResponse {
+        layers: vec![default_layer],
+    }))
 }
 
 fn validate_tile_coords(z: i32, x: i32, y: i32) -> Result<(), (StatusCode, Json<ErrorResponse>)> {

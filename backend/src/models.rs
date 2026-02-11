@@ -75,8 +75,16 @@ pub struct FieldInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FileSchemaResponse {
+pub struct LayerInfo {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub fields: Vec<FieldInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileSchemaResponse {
+    pub layers: Vec<LayerInfo>,
 }
 
 #[derive(Debug, Deserialize)]
