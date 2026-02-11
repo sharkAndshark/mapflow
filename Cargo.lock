@@ -390,6 +390,7 @@ dependencies = [
  "bcrypt",
  "chrono",
  "duckdb",
+ "flate2",
  "hex",
  "http-body-util",
  "mvt-reader",

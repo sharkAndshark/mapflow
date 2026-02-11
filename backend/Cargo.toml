@@ -31,3 +31,4 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 http-body-util = "0.1"
 tempfile = "3"
 mvt-reader = "2.2.0"
+flate2 = "1"

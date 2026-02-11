@@ -336,7 +336,23 @@ async fn get_tile(
                     "png" => "image/png",
                     _ => "application/octet-stream",
                 };
-                return Ok(([(header::CONTENT_TYPE, ct)], data).into_response());
+
+                // Check if data is gzip-compressed (MBTiles tiles are often gzipped)
+                // Gzip magic bytes: 0x1f 0x8b
+                let is_gzipped = data.starts_with(&[0x1f, 0x8b]);
+
+                if is_gzipped {
+                    return Ok((
+                        [
+                            (header::CONTENT_TYPE, ct),
+                            (header::CONTENT_ENCODING, "gzip"),
+                        ],
+                        data,
+                    )
+                        .into_response());
+                } else {
+                    return Ok(([(header::CONTENT_TYPE, ct)], data).into_response());
+                }
             }
             Ok(None) => {
                 // Tile doesn't exist but coordinates are valid → 204 No Content

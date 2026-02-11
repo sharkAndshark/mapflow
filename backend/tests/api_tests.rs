@@ -2196,10 +2196,24 @@ fn create_test_mbtiles_with_format(temp_dir: &Path, name: &str, format: &str) ->
 
     // Insert a simple MVT tile at z=0, x=0, y=0 (TMS: y=0 for z=0)
     // This is a minimal valid MVT with an empty layer
+    // Gzip compress it to match real-world MBTiles behavior
     let empty_mvt = vec![0x1d, 0x00, 0x08, 0x00]; // MVT magic + empty layer
+
+    let gzipped_data = if format == "pbf" {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::default(),
+        );
+        encoder.write_all(&empty_mvt).expect("Failed to compress");
+        encoder.finish().expect("Failed to finish compression")
+    } else {
+        empty_mvt
+    };
+
     conn.execute(
         "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (0, 0, 0, ?1)",
-        [empty_mvt],
+        [gzipped_data],
     )
     .expect("Failed to insert test tile");
 
