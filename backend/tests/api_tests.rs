@@ -2155,7 +2155,10 @@ fn create_test_mbtiles_with_format(temp_dir: &Path, name: &str, format: &str) ->
 
     // Insert required metadata
     conn.execute(
-        &format!("INSERT INTO metadata (name, value) VALUES ('format', '{}')", format),
+        &format!(
+            "INSERT INTO metadata (name, value) VALUES ('format', '{}')",
+            format
+        ),
         [],
     )
     .expect("Failed to insert format");
@@ -2287,7 +2290,12 @@ async fn test_mbtiles_tile_returns_correct_format() {
         .unwrap();
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     wait_until_ready(&app, &file_item.id).await;
@@ -2307,10 +2315,7 @@ async fn test_mbtiles_tile_returns_correct_format() {
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok());
-    assert_eq!(
-        content_type,
-        Some("application/vnd.mapbox-vector-tile")
-    );
+    assert_eq!(content_type, Some("application/vnd.mapbox-vector-tile"));
 }
 
 #[tokio::test]
@@ -2341,7 +2346,12 @@ async fn test_public_mbtiles_png_returns_correct_content_type() {
         .unwrap();
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     wait_until_ready(&app, &file_item.id).await;
@@ -2354,11 +2364,7 @@ async fn test_public_mbtiles_png_returns_correct_content_type() {
         .body(Body::from(r#"{"slug": "my-png-tiles"}"#))
         .unwrap();
 
-    let publish_response = app
-        .clone()
-        .oneshot(publish_request)
-        .await
-        .unwrap();
+    let publish_response = app.clone().oneshot(publish_request).await.unwrap();
     assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
 
     // Request public tile
@@ -2407,7 +2413,12 @@ async fn test_mbtiles_tile_beyond_maxzoom_returns_204() {
         .unwrap();
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     wait_until_ready(&app, &file_item.id).await;
@@ -2424,7 +2435,6 @@ async fn test_mbtiles_tile_beyond_maxzoom_returns_204() {
     // Should return 204 No Content (tile doesn't exist)
     assert_eq!(tile_response.status(), axum::http::StatusCode::NO_CONTENT);
 }
-
 
 #[tokio::test]
 async fn test_mbtiles_empty_tile_returns_204() {
@@ -2453,7 +2463,12 @@ async fn test_mbtiles_empty_tile_returns_204() {
         .unwrap();
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     wait_until_ready(&app, &file_item.id).await;
@@ -2498,7 +2513,12 @@ async fn test_mbtiles_preview_includes_bounds() {
         .unwrap();
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     wait_until_ready(&app, &file_item.id).await;
@@ -2602,7 +2622,12 @@ async fn test_mbtiles_feature_properties_returns_400() {
         .unwrap();
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     wait_until_ready(&app, &file_item.id).await;
@@ -2660,7 +2685,12 @@ async fn test_mbtiles_schema_returns_empty() {
         .unwrap();
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     wait_until_ready(&app, &file_item.id).await;
@@ -2716,7 +2746,12 @@ async fn test_mbtiles_publish_and_public_tiles() {
         .unwrap();
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     wait_until_ready(&app, &file_item.id).await;
@@ -2729,11 +2764,7 @@ async fn test_mbtiles_publish_and_public_tiles() {
         .body(Body::from(r#"{"slug": "my-tiles"}"#))
         .unwrap();
 
-    let publish_response = app
-        .clone()
-        .oneshot(publish_request)
-        .await
-        .unwrap();
+    let publish_response = app.clone().oneshot(publish_request).await.unwrap();
     assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
 
     // Request public tile
@@ -2751,9 +2782,5 @@ async fn test_mbtiles_publish_and_public_tiles() {
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok());
-    assert_eq!(
-        content_type,
-        Some("application/vnd.mapbox-vector-tile")
-    );
+    assert_eq!(content_type, Some("application/vnd.mapbox-vector-tile"));
 }
-

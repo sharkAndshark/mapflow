@@ -40,6 +40,7 @@ pub use db::{
 use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
+use mbtiles::import_mbtiles;
 pub use models::{
     AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta, PublicTileUrl,
     PublishRequest, PublishResponse,
@@ -50,7 +51,6 @@ pub use session_store::DuckDBStore;
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
-use mbtiles::import_mbtiles;
 
 pub fn build_api_router(state: AppState) -> Router {
     build_api_router_with_auth(state, true)
@@ -186,9 +186,23 @@ async fn get_preview_meta(
         .prepare("SELECT name, crs, status, table_name, tile_format, tile_bounds FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
-    let meta: Option<(String, Option<String>, String, Option<String>, Option<String>, Option<String>)> = stmt
+    let meta: Option<(
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = stmt
         .query_row(duckdb::params![id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
         })
         .ok();
 
@@ -280,7 +294,15 @@ async fn get_tile(
         .query_row(
             "SELECT crs, status, table_name, tile_format, path FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .map_err(|_| {
             (
