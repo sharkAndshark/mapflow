@@ -1,0 +1,103 @@
+{
+  "type": "FeatureCollection",
+  "name": "complex_custom_crs",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "LOCAL_GRID_PROJECT"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "fid": 1,
+        "category": "building",
+        "area_sqm": 2500.5
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [5000.0, 3000.0],
+              [5200.0, 3000.0],
+              [5200.0, 3200.0],
+              [5100.0, 3250.0],
+              [5000.0, 3200.0],
+              [5000.0, 3000.0]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "fid": 2,
+        "category": "park",
+        "area_sqm": 5000.0
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [5400.0, 3500.0],
+            [5800.0, 3500.0],
+            [5800.0, 3900.0],
+            [5400.0, 3900.0],
+            [5400.0, 3500.0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "fid": 3,
+        "category": "road",
+        "length_m": 800.0
+      },
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [4800.0, 2800.0],
+            [5000.0, 3000.0],
+            [5200.0, 3200.0],
+            [5500.0, 3500.0]
+          ],
+          [
+            [5200.0, 3000.0],
+            [5400.0, 2900.0],
+            [5600.0, 2800.0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "fid": 4,
+        "category": "utility",
+        "type": "hydrant"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [5150.0, 3150.0]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "fid": 5,
+        "category": "utility",
+        "type": "pole"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [5300.0, 3100.0]
+      }
+    }
+  ]
+}

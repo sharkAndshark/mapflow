@@ -13,6 +13,7 @@ License: Apache-2.0
   - KML (`.kml`)
   - GPX (`.gpx`)
   - TopoJSON (`.topojson`)
+  - MBTiles (`.mbtiles`) - Pre-rendered tile packages (vector MVT and raster PNG supported)
 - **Manage:** Simple file list with status tracking.
 - **Preview:** Instant map preview for uploaded datasets.
 
@@ -69,6 +70,7 @@ docker compose down
    - `.kml` (KML)
    - `.gpx` (GPX)
    - `.topojson` (TopoJSON)
+   - `.mbtiles` (Pre-rendered tiles - supports both vector MVT and raster PNG formats)
 2. Click a file in the list to view details or open the map preview.
 
 ### Configuration
@@ -132,3 +134,30 @@ Passwords must meet the following complexity requirements:
 - Sessions are stored in the database with automatic expiration
 - Session cookies are HTTP-only and use secure flags in production
 - Sessions persist across server restarts
+
+## TODO
+
+### Performance Optimizations
+
+- **MBTiles Connection Pooling:** Currently, each tile request opens a new SQLite connection. For high-traffic deployments, implement a connection pool (e.g., using `r2d2` crate) to reuse connections and reduce overhead.
+
+### Future Enhancements
+
+- Support for additional tile formats (WebP, TIFF)
+- Tile caching layer for improved performance
+- Batch upload functionality
+- Data export capabilities
+
+## References
+
+### Specifications & Standards
+
+- **[MBTiles Specification](https://github.com/mapbox/mbtiles-spec)** - The MBTiles format specification for storing map tiles in SQLite databases
+- **[Vector Tile Specification](https://github.com/mapbox/vector-tile-spec)** - Mapbox Vector Tile specification for MVT/PBF format
+- **[Tile Map Service (TMS)](https://wiki.osgeo.org/wiki/Tile_Map_Service_Specification)** - OSGeo TMS specification (XYZ to TMS coordinate conversion)
+
+### Libraries & Tools
+
+- **[DuckDB](https://duckdb.org/)** - Embedded analytical database for spatial data processing
+- **[OpenLayers](https://openlayers.org/)** - JavaScript library for displaying maps in web browsers
+- **[GDAL](https://gdal.org/)** - Geospatial Data Abstraction Library for raster and vector data formats

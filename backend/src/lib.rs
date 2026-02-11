@@ -22,6 +22,7 @@ mod config;
 mod db;
 mod http_errors;
 mod import;
+mod mbtiles;
 mod models;
 mod password;
 mod session_store;
@@ -49,6 +50,7 @@ pub use session_store::DuckDBStore;
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
+use mbtiles::import_mbtiles;
 
 pub fn build_api_router(state: AppState) -> Router {
     build_api_router_with_auth(state, true)
@@ -181,16 +183,16 @@ async fn get_preview_meta(
 
     // Check if file exists and get meta
     let mut stmt = conn
-        .prepare("SELECT name, crs, status, table_name FROM files WHERE id = ?")
+        .prepare("SELECT name, crs, status, table_name, tile_format, tile_bounds FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
-    let meta: Option<(String, Option<String>, String, Option<String>)> = stmt
+    let meta: Option<(String, Option<String>, String, Option<String>, Option<String>, Option<String>)> = stmt
         .query_row(duckdb::params![id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
         })
         .ok();
 
-    let (name, crs, status, table_name) = match meta {
+    let (name, crs, status, table_name, tile_format, tile_bounds) = match meta {
         Some(m) => m,
         None => {
             return Err((
@@ -202,29 +204,33 @@ async fn get_preview_meta(
         }
     };
 
-    let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
-        (
+    if status != "ready" {
+        return Err((
             StatusCode::CONFLICT,
             Json(ErrorResponse {
                 error: "File is not ready for preview".to_string(),
             }),
-        )
-    })?;
+        ));
+    }
 
     // Calculate BBOX in WGS84
-    // Note: If CRS is missing/null, we assume EPSG:4326 and always_xy=true (lon/lat) for simplicity
+    let bbox_values = if let Some(bounds_json) = tile_bounds {
+        // MBTiles: use pre-calculated bounds
+        serde_json::from_str::<[f64; 4]>(&bounds_json).ok()
+    } else if let Some(tbl) = table_name {
+        // Dynamic: calculate ST_Extent (existing logic)
+        // Note: If CRS is missing/null, we assume EPSG:4326 and always_xy=true (lon/lat) for simplicity
 
-    // Query for bbox components directly
-    let bbox_components_query = format!(
-        "SELECT ST_XMin(b), ST_YMin(b), ST_XMax(b), ST_YMax(b) FROM (
-            SELECT ST_Extent(ST_Transform(geom, '{}', 'EPSG:4326', always_xy := true)) as b
-            FROM \"{table_name}\"
-        )",
-        crs.as_deref().unwrap_or("EPSG:4326")
-    );
+        // Query for bbox components directly
+        let bbox_components_query = format!(
+            "SELECT ST_XMin(b), ST_YMin(b), ST_XMax(b), ST_YMax(b) FROM (
+                SELECT ST_Extent(ST_Transform(geom, '{}', 'EPSG:4326', always_xy := true)) as b
+                FROM \"{tbl}\"
+            )",
+            crs.as_deref().unwrap_or("EPSG:4326")
+        );
 
-    let bbox_values: Option<[f64; 4]> = conn
-        .query_row(&bbox_components_query, [], |row| {
+        conn.query_row(&bbox_components_query, [], |row| {
             let minx: Option<f64> = row.get(0).ok();
             let miny: Option<f64> = row.get(1).ok();
             let maxx: Option<f64> = row.get(2).ok();
@@ -237,13 +243,17 @@ async fn get_preview_meta(
             }
         })
         .ok()
-        .filter(|b| b != &[0.0, 0.0, 0.0, 0.0]);
+        .filter(|b| b != &[0.0, 0.0, 0.0, 0.0])
+    } else {
+        None
+    };
 
     Ok(Json(PreviewMeta {
         id,
         name,
         crs,
         bbox: bbox_values,
+        tile_format,
     }))
 }
 
@@ -259,12 +269,18 @@ async fn get_tile(
     );
     let conn = state.db.lock().await;
 
-    // 1. Get CRS and table for the file
-    let (crs, status, table_name): (Option<String>, String, Option<String>) = conn
+    // Get file metadata including tile_format
+    let (crs, status, table_name, tile_format, file_path): (
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+    ) = conn
         .query_row(
-            "SELECT crs, status, table_name FROM files WHERE id = ?",
+            "SELECT crs, status, table_name, tile_format, path FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .map_err(|_| {
             (
@@ -275,7 +291,40 @@ async fn get_tile(
             )
         })?;
 
-    let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
+    if status != "ready" {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready for preview".to_string(),
+            }),
+        ));
+    }
+
+    // MBTiles branch
+    if let Some(format) = tile_format {
+        let full_path = mbtiles::resolve_mbtiles_path(&file_path);
+        drop(conn); // Release lock before async operation
+        match mbtiles::get_tile_from_mbtiles(&full_path, z, x, y).await {
+            Ok(Some(data)) => {
+                let ct = match format.as_str() {
+                    "mvt" => "application/vnd.mapbox-vector-tile",
+                    "png" => "image/png",
+                    _ => "application/octet-stream",
+                };
+                return Ok(([(header::CONTENT_TYPE, ct)], data).into_response());
+            }
+            Ok(None) => {
+                // Tile doesn't exist but coordinates are valid → 204 No Content
+                return Ok(StatusCode::NO_CONTENT.into_response());
+            }
+            Err(e) => {
+                return Err(internal_error(format!("Failed to read MBTiles: {}", e)));
+            }
+        }
+    }
+
+    // Dynamic generation branch (existing logic)
+    let table_name = table_name.ok_or_else(|| {
         (
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -344,11 +393,11 @@ async fn get_feature_properties(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let (status, table_name): (String, Option<String>) = conn
+    let (status, table_name, tile_format): (String, Option<String>, Option<String>) = conn
         .query_row(
-            "SELECT status, table_name FROM files WHERE id = ?",
+            "SELECT status, table_name, tile_format FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|_| {
             (
@@ -358,6 +407,16 @@ async fn get_feature_properties(
                 }),
             )
         })?;
+
+    // MBTiles files don't support feature properties
+    if tile_format.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Feature properties not available for MBTiles files".to_string(),
+            }),
+        ));
+    }
 
     let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
         (
@@ -451,11 +510,11 @@ async fn get_file_schema(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let status: String = conn
+    let (status, tile_format): (String, Option<String>) = conn
         .query_row(
-            "SELECT status FROM files WHERE id = ?",
+            "SELECT status, tile_format FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|_| {
             (
@@ -465,6 +524,11 @@ async fn get_file_schema(
                 }),
             )
         })?;
+
+    // MBTiles files don't have schema information
+    if tile_format.is_some() {
+        return Ok(Json(FileSchemaResponse { fields: vec![] }));
+    }
 
     if status != "ready" {
         return Err((
@@ -545,7 +609,7 @@ async fn upload_file(
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| format!(".{}", ext.to_lowercase()))
-        .ok_or_else(|| bad_request("Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson"))?;
+        .ok_or_else(|| bad_request("Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, .topojson, or .mbtiles"))?;
 
     let file_type = match ext.as_str() {
         ".zip" => "shapefile",
@@ -554,8 +618,9 @@ async fn upload_file(
         ".kml" => "kml",
         ".gpx" => "gpx",
         ".topojson" => "topojson",
+        ".mbtiles" => "mbtiles",
         _ => return Err(bad_request(
-            "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson",
+            "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, .topojson, or .mbtiles",
         )),
     };
 
@@ -589,6 +654,7 @@ async fn upload_file(
     let validation = match file_type {
         "shapefile" => validate_shapefile_zip(&file_path).await,
         "geojson" => validate_geojson(&file_path).await,
+        "mbtiles" => mbtiles::validate_mbtiles_structure(&file_path),
         "geojsonl" | "kml" | "gpx" | "topojson" => Ok(()), // Trust GDAL to validate
         _ => Ok(()), // Unreachable due to earlier validation, but required for type safety
     };
@@ -657,6 +723,7 @@ async fn upload_file(
     let db = state.db.clone();
     let upload_id_clone = upload_id.clone();
     let file_path_clone = file_path.clone();
+    let file_type_clone = file_type.to_string();
     tokio::spawn(async move {
         // Set status to processing
         {
@@ -667,7 +734,12 @@ async fn upload_file(
             );
         }
 
-        match import_spatial_data(&db, &upload_id_clone, &file_path_clone).await {
+        let result = match file_type_clone.as_str() {
+            "mbtiles" => import_mbtiles(&db, &upload_id_clone, &file_path_clone).await,
+            _ => import_spatial_data(&db, &upload_id_clone, &file_path_clone).await,
+        };
+
+        match result {
             Ok(_) => {
                 println!("Successfully imported spatial data for {}", upload_id_clone);
                 let conn = db.lock().await;
@@ -962,11 +1034,17 @@ async fn get_public_tile(
         })?;
 
     // Step 2: Get file metadata from files table, verifying is_public flag
-    let (crs, status, table_name): (Option<String>, String, Option<String>) = conn
+    let (crs, status, table_name, tile_format, file_path): (
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+    ) = conn
         .query_row(
-            "SELECT crs, status, table_name FROM files WHERE id = ? AND is_public = TRUE",
+            "SELECT crs, status, table_name, tile_format, path FROM files WHERE id = ? AND is_public = TRUE",
             duckdb::params![&file_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .map_err(|_| {
             (
@@ -977,7 +1055,46 @@ async fn get_public_tile(
             )
         })?;
 
-    let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
+    if status != "ready" {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready".to_string(),
+            }),
+        ));
+    }
+
+    // MBTiles branch
+    if let Some(format) = tile_format {
+        let full_path = mbtiles::resolve_mbtiles_path(&file_path);
+        drop(conn); // Release lock before async operation
+        match mbtiles::get_tile_from_mbtiles(&full_path, z, x, y).await {
+            Ok(Some(data)) => {
+                let ct = match format.as_str() {
+                    "mvt" => "application/vnd.mapbox-vector-tile",
+                    "png" => "image/png",
+                    _ => "application/octet-stream",
+                };
+                return Ok((
+                    [
+                        (header::CONTENT_TYPE, ct),
+                        (header::CACHE_CONTROL, "public, max-age=300"),
+                    ],
+                    data,
+                )
+                    .into_response());
+            }
+            Ok(None) => {
+                return Ok(StatusCode::NO_CONTENT.into_response());
+            }
+            Err(e) => {
+                return Err(internal_error(format!("Failed to read MBTiles: {}", e)));
+            }
+        }
+    }
+
+    // Dynamic generation branch (existing logic)
+    let table_name = table_name.ok_or_else(|| {
         (
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -1085,7 +1202,11 @@ mod tests {
             path VARCHAR NOT NULL,
             table_name VARCHAR,
             error VARCHAR,
-            is_public BOOLEAN DEFAULT FALSE
+            is_public BOOLEAN DEFAULT FALSE,
+            tile_format VARCHAR,
+            minzoom INTEGER,
+            maxzoom INTEGER,
+            tile_bounds VARCHAR
         );
 
         CREATE TABLE IF NOT EXISTS published_files (

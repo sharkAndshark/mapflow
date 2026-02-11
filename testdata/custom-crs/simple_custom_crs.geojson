@@ -1,0 +1,75 @@
+{
+  "type": "FeatureCollection",
+  "name": "simple_custom_crs",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "name": "Building A",
+        "type": "commercial"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [1000.0, 2000.0],
+            [1100.0, 2000.0],
+            [1100.0, 2100.0],
+            [1000.0, 2100.0],
+            [1000.0, 2000.0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "name": "Building B",
+        "type": "residential"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [1200.0, 2200.0],
+            [1350.0, 2200.0],
+            [1350.0, 2350.0],
+            [1200.0, 2350.0],
+            [1200.0, 2200.0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 3,
+        "name": "Road Segment",
+        "type": "road"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [950.0, 2150.0],
+          [1050.0, 2250.0],
+          [1150.0, 2300.0],
+          [1300.0, 2400.0]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 4,
+        "name": "Landmark",
+        "type": "point_of_interest"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [1400.0, 2050.0]
+      }
+    }
+  ]
+}
