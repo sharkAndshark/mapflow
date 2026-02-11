@@ -579,7 +579,7 @@ async fn test_upload_invalid_extension() {
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(
         body_json["error"],
-        "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, or .topojson"
+        "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, .topojson, or .mbtiles"
     );
 }
 
@@ -2133,3 +2133,627 @@ async fn test_public_tiles_endpoint_unpublished_file() {
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
 }
+
+// Helper to create a minimal valid MBTiles file for testing
+fn create_test_mbtiles(temp_dir: &Path, name: &str) -> PathBuf {
+    create_test_mbtiles_with_format(temp_dir, name, "pbf")
+}
+
+// Helper to create an MBTiles file with specific format
+fn create_test_mbtiles_with_format(temp_dir: &Path, name: &str, format: &str) -> PathBuf {
+    use rusqlite::Connection;
+
+    let mbtiles_path = temp_dir.join(format!("{}.mbtiles", name));
+    let conn = Connection::open(&mbtiles_path).expect("Failed to create test MBTiles");
+
+    // Create metadata table
+    conn.execute(
+        "CREATE TABLE metadata (name TEXT PRIMARY KEY, value TEXT)",
+        [],
+    )
+    .expect("Failed to create metadata table");
+
+    // Insert required metadata
+    conn.execute(
+        &format!("INSERT INTO metadata (name, value) VALUES ('format', '{}')", format),
+        [],
+    )
+    .expect("Failed to insert format");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('name', ?1)",
+        [name],
+    )
+    .expect("Failed to insert name");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('minzoom', '0')",
+        [],
+    )
+    .expect("Failed to insert minzoom");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('maxzoom', '2')",
+        [],
+    )
+    .expect("Failed to insert maxzoom");
+
+    conn.execute(
+        "INSERT INTO metadata (name, value) VALUES ('bounds', '-180.0,-85.0,180.0,85.0')",
+        [],
+    )
+    .expect("Failed to insert bounds");
+
+    // Create tiles table
+    conn.execute(
+        "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB, PRIMARY KEY (zoom_level, tile_column, tile_row))",
+        [],
+    )
+    .expect("Failed to create tiles table");
+
+    // Insert a simple MVT tile at z=0, x=0, y=0 (TMS: y=0 for z=0)
+    // This is a minimal valid MVT with an empty layer
+    let empty_mvt = vec![0x1d, 0x00, 0x08, 0x00]; // MVT magic + empty layer
+    conn.execute(
+        "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (0, 0, 0, ?1)",
+        [empty_mvt],
+    )
+    .expect("Failed to insert test tile");
+
+    mbtiles_path
+}
+
+// Helper to create an invalid MBTiles file (missing metadata table)
+fn create_invalid_mbtiles(temp_dir: &Path) -> PathBuf {
+    use rusqlite::Connection;
+
+    let mbtiles_path = temp_dir.join("invalid.mbtiles");
+    let conn = Connection::open(&mbtiles_path).expect("Failed to create test file");
+
+    // Create only tiles table, missing metadata
+    conn.execute(
+        "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB)",
+        [],
+    )
+    .expect("Failed to create tiles table");
+
+    mbtiles_path
+}
+
+#[tokio::test]
+async fn test_upload_mbtiles_success() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_tiles.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(file_item.file_type, "mbtiles");
+    assert_eq!(file_item.status, "uploaded");
+
+    // Wait for processing to complete
+    let file = wait_until_ready(&app, &file_item.id).await;
+    assert_eq!(file.status, "ready");
+}
+
+#[tokio::test]
+async fn test_mbtiles_tile_returns_correct_format() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_tiles.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Request tile
+    let tile_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let tile_response = app.oneshot(tile_request).await.unwrap();
+
+    // Should return 200 with MVT content type
+    assert_eq!(tile_response.status(), axum::http::StatusCode::OK);
+    let content_type = tile_response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(
+        content_type,
+        Some("application/vnd.mapbox-vector-tile")
+    );
+}
+
+#[tokio::test]
+async fn test_public_mbtiles_png_returns_correct_content_type() {
+    let (app, temp) = setup_app().await;
+
+    // Create PNG MBTiles
+    let mbtiles_path = create_test_mbtiles_with_format(temp.path(), "test_png", "png");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_png.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Publish the file
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_item.id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-png-tiles"}"#))
+        .unwrap();
+
+    let publish_response = app
+        .clone()
+        .oneshot(publish_request)
+        .await
+        .unwrap();
+    assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
+
+    // Request public tile
+    let tile_request = Request::builder()
+        .method("GET")
+        .uri("/tiles/my-png-tiles/0/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let tile_response = app.oneshot(tile_request).await.unwrap();
+
+    // Should return 200 with PNG content type
+    assert_eq!(tile_response.status(), axum::http::StatusCode::OK);
+    let content_type = tile_response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(content_type, Some("image/png"));
+}
+
+#[tokio::test]
+async fn test_mbtiles_tile_beyond_maxzoom_returns_204() {
+    let (app, temp) = setup_app().await;
+
+    // Create MBTiles with maxzoom=2
+    let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_tiles.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Request tile beyond maxzoom (maxzoom=2 in test data)
+    let tile_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/3/0/0", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let tile_response = app.oneshot(tile_request).await.unwrap();
+
+    // Should return 204 No Content (tile doesn't exist)
+    assert_eq!(tile_response.status(), axum::http::StatusCode::NO_CONTENT);
+}
+
+
+#[tokio::test]
+async fn test_mbtiles_empty_tile_returns_204() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_tiles.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Request non-existent tile
+    let tile_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/1/0/0", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let tile_response = app.oneshot(tile_request).await.unwrap();
+
+    // Should return 204 No Content for missing tiles
+    assert_eq!(tile_response.status(), axum::http::StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_mbtiles_preview_includes_bounds() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_tiles.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Get preview metadata
+    let preview_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/preview", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let preview_response = app.oneshot(preview_request).await.unwrap();
+    assert_eq!(preview_response.status(), axum::http::StatusCode::OK);
+
+    let preview_bytes = preview_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let preview: serde_json::Value = serde_json::from_slice(&preview_bytes).unwrap();
+
+    // Should include bbox from metadata
+    assert!(preview["bbox"].is_array());
+    let bbox = preview["bbox"].as_array().unwrap();
+    assert_eq!(bbox.len(), 4);
+    // Check bounds are approximately what we set (-180.0,-85.0,180.0,85.0)
+    assert!((bbox[0].as_f64().unwrap() - (-180.0)).abs() < 0.01);
+    assert!((bbox[1].as_f64().unwrap() - (-85.0)).abs() < 0.01);
+    assert!((bbox[2].as_f64().unwrap() - 180.0).abs() < 0.01);
+    assert!((bbox[3].as_f64().unwrap() - 85.0).abs() < 0.01);
+
+    // Should include tile_format
+    assert_eq!(preview["tile_format"], "mvt");
+}
+
+#[tokio::test]
+async fn test_invalid_mbtiles_returns_400() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_invalid_mbtiles(temp.path());
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"invalid.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // Should return 400 Bad Request
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("MBTiles file missing metadata table"));
+}
+
+#[tokio::test]
+async fn test_mbtiles_feature_properties_returns_400() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_tiles.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Try to get feature properties (should fail for MBTiles)
+    let props_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let props_response = app.oneshot(props_request).await.unwrap();
+
+    // Should return 400 Bad Request
+    assert_eq!(props_response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = props_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("Feature properties not available for MBTiles files"));
+}
+
+#[tokio::test]
+async fn test_mbtiles_schema_returns_empty() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_tiles.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Get schema
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.oneshot(schema_request).await.unwrap();
+
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+
+    let schema_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).unwrap();
+
+    // Should return empty fields array
+    assert!(schema["fields"].is_array());
+    assert_eq!(schema["fields"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn test_mbtiles_publish_and_public_tiles() {
+    let (app, temp) = setup_app().await;
+
+    let mbtiles_path = create_test_mbtiles(temp.path(), "test_tiles");
+    let mbtiles_bytes = std::fs::read(&mbtiles_path).expect("Failed to read test MBTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test_tiles.mbtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&mbtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Publish the file
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_item.id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "my-tiles"}"#))
+        .unwrap();
+
+    let publish_response = app
+        .clone()
+        .oneshot(publish_request)
+        .await
+        .unwrap();
+    assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
+
+    // Request public tile
+    let tile_request = Request::builder()
+        .method("GET")
+        .uri("/tiles/my-tiles/0/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let tile_response = app.oneshot(tile_request).await.unwrap();
+
+    // Should return 200 with MVT content type
+    assert_eq!(tile_response.status(), axum::http::StatusCode::OK);
+    let content_type = tile_response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(
+        content_type,
+        Some("application/vnd.mapbox-vector-tile")
+    );
+}
+

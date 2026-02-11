@@ -50,6 +50,8 @@ pub struct PreviewMeta {
     pub name: String,
     pub crs: Option<String>,
     pub bbox: Option<[f64; 4]>, // minx, miny, maxx, maxy in WGS84
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tile_format: Option<String>, // "mvt", "png", or null
 }
 
 #[allow(dead_code)]

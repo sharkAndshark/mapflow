@@ -19,6 +19,7 @@
 - **KML：** Keyhole Markup Language (`.kml`)
 - **GPX：** GPS Exchange Format (`.gpx`)
 - **TopoJSON：** 拓扑优化的 GeoJSON (`.topojson`)
+- **MBTiles：** 预渲染瓦片集合 (`.mbtiles`)，支持矢量瓦片（MVT/PBF）和栅格瓦片（PNG）。MBTiles 文件直接读取原始 SQLite，不导入 DuckDB。矢量瓦片支持交互（特征点击、属性检查），栅格瓦片仅静态显示。
 
 **测试覆盖的几何类型：**
 - ✅ Point (OSM-002: sf_points)
@@ -34,14 +35,14 @@
 |----|------|-----------|---------|---------|------|--------|
 | API-001 | 上传 | POST /api/uploads 需要认证，接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 200 + 元数据 / 400（格式无效） / 401（未认证） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
 | API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | `cargo test test_files_list` | Integration | P0 |
-| API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据 | 200 + bbox(minx,miny,maxx,maxy,WGS84) / 401 / 404 / 409 + `{error}` | `cargo test test_preview_ready` | Integration | P0 |
-| API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证，返回 MVT（Web Mercator 投影），包含几何和特征属性 | 200 / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
-| API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序 | 200 / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
-| API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{fields:[{name,type}]}`，type 为 MVT 兼容类型，按 ordinal 排序，仅 ready 状态可访问 | 200 / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
+| API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds 和 tile_format（"mvt"或"png"） | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tile_format / 401 / 404 / 409 + `{error}` | `cargo test test_preview_ready` | Integration | P0 |
+| API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证。动态生成：返回 MVT（Web Mercator 投影），包含几何和特征属性。MBTiles：直接查询 tiles 表，MVT 返回 `application/vnd.mapbox-vector-tile`，PNG 返回 `image/png`，不存在返回 204 No Content | 200 + MVT/PNG / 204 / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
+| API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序。MBTiles 文件不支持特征属性，返回 400 | 200 / 400（MBTiles） / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
+| API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{fields:[{name,type}]}`，type 为 MVT 兼容类型，按 ordinal 排序，仅 ready 状态可访问。MBTiles 文件返回空 fields 数组 | 200 + fields[] / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
 | API-007 | 发布文件 | POST /api/files/:id/publish 需要认证，设置 `is_public=TRUE` 并分配 `public_slug`，可选自定义 slug（默认文件 ID），返回公开 URL 模板。注意：由于 DuckDB 不支持部分索引，slug 唯一性在 INSERT 前手动检查，存在小概率竞态条件（Phase 1 可接受） | 200 + `{url,slug,isPublic}` / 400（slug 无效/冲突） / 401 / 404 / 409 | `cargo test test_publish_*` | Integration | P0 |
 | API-008 | 取消发布 | POST /api/files/:id/unpublish 需要认证，设置 `is_public=FALSE` 并清空 `public_slug` | 200 / 401 / 404 | `cargo test test_unpublish_*` | Integration | P0 |
 | API-009 | 公开地址 | GET /api/files/:id/public-url 需要认证，返回当前文件的公开 URL 模板 | 200 + `{slug,url}` / 401 / 404 | `cargo test test_public_url_*` | Integration | P1 |
-| API-010 | 公开瓦片 | GET /tiles/:slug/:z/:x/:y **无需认证**，验证 `public_slug` 存在且 `is_public=TRUE`，返回 MVT 瓦片 | 200 + MVT / 400 / 404 | `cargo test test_public_tiles_*` | Integration | P0 |
+| API-010 | 公开瓦片 | GET /tiles/:slug/:z/:x/:y **无需认证**，验证 `public_slug` 存在且 `is_public=TRUE`。动态生成返回 MVT；MBTiles 返回 MVT 或 PNG（取决于 tile_format） | 200 + MVT/PNG / 204 / 400 / 404 | `cargo test test_public_tiles_*` | Integration | P0 |
 | API-011 | 测试端点 | POST /api/test/reset 重置数据库和存储，仅在 debug + MAPFLOW_TEST_MODE=1 | 执行成功，仅在 debug 构建 | `cargo test test_reset` | Integration | P2 |
 | AUTH-001 | 首次设置 | POST /api/auth/init 创建初始管理员 | 200 / 400 / 409 / 500 | `npm run test:e2e` | E2E | P0 |
 | AUTH-002 | 登录 | POST /api/auth/login 验证凭证，设置会话 | 200 / 401 / 500 | `npm run test:e2e` | E2E | P0 |
@@ -65,6 +66,8 @@
 | E2E-004 | 完整上传（KML） | 上传 .kml → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_kml_lifecycle` | Integration | P0 |
 | E2E-005 | 完整上传（GPX） | 上传 .gpx → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_gpx_lifecycle` | Integration | P0 |
 | E2E-006 | 完整上传（TopoJSON） | 上传 .topojson → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_topojson_lifecycle` | Integration | P0 |
+| E2E-006a | 完整上传（MBTiles MVT） | 上传 .mbtiles（矢量） → 列表更新 → ready → preview 返回 bounds 和 tile_format=mvt → 瓦片端点返回 MVT 格式 | 端到端流程成功 | `cargo test test_upload_mbtiles_success` | Integration | P0 |
+| E2E-006b | 完整上传（MBTiles PNG） | 上传 .mbtiles（栅格） → 列表更新 → ready → preview 返回 bounds 和 tile_format=png → 瓦片端点返回 PNG 格式 → 前端禁用特征交互 | 端到端流程成功 | `cargo test test_mbtiles_tile_returns_correct_format` | Integration | P0 |
 | E2E-007 | 重启持久化 | 重启后之前上传的文件仍可访问 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-008 | 预览集成 | 点击预览 → 新标签页打开 → 地图加载 → 瓦片请求成功（200 OK 且非空） | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-009 | 认证流程 | 首次访问 → 设置 → 登录 → 使用 → 登出 | 状态正确 | `npm run test:e2e` | E2E | P0 |

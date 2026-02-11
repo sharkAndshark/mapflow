@@ -38,7 +38,11 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             path VARCHAR NOT NULL,
             table_name VARCHAR,
             error VARCHAR,
-            is_public BOOLEAN DEFAULT FALSE
+            is_public BOOLEAN DEFAULT FALSE,
+            tile_format VARCHAR,
+            minzoom INTEGER,
+            maxzoom INTEGER,
+            tile_bounds VARCHAR
         );
 
         CREATE TABLE IF NOT EXISTS published_files (
@@ -50,6 +54,13 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         ",
     )
     .expect("Failed to create files table");
+
+    // Add new columns for MBTiles support (if they don't exist)
+    // These ALTER TABLE statements are idempotent - they will fail silently if columns exist
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN tile_format VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN minzoom INTEGER", []);
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN maxzoom INTEGER", []);
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN tile_bounds VARCHAR", []);
 
     conn.execute_batch(
         r"

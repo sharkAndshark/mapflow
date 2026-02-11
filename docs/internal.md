@@ -6,6 +6,12 @@
 
 React → HTTP → Axum → DuckDB
 
+**MBTiles 支持：**
+- MBTiles 文件不导入 DuckDB，直接读取原始 SQLite 文件
+- 通过 `tile_format` 字段区分动态（NULL）、MVT、PNG
+- 矢量瓦片（MVT）：保留完整交互功能（特征点击、属性检查）
+- 栅格瓦片（PNG）：仅静态显示，禁用交互
+
 ## 认证
 
 Session Cookie → axum-login → tower-sessions → DuckDB

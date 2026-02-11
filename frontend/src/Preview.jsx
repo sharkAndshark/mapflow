@@ -9,6 +9,7 @@ import View from 'ol/View';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
 import TileLayer from 'ol/layer/Tile';
+import TileSource from 'ol/source/Tile';
 import TileDebug from 'ol/source/TileDebug';
 import MVT from 'ol/format/MVT';
 import { fromLonLat, transformExtent } from 'ol/proj';
@@ -31,6 +32,7 @@ export default function Preview() {
   const selectedFidRef = useRef(null);
   const [showTileGrid, setShowTileGrid] = useState(false);
   const tileGridLayerRef = useRef(null);
+  const [tileFormat, setTileFormat] = useState(null);
 
   const cancelPopup = useCallback(() => {
     requestSeqRef.current += 1;
@@ -160,6 +162,7 @@ export default function Preview() {
         }
         const data = await res.json();
         setMeta(data);
+        setTileFormat(data.tileFormat || null);
       } catch (err) {
         setError(err.message);
       }
@@ -184,6 +187,9 @@ export default function Preview() {
 
     // Click handler for features
     olMap.on('click', (evt) => {
+      // Skip feature interaction for PNG tiles (raster)
+      if (tileFormat === 'png') return;
+
       const feature = olMap.forEachFeatureAtPixel(evt.pixel, (feature) => feature);
       if (feature) {
         const fid = feature.getId?.() ?? feature.get('fid') ?? feature.getProperties?.()?.fid;
@@ -246,17 +252,27 @@ export default function Preview() {
     // URL pattern: /api/files/{id}/tiles/{z}/{x}/{y} (no .mvt extension)
     const tileUrl = `${window.location.origin}/api/files/${id}/tiles/{z}/{x}/{y}`;
 
-    const vectorLayer = new VectorTileLayer({
-      source: new VectorTileSource({
-        format: new MVT(),
-        url: tileUrl,
-      }),
-      style: styleFunction,
-    });
+    let tileLayer;
 
-    vectorLayerRef.current = vectorLayer;
+    if (tileFormat === 'png') {
+      // Raster tiles (PNG)
+      tileLayer = new TileLayer({
+        source: new TileSource({ url: tileUrl }),
+      });
+    } else {
+      // Vector tiles (MVT) - default
+      tileLayer = new VectorTileLayer({
+        source: new VectorTileSource({
+          format: new MVT(),
+          url: tileUrl,
+        }),
+        style: styleFunction,
+      });
+    }
+
+    vectorLayerRef.current = tileLayer;
     // Insert vector layer at index 0, tile grid stays on top
-    map.getLayers().insertAt(0, vectorLayer);
+    map.getLayers().insertAt(0, tileLayer);
 
     // 2. Fit bounds
     if (meta.bbox && meta.bbox.length === 4) {
@@ -270,7 +286,7 @@ export default function Preview() {
         maxZoom: 14, // Don't zoom in too close for single points
       });
     }
-  }, [meta, id, styleFunction]);
+  }, [meta, id, styleFunction, tileFormat]);
 
   // Toggle tile grid visibility
   useEffect(() => {
@@ -365,7 +381,7 @@ export default function Preview() {
         )}
 
         {/* Simple Property Inspector Overlay */}
-        {(popupContent || popupLoading || popupError) && (
+        {tileFormat !== 'png' && (popupContent || popupLoading || popupError) && (
           <div
             style={{
               position: 'absolute',
