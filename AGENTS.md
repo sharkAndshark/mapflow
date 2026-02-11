@@ -80,4 +80,7 @@
 - **技术债**：优先做正确的事，避免为小改动妥协
 - **提交前**：运行相关测试集（backend/frontend/全量）
 - **代码提交**：所有对 origin/main 的修改，必须通过 merge PR 的方式进行
+- **Git 工作流**：
+  - **禁止跳过 hooks**：绝不使用 `git commit/push --no-verify`，这会绕过 pre-commit 和 pre-push hooks（代码格式化、测试运行、lint 检查），导致不合规代码进入仓库
+  - **必须等待测试通过**：pre-push hooks 会运行完整测试套件，必须等待测试全部通过后再推送到远程
 
