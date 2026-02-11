@@ -2201,10 +2201,7 @@ fn create_test_mbtiles_with_format(temp_dir: &Path, name: &str, format: &str) ->
 
     let gzipped_data = if format == "pbf" {
         use std::io::Write;
-        let mut encoder = flate2::write::GzEncoder::new(
-            Vec::new(),
-            flate2::Compression::default(),
-        );
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
         encoder.write_all(&empty_mvt).expect("Failed to compress");
         encoder.finish().expect("Failed to finish compression")
     } else {
