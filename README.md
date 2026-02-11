@@ -118,7 +118,9 @@ MapFlow uses session-based authentication with secure password hashing (bcrypt).
 - `GET /api/files/:id/preview` - Get file preview metadata
 - `GET /api/files/:id/tiles/:z/:x/:y` - Get map tiles
 - `GET /api/files/:id/schema` - Get file schema
+  *Note:* For MBTiles vector tiles, currently returns empty fields. Planned enhancement: Extract layer information from MBTiles metadata.json and return structured schema with multiple layers.
 - `GET /api/files/:id/features/:fid` - Get feature properties
+  *Note:* This endpoint works for data imported into DuckDB (Shapefile, GeoJSON, etc.). For MBTiles, feature properties should be extracted client-side from MVT tiles using `feature.getProperties()` (planned enhancement).
 
 ### Password Requirements
 
@@ -142,6 +144,18 @@ Passwords must meet the following complexity requirements:
 - **MBTiles Connection Pooling:** Currently, each tile request opens a new SQLite connection. For high-traffic deployments, implement a connection pool (e.g., using `r2d2` crate) to reuse connections and reduce overhead.
 
 ### Future Enhancements
+
+- **MBTiles Schema API:** Improve schema endpoint to support multi-layer structure. Currently returns empty array for MBTiles files. Planned enhancement: Extract layer information from MBTiles metadata.json's vector_layers and return organized schema with multiple layers (while maintaining flattened fields for backward compatibility).
+
+- **MBTiles Feature Properties:** Extract feature properties directly from MVT tiles on the client side. Unlike other formats stored in DuckDB, MBTiles feature attributes are already encoded in MVT protobuf. Frontend should use OpenLayers' feature object to directly access properties via `feature.getProperties()`, eliminating the need for backend API support. This approach:
+  - Reduces backend complexity (no MVT parsing needed)
+  - Improves UX (instant property display without extra requests)
+  - Maintains MBTiles performance advantages
+
+- **Multi-Table Data Sources:** Support for data formats containing multiple layers/tables:
+  - GeoPackage (.gpkg) - Contains multiple vector layers
+  - File Geodatabase (.gdb) - ESRI format with multiple feature classes
+  - Schema endpoints for these formats need to return table/layer-organized structure rather than flat field lists.
 
 - Support for additional tile formats (WebP, TIFF)
 - Tile caching layer for improved performance
