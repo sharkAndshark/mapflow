@@ -11,7 +11,7 @@
 //! - Bounds are stored in WGS84 (EPSG:4326) per MBTiles spec
 //! - Tiles are in Web Mercator (EPSG:3857) projection
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
 
 /// Validate that a file is a valid MBTiles SQLite database
@@ -27,8 +27,10 @@ pub fn validate_mbtiles_structure(file_path: &Path) -> Result<(), String> {
                 name
             ),
             [],
-            |row| row.ok().map(|_| true),
+            |_| Ok(true),
         )
+        .optional()
+        .map(|opt: Option<_>| opt.is_some())
         .map_err(|e| format!("Failed to check table/view: {}", e))
     }
 
@@ -43,11 +45,11 @@ pub fn validate_mbtiles_structure(file_path: &Path) -> Result<(), String> {
     if !has_tiles {
         // List available tables/views for better error message
         let tables: Vec<String> = conn
-            .prepare(
-                "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name",
-            )?
+            .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name")
+            .map_err(|e| format!("Failed to prepare query: {}", e))?
             .query_map([], |row| row.get::<_, String>(0))
-            .collect()
+            .map_err(|e| format!("Failed to list tables: {}", e))?
+            .collect::<Result<_, _>>()
             .map_err(|e| format!("Failed to list tables: {}", e))?;
 
         let table_list = tables.join(", ");
@@ -196,8 +198,8 @@ pub fn resolve_mbtiles_path(file_path: &str) -> std::path::PathBuf {
 
     // Handle paths like "./absolute/path" -> "absolute/path"
     // This happens when strip_prefix creates a path starting with ./
-    if file_path.starts_with("./") {
-        PathBuf::from(&file_path[2..])
+    if let Some(stripped) = file_path.strip_prefix("./") {
+        PathBuf::from(stripped)
     } else if file_path.starts_with('.') {
         // Relative path: join with current directory
         std::env::current_dir()

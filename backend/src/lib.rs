@@ -30,6 +30,16 @@ mod test_routes;
 mod tiles;
 mod validation;
 
+/// Type alias for file metadata from the database
+type FileMetadata = (
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 pub use auth::{AuthBackend, User};
 pub use auth_routes::build_auth_router;
 pub use config::{format_bytes, read_cookie_secure, read_max_size_config};
@@ -186,14 +196,7 @@ async fn get_preview_meta(
         .prepare("SELECT name, crs, status, table_name, tile_format, tile_bounds FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
-    let meta: Option<(
-        String,
-        Option<String>,
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    )> = stmt
+    let meta: Option<FileMetadata> = stmt
         .query_row(duckdb::params![id], |row| {
             Ok((
                 row.get(0)?,
