@@ -179,6 +179,8 @@ export default function Preview() {
       view: new View({
         center: fromLonLat([0, 0]),
         zoom: 2,
+        minZoom: 0,
+        maxZoom: 22,
       }),
       layers: [], // We'll add layers later
     });
@@ -233,13 +235,25 @@ export default function Preview() {
       vectorLayerRef.current = null;
       tileGridLayerRef.current = null;
     };
-  }, [cancelPopup, loadFeatureProperties]);
+  }, [cancelPopup, loadFeatureProperties, tileFormat]);
 
   // Update VectorTile Layer and View when Meta changes
   useEffect(() => {
     if (!mapRef.current || !meta) return;
 
     const map = mapRef.current;
+    const view = map.getView();
+
+    // Update zoom limits based on meta
+    const minZoom = meta.minzoom ?? 0;
+    const maxZoom = meta.maxzoom ?? 22;
+
+    if (view.getMinZoom() !== minZoom) {
+      view.setMinZoom(minZoom);
+    }
+    if (view.getMaxZoom() !== maxZoom) {
+      view.setMaxZoom(maxZoom);
+    }
 
     // Remove existing vector layer only, keep tile grid
     const existingVectorLayer = vectorLayerRef.current;
@@ -283,7 +297,7 @@ export default function Preview() {
       map.getView().fit(extent, {
         padding: [50, 50, 50, 50],
         duration: 1000,
-        maxZoom: 14, // Don't zoom in too close for single points
+        maxZoom: maxZoom, // Use the max zoom from metadata
       });
     }
   }, [meta, id, styleFunction, tileFormat]);

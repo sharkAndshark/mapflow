@@ -38,6 +38,8 @@ type FileMetadata = (
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<i32>,
+    Option<i32>,
 );
 
 pub use auth::{AuthBackend, User};
@@ -193,7 +195,7 @@ async fn get_preview_meta(
 
     // Check if file exists and get meta
     let mut stmt = conn
-        .prepare("SELECT name, crs, status, table_name, tile_format, tile_bounds FROM files WHERE id = ?")
+        .prepare("SELECT name, crs, status, table_name, tile_format, tile_bounds, minzoom, maxzoom FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
     let meta: Option<FileMetadata> = stmt
@@ -205,11 +207,13 @@ async fn get_preview_meta(
                 row.get(3)?,
                 row.get(4)?,
                 row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
             ))
         })
         .ok();
 
-    let (name, crs, status, table_name, tile_format, tile_bounds) = match meta {
+    let (name, crs, status, table_name, tile_format, tile_bounds, minzoom, maxzoom) = match meta {
         Some(m) => m,
         None => {
             return Err((
@@ -271,6 +275,8 @@ async fn get_preview_meta(
         crs,
         bbox: bbox_values,
         tile_format,
+        minzoom,
+        maxzoom,
     }))
 }
 

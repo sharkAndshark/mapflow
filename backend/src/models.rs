@@ -52,6 +52,10 @@ pub struct PreviewMeta {
     pub bbox: Option<[f64; 4]>, // minx, miny, maxx, maxy in WGS84
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tile_format: Option<String>, // "mvt", "png", or null
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minzoom: Option<i32>, // MBTiles: valid zoom range (min), null for dynamic tables
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maxzoom: Option<i32>, // MBTiles: valid zoom range (max), null for dynamic tables
 }
 
 #[allow(dead_code)]

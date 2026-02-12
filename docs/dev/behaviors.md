@@ -35,7 +35,7 @@
 |----|------|-----------|---------|---------|------|--------|
 | API-001 | 上传 | POST /api/uploads 需要认证，接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 200 + 元数据 / 400（格式无效） / 401（未认证） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
 | API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | `cargo test test_files_list` | Integration | P0 |
-| API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds 和 tile_format（"mvt"或"png"） | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tile_format / 401 / 404 / 409 + `{error}` | `cargo test test_preview_ready` | Integration | P0 |
+| API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tile_format（"mvt"或"png"）、minzoom、maxzoom；动态表返回计算的 bounds，minzoom/maxzoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tile_format? + minzoom? + maxzoom? / 401 / 404 / 409 + `{error}` | `cargo test test_preview_ready` | Integration | P0 |
 | API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证。动态生成：返回 MVT（Web Mercator 投影），包含几何和特征属性。MBTiles：直接查询 tiles 表，MVT 返回 `application/vnd.mapbox-vector-tile`，PNG 返回 `image/png`，不存在返回 204 No Content | 200 + MVT/PNG / 204 / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
 | API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序。MBTiles 文件不支持特征属性，返回 400 | 200 / 400（MBTiles） / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
 | API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{layers:[{id,description?,fields:[{name,type}]}]}`，type 为 MVT 兼容类型，按 ordinal 排序，仅 ready 状态可访问。MBTiles 文件从 metadata.json 提取图层信息，栅格瓦片返回空数组，普通数据集返回默认图层 | 200 + layers[] / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
@@ -60,6 +60,7 @@
 | UI-007 | 路由守卫 | 未认证访问受保护路由跳转登录页 | 自动跳转 | `npm run test:e2e` | E2E | P0 |
 | UI-008 | 发布按钮 | 文件列表每行显示"发布/复制/取消发布"操作按钮（仅 ready 状态），已发布文件显示"复制"和"取消发布" | 按钮状态正确 | `npm run test:e2e` | E2E | P0 |
 | UI-009 | 发布弹窗 | 点击"发布"打开模态框，显示文件名、slug 输入框（默认文件 ID）、公开地址预览，提交后更新列表 | 弹窗交互正确 | `npm run test:e2e` | E2E | P0 |
+| UI-010 | 缩放层级限制 | Preview 页面根据 API-003 返回的 minzoom/maxzoom 限制地图缩放。mbtiles 文件使用其元数据的缩放范围；动态表（非 mbtiles）不限制缩放（使用默认范围 0-22） | 地图缩放不超过允许范围 | `npm run test:e2e` | E2E | P1 |
 | E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_geojsonseq_lifecycle` | Integration | P0 |

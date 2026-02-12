@@ -903,6 +903,70 @@ async fn test_schema_endpoint_returns_fields_and_types() {
 }
 
 #[tokio::test]
+async fn test_dynamic_table_preview_returns_null_zoom() {
+    let (app, _temp) = setup_app().await;
+
+    let boundary = "------------------------boundaryDZ";
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+                "properties": {"name": "Test Point"}
+            }
+        ]
+    }"#;
+
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    // Get preview metadata
+    let preview_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/preview", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let preview_response = app.oneshot(preview_request).await.unwrap();
+    assert_eq!(preview_response.status(), axum::http::StatusCode::OK);
+
+    let preview_bytes = preview_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let preview: serde_json::Value = serde_json::from_slice(&preview_bytes).unwrap();
+
+    // Dynamic tables should return null for minzoom and maxzoom
+    assert!(preview["minzoom"].is_null());
+    assert!(preview["maxzoom"].is_null());
+}
+
+#[tokio::test]
 async fn test_schema_endpoint_returns_409_for_non_ready_file() {
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
@@ -2826,6 +2890,10 @@ async fn test_mbtiles_preview_includes_bounds() {
 
     // Should include tile_format
     assert_eq!(preview["tile_format"], "mvt");
+
+    // Should include minzoom and maxzoom from MBTiles metadata
+    assert_eq!(preview["minzoom"], 0);
+    assert_eq!(preview["maxzoom"], 2);
 }
 
 #[tokio::test]
