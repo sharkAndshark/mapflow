@@ -259,8 +259,8 @@ export default function Preview() {
     const view = map.getView();
 
     // Update zoom limits based on meta
-    const minZoom = meta.minzoom ?? 0;
-    const maxZoom = meta.maxzoom ?? 22;
+    const minZoom = meta.minZoom ?? 0;
+    const maxZoom = meta.maxZoom ?? 22;
 
     if (view.getMinZoom() !== minZoom) {
       view.setMinZoom(minZoom);

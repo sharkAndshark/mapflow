@@ -961,9 +961,9 @@ async fn test_dynamic_table_preview_returns_null_zoom() {
         .to_bytes();
     let preview: serde_json::Value = serde_json::from_slice(&preview_bytes).unwrap();
 
-    // Dynamic tables should return null for minzoom and maxzoom
-    assert!(preview["minzoom"].is_null());
-    assert!(preview["maxzoom"].is_null());
+    // Dynamic tables should return null for minZoom and maxZoom
+    assert!(preview["minZoom"].is_null());
+    assert!(preview["maxZoom"].is_null());
 }
 
 #[tokio::test]
@@ -2891,9 +2891,9 @@ async fn test_mbtiles_preview_includes_bounds() {
     // Should include tileFormat
     assert_eq!(preview["tileFormat"], "mvt");
 
-    // Should include minzoom and maxzoom from MBTiles metadata
-    assert_eq!(preview["minzoom"], 0);
-    assert_eq!(preview["maxzoom"], 2);
+    // Should include minZoom and maxZoom from MBTiles metadata
+    assert_eq!(preview["minZoom"], 0);
+    assert_eq!(preview["maxZoom"], 2);
 }
 
 #[tokio::test]
