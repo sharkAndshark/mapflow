@@ -2888,8 +2888,8 @@ async fn test_mbtiles_preview_includes_bounds() {
     assert!((bbox[2].as_f64().unwrap() - 180.0).abs() < 0.01);
     assert!((bbox[3].as_f64().unwrap() - 85.0).abs() < 0.01);
 
-    // Should include tile_format
-    assert_eq!(preview["tile_format"], "mvt");
+    // Should include tileFormat
+    assert_eq!(preview["tileFormat"], "mvt");
 
     // Should include minzoom and maxzoom from MBTiles metadata
     assert_eq!(preview["minzoom"], 0);
