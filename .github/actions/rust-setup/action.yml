@@ -1,0 +1,27 @@
+name: 'Rust Toolchain with Protobuf'
+description: 'Setup Rust toolchain with protobuf compiler'
+
+inputs:
+  components:
+    description: 'Additional Rust components to install'
+    required: false
+    default: ''
+  cache-workspaces:
+    description: 'Workspaces to cache (e.g., backend)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: ${{ inputs.components }}
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ${{ inputs.cache-workspaces }}
+
+    - name: Install protobuf compiler
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler

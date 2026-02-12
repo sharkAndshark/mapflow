@@ -13,14 +13,12 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/rust-setup
         with:
           components: rustfmt, clippy
-
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+          cache-workspaces: backend
 
       - name: Backend fmt (check)
         run: cargo fmt --manifest-path backend/Cargo.toml --all -- --check
@@ -31,9 +29,9 @@ jobs:
       - name: Backend tests
         run: cargo test --manifest-path backend/Cargo.toml
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -45,9 +43,13 @@ jobs:
         working-directory: frontend
         run: npm run test:unit
 
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
       - name: Frontend format (check)
         working-directory: frontend
-        run: npm run format:check
+        run: npx biome format .
 
       - name: Install Playwright browsers
         working-directory: frontend
@@ -61,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -74,88 +76,16 @@ jobs:
           platforms: linux/amd64
           tags: mapflow-smoke:${{ github.ref_name }}
 
-      - name: Smoke test container
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          port=39000
-          data_dir="${RUNNER_TEMP}/mapflow-data"
-          uploads_dir="${RUNNER_TEMP}/mapflow-uploads"
-          mkdir -p "$data_dir" "$uploads_dir"
-
-          cid=""
-          cleanup() {
-            if [ -n "$cid" ]; then
-              docker logs --tail 200 "$cid" || true
-              docker stop "$cid" >/dev/null 2>&1 || true
-            fi
-          }
-          trap cleanup EXIT
-
-          cid=$(docker run -d --rm \
-            -p "${port}:3000" \
-            -e PORT=3000 \
-            -e DB_PATH=/app/data/mapflow.duckdb \
-            -e UPLOAD_DIR=/app/uploads \
-            -v "${data_dir}:/app/data" \
-            -v "${uploads_dir}:/app/uploads" \
-            "mapflow-smoke:${{ github.ref_name }}")
-
-          for i in $(seq 1 60); do
-            if curl -fsS "http://127.0.0.1:${port}/api/files" >/dev/null; then
-              break
-            fi
-            sleep 0.5
-            if [ "$i" = "60" ]; then
-              echo "server did not become ready" >&2
-              exit 1
-            fi
-          done
-
-          curl -fsS "http://127.0.0.1:${port}/" >/dev/null
-
-          upload_resp=$(curl -fsS -F "file=@frontend/tests/fixtures/sample.geojson" "http://127.0.0.1:${port}/api/uploads")
-          id=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["id"])' <<<"$upload_resp")
-
-          for i in $(seq 1 120); do
-            st=$(curl -fsS "http://127.0.0.1:${port}/api/files" | python3 -c 'import json,sys; id=sys.argv[1]; items=json.load(sys.stdin); print(next((it.get("status","") for it in items if it.get("id")==id), ""))' "$id")
-            if [ "$st" = "ready" ]; then
-              break
-            fi
-            if [ "$st" = "failed" ]; then
-              echo "upload processing failed" >&2
-              exit 1
-            fi
-            sleep 0.5
-            if [ "$i" = "120" ]; then
-              echo "timeout waiting for ready" >&2
-              exit 1
-            fi
-          done
-
-          curl -fsS "http://127.0.0.1:${port}/api/files/${id}/preview" >/dev/null
-
-          # Golden tile compare to make the smoke test deterministic.
-          curl -fsS -o /tmp/mapflow_smoke_tile.mvt "http://127.0.0.1:${port}/api/files/${id}/tiles/0/0/0"
-          python3 - <<'PY'
-          import base64, hashlib
-          expected_b64 = open('testdata/smoke/expected_sample_z0_x0_y0.mvt.base64','r',encoding='ascii').read().strip()
-          expected = base64.b64decode(expected_b64)
-          got = open('/tmp/mapflow_smoke_tile.mvt','rb').read()
-          if got != expected:
-            print('tile mismatch')
-            print('expected_sha256', hashlib.sha256(expected).hexdigest())
-            print('got_sha256', hashlib.sha256(got).hexdigest())
-            raise SystemExit(1)
-          print('tile ok sha256', hashlib.sha256(got).hexdigest())
-          PY
+      - name: Smoke test container (golden tile)
+        uses: ./.github/actions/smoke-test
+        with:
+          image: mapflow-smoke:${{ github.ref_name }}
 
   docker:
     runs-on: ubuntu-latest
     needs: docker_smoke
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Compute image name
         id: image
@@ -195,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: docker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
