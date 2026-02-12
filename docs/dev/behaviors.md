@@ -20,6 +20,7 @@
 - **GPX：** GPS Exchange Format (`.gpx`)
 - **TopoJSON：** 拓扑优化的 GeoJSON (`.topojson`)
 - **MBTiles：** 预渲染瓦片集合 (`.mbtiles`)，支持矢量瓦片（MVT/PBF）和栅格瓦片（PNG）。MBTiles 文件直接读取原始 SQLite，不导入 DuckDB。矢量瓦片支持交互（特征点击、属性检查），栅格瓦片仅静态显示。
+- **PMTiles：** 单文件瓦片归档格式 (`.pmtiles`)，支持矢量瓦片（MVT）。通过 HTTP Range 请求高效读取，无需解压。🆕
 
 **测试覆盖的几何类型：**
 - ✅ Point (OSM-002: sf_points)
@@ -43,7 +44,9 @@
 | API-008 | 取消发布 | POST /api/files/:id/unpublish 需要认证，设置 `is_public=FALSE` 并清空 `public_slug` | 200 / 401 / 404 | `cargo test test_unpublish_*` | Integration | P0 |
 | API-009 | 公开地址 | GET /api/files/:id/public-url 需要认证，返回当前文件的公开 URL 模板 | 200 + `{slug,url}` / 401 / 404 | `cargo test test_public_url_*` | Integration | P1 |
 | API-010 | 公开瓦片 | GET /tiles/:slug/:z/:x/:y **无需认证**，验证 `public_slug` 存在且 `is_public=TRUE`。动态生成返回 MVT；MBTiles 返回 MVT 或 PNG（取决于 tile_format） | 200 + MVT/PNG / 204 / 400 / 404 | `cargo test test_public_tiles_*` | Integration | P0 |
-| API-011 | 测试端点 | POST /api/test/reset 重置数据库和存储，仅在 debug + MAPFLOW_TEST_MODE=1 | 执行成功，仅在 debug 构建 | `cargo test test_reset` | Integration | P2 |
+| API-011 | 公开PMTiles | GET /tiles/:slug **无需认证**，PMTiles HTTP Range 代理。处理 Range 请求头，返回对应字节范围。支持 `HEAD` 检测文件大小。PMTiles 格式单文件包含所有瓦片和元数据 | 206（Partial Content）/ 200（HEAD）/ 404 / 416（Range Invalid） | 手动测试 | Integration | P0 |
+| API-012 | 公开瓦片元数据 | GET /tiles/:slug/meta **无需认证**，返回公开瓦片的元数据（name, tile_source, tile_url, viewer_url）用于前端判断使用哪种瓦片源 | 200 + `{slug,name,tile_source,tile_url,viewer_url}` / 404 | 手动测试 | Integration | P0 |
+| API-013 | 测试端点 | POST /api/test/reset 重置数据库和存储，仅在 debug + MAPFLOW_TEST_MODE=1 | 执行成功，仅在 debug 构建 | `cargo test test_reset` | Integration | P2 |
 | AUTH-001 | 首次设置 | POST /api/auth/init 创建初始管理员 | 200 / 400 / 409 / 500 | `npm run test:e2e` | E2E | P0 |
 | AUTH-002 | 登录 | POST /api/auth/login 验证凭证，设置会话 | 200 / 401 / 500 | `npm run test:e2e` | E2E | P0 |
 | AUTH-003 | 登出 | POST /api/auth/logout 清除会话 | 204 / 500 | `npm run test:e2e` | E2E | P0 |
@@ -60,6 +63,7 @@
 | UI-007 | 路由守卫 | 未认证访问受保护路由跳转登录页 | 自动跳转 | `npm run test:e2e` | E2E | P0 |
 | UI-008 | 发布按钮 | 文件列表每行显示"发布/复制/取消发布"操作按钮（仅 ready 状态），已发布文件显示"复制"和"取消发布" | 按钮状态正确 | `npm run test:e2e` | E2E | P0 |
 | UI-009 | 发布弹窗 | 点击"发布"打开模态框，显示文件名、slug 输入框（默认文件 ID）、公开地址预览，提交后更新列表 | 弹窗交互正确 | `npm run test:e2e` | E2E | P0 |
+| UI-010 | 公开地图页面 | /tiles/:slug 无需认证，显示全屏地图。根据 tile_source 使用不同渲染方式：PMTiles 使用 ol-pmtiles（直接 HTTP Range），其他使用传统 XYZ 瓦片请求。支持加载状态和错误提示 | 地图正确加载，瓦片显示 | 手动测试 | E2E | P0 |
 | E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_geojsonseq_lifecycle` | Integration | P0 |
@@ -68,6 +72,7 @@
 | E2E-006 | 完整上传（TopoJSON） | 上传 .topojson → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_topojson_lifecycle` | Integration | P0 |
 | E2E-006a | 完整上传（MBTiles MVT） | 上传 .mbtiles（矢量） → 列表更新 → ready → preview 返回 bounds 和 tile_format=mvt → 瓦片端点返回 MVT 格式 | 端到端流程成功 | `cargo test test_upload_mbtiles_success` | Integration | P0 |
 | E2E-006b | 完整上传（MBTiles PNG） | 上传 .mbtiles（栅格） → 列表更新 → ready → preview 返回 bounds 和 tile_format=png → 瓦片端点返回 PNG 格式 → 前端禁用特征交互 | 端到端流程成功 | `cargo test test_mbtiles_tile_returns_correct_format` | Integration | P0 |
+| E2E-006c | 完整上传（PMTiles） | 上传 .pmtiles → 列表更新 → ready → 发布 → 公开地图页面加载 → 使用 ol-pmtiles 直接渲染（无需后端瓦片请求） | 端到端流程成功 | 手动测试 | Integration | P0 |
 | E2E-007 | 重启持久化 | 重启后之前上传的文件仍可访问 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-008 | 预览集成 | 点击预览 → 新标签页打开 → 地图加载 → 瓦片请求成功（200 OK 且非空） | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-009 | 认证流程 | 首次访问 → 设置 → 登录 → 使用 → 登出 | 状态正确 | `npm run test:e2e` | E2E | P0 |

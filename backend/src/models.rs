@@ -8,7 +8,7 @@ use crate::{AuthBackend, DuckDBStore};
 #[derive(Clone)]
 pub struct AppState {
     pub upload_dir: PathBuf,
-    pub upload_dir_canonical: PathBuf,  // Pre-computed for security checks
+    pub upload_dir_canonical: PathBuf, // Pre-computed for security checks
     pub db: Arc<Mutex<duckdb::Connection>>,
     pub max_size: u64,
     pub max_size_label: String,
@@ -56,7 +56,7 @@ pub struct PreviewMeta {
     pub bbox: Option<[f64; 4]>, // minx, miny, maxx, maxy in WGS84
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tile_format: Option<String>, // "mvt", "png", or null
-    pub tile_source: Option<String>,  // "duckdb", "mbtiles", "pmtiles"
+    pub tile_source: Option<String>, // "duckdb", "mbtiles", "pmtiles"
 }
 
 #[allow(dead_code)]

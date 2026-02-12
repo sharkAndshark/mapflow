@@ -252,7 +252,9 @@ export default function Preview() {
     if (meta.tileSource === 'pmtiles') {
       // PMTiles files need to be published first for preview
       // Show a message to the user
-      setError('PMTiles files need to be published before preview. Please publish this file first.');
+      setError(
+        'PMTiles files need to be published before preview. Please publish this file first.',
+      );
       return;
     }
 

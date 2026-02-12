@@ -504,7 +504,8 @@ export default function App() {
         <div className="panel-header">
           <h2>上传文件</h2>
           <span className="panel-meta">
-            支持 .pmtiles / .zip / .geojson / .geojsonl / .kml / .gpx / .topojson，单文件最大 200MB（可配置）
+            支持 .pmtiles / .zip / .geojson / .geojsonl / .kml / .gpx / .topojson，单文件最大
+            200MB（可配置）
           </span>
         </div>
 

@@ -17,8 +17,7 @@ use std::path::Path;
 /// Validate that a file is a valid MBTiles SQLite database
 /// with the required metadata and tiles tables
 pub fn validate_mbtiles_structure(file_path: &Path) -> Result<(), String> {
-    let conn = Connection::open(file_path)
-        .map_err(|e| format!("Invalid MBTiles file: {}", e))?;
+    let conn = Connection::open(file_path).map_err(|e| format!("Invalid MBTiles file: {}", e))?;
 
     // Check metadata table exists
     let has_metadata: bool = conn
@@ -52,7 +51,7 @@ pub fn validate_mbtiles_structure(file_path: &Path) -> Result<(), String> {
 /// MBTiles metadata extracted from the metadata table
 #[derive(Debug)]
 pub struct MbtilesMetadata {
-    pub format: String,        // "pbf" or "png"
+    pub format: String,         // "pbf" or "png"
     pub bounds: Option<String>, // "minx,miny,maxx,maxy"
     #[allow(dead_code)]
     pub center: Option<String>,
@@ -64,8 +63,8 @@ pub struct MbtilesMetadata {
 
 /// Extract metadata from an MBTiles file
 pub fn extract_mbtiles_metadata(file_path: &Path) -> Result<MbtilesMetadata, String> {
-    let conn = Connection::open(file_path)
-        .map_err(|e| format!("Cannot open MBTiles file: {}", e))?;
+    let conn =
+        Connection::open(file_path).map_err(|e| format!("Cannot open MBTiles file: {}", e))?;
 
     let mut format = String::from("pbf");
     let mut bounds = None;
@@ -81,10 +80,7 @@ pub fn extract_mbtiles_metadata(file_path: &Path) -> Result<MbtilesMetadata, Str
 
     let rows = stmt
         .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-            ))
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| format!("Failed to execute metadata query: {}", e))?;
 
@@ -126,12 +122,7 @@ pub async fn import_mbtiles(
     let tile_format = match metadata.format.as_str() {
         "pbf" => "mvt",
         "png" | "jpg" | "jpeg" => "png",
-        _ => {
-            return Err(format!(
-                "Unsupported tile format: {}",
-                metadata.format
-            ))
-        }
+        _ => return Err(format!("Unsupported tile format: {}", metadata.format)),
     };
 
     // Parse bounds into JSON array
@@ -141,10 +132,7 @@ pub async fn import_mbtiles(
         if parts.len() != 4 {
             return None;
         }
-        let parsed: Vec<f64> = parts
-            .iter()
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
+        let parsed: Vec<f64> = parts.iter().filter_map(|s| s.trim().parse().ok()).collect();
         if parsed.len() == 4 {
             Some(serde_json::json!(parsed).to_string())
         } else {
@@ -174,8 +162,8 @@ pub async fn get_tile_from_mbtiles(
     // TMS y = 2^z - 1 - XYZ y
     let tms_y = (1_i32 << z) - 1 - y;
 
-    let conn = Connection::open(file_path)
-        .map_err(|e| format!("Cannot open MBTiles file: {}", e))?;
+    let conn =
+        Connection::open(file_path).map_err(|e| format!("Cannot open MBTiles file: {}", e))?;
 
     let tile_data: Option<Vec<u8>> = conn
         .query_row(
@@ -196,6 +184,7 @@ pub fn resolve_mbtiles_path(file_path: &str) -> std::path::PathBuf {
 
     // Handle paths like "./absolute/path" -> "absolute/path"
     // This happens when strip_prefix creates a path starting with ./
+    #[allow(clippy::manual_strip)]
     if file_path.starts_with("./") {
         PathBuf::from(&file_path[2..])
     } else if file_path.starts_with('.') {

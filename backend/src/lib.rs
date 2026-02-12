@@ -41,9 +41,10 @@ pub use db::{
 use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
+use mbtiles::import_mbtiles;
 pub use models::{
-    AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta, PublicTileMeta, PublicTileUrl,
-    PublishRequest, PublishResponse,
+    AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta, PublicTileMeta,
+    PublicTileUrl, PublishRequest, PublishResponse,
 };
 use models::{FeaturePropertiesResponse, FeatureProperty};
 pub use password::{hash_password, validate_password_complexity, verify_password, PasswordError};
@@ -51,7 +52,6 @@ pub use session_store::DuckDBStore;
 use test_routes::add_test_routes;
 use tiles::build_mvt_select_sql;
 pub use validation::{validate_geojson, validate_shapefile_zip};
-use mbtiles::import_mbtiles;
 
 pub fn build_api_router(state: AppState) -> Router {
     build_api_router_with_auth(state, true)
@@ -191,23 +191,47 @@ async fn get_preview_meta(
         .prepare("SELECT name, crs, status, table_name, tile_source, tile_format, tile_bounds, minzoom, maxzoom FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
-    let meta: Option<(String, Option<String>, String, Option<String>, String, Option<String>, Option<String>, Option<i32>, Option<i32>)> = stmt
+    #[allow(clippy::type_complexity)]
+    type FileMeta = (
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<i32>,
+        Option<i32>,
+    );
+
+    let meta: Option<FileMeta> = stmt
         .query_row(duckdb::params![id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+            ))
         })
         .ok();
 
-    let (name, crs, status, table_name, tile_source, tile_format, tile_bounds, _minzoom, _maxzoom) = match meta {
-        Some(m) => m,
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "File not found".to_string(),
-                }),
-            ))
-        }
-    };
+    let (name, crs, status, table_name, tile_source, tile_format, tile_bounds, _minzoom, _maxzoom) =
+        match meta {
+            Some(m) => m,
+            None => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "File not found".to_string(),
+                    }),
+                ))
+            }
+        };
 
     if status != "ready" {
         return Err((
@@ -286,7 +310,15 @@ async fn get_tile(
         .query_row(
             "SELECT crs, status, table_name, tile_format, path FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .map_err(|_| {
             (
@@ -776,21 +808,24 @@ async fn upload_file(
             );
         });
 
-        return Ok((StatusCode::CREATED, Json(FileItem {
-            id: upload_id,
-            name: base_name,
-            file_type: file_type.to_string(),
-            size,
-            uploaded_at,
-            status: "uploaded".to_string(),  // Initial status, will change to ready asynchronously
-            crs: Some("EPSG:3857".to_string()),
-            path: rel_string,
-            table_name: None,
-            error: None,
-            is_public: Some(false),
-            public_slug: None,
-            tile_source: Some(tile_source.to_string()),
-        })));
+        return Ok((
+            StatusCode::CREATED,
+            Json(FileItem {
+                id: upload_id,
+                name: base_name,
+                file_type: file_type.to_string(),
+                size,
+                uploaded_at,
+                status: "uploaded".to_string(), // Initial status, will change to ready asynchronously
+                crs: Some("EPSG:3857".to_string()),
+                path: rel_string,
+                table_name: None,
+                error: None,
+                is_public: Some(false),
+                public_slug: None,
+                tile_source: Some(tile_source.to_string()),
+            }),
+        ));
     }
 
     // For PMTiles, mark as ready immediately (metadata is extracted on first tile request)
@@ -806,27 +841,30 @@ async fn upload_file(
             );
         });
 
-        return Ok((StatusCode::CREATED, Json(FileItem {
-            id: upload_id,
-            name: base_name,
-            file_type: file_type.to_string(),
-            size,
-            uploaded_at,
-            status: "uploaded".to_string(),  // Initial status, will change to ready asynchronously
-            crs: Some("EPSG:3857".to_string()),
-            path: rel_string,
-            table_name: None,
-            error: None,
-            is_public: Some(false),
-            public_slug: None,
-            tile_source: Some(tile_source.to_string()),
-        })));
+        return Ok((
+            StatusCode::CREATED,
+            Json(FileItem {
+                id: upload_id,
+                name: base_name,
+                file_type: file_type.to_string(),
+                size,
+                uploaded_at,
+                status: "uploaded".to_string(), // Initial status, will change to ready asynchronously
+                crs: Some("EPSG:3857".to_string()),
+                path: rel_string,
+                table_name: None,
+                error: None,
+                is_public: Some(false),
+                public_slug: None,
+                tile_source: Some(tile_source.to_string()),
+            }),
+        ));
     }
 
     let db = state.db.clone();
     let upload_id_clone = upload_id.clone();
     let file_path_clone = file_path.clone();
-    let file_type_clone = file_type.to_string();
+    let _file_type_clone = file_type.to_string();
     tokio::spawn(async move {
         // Set status to processing
         {
@@ -837,10 +875,9 @@ async fn upload_file(
             );
         }
 
-        let result = match file_type_clone.as_str() {
-            "mbtiles" => import_mbtiles(&db, &upload_id_clone, &file_path_clone).await,
-            _ => import_spatial_data(&db, &upload_id_clone, &file_path_clone).await,
-        };
+        // Import spatial data (GeoJSON, Shapefile, etc.)
+        // MBTiles and PMTiles are handled above and returned early
+        let result = import_spatial_data(&db, &upload_id_clone, &file_path_clone).await;
 
         match result {
             Ok(_) => {
@@ -1285,16 +1322,14 @@ async fn get_public_pmtiles(
 
     // Validate path is within upload_dir (security check)
     let full_path = state.upload_dir_canonical.join(&pmtiles_path);
-    let canonical_path = full_path
-        .canonicalize()
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Invalid file path".to_string(),
-                }),
-            )
-        })?;
+    let canonical_path = full_path.canonicalize().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Invalid file path".to_string(),
+            }),
+        )
+    })?;
 
     if !canonical_path.starts_with(&state.upload_dir_canonical) {
         return Err((
@@ -1329,7 +1364,9 @@ async fn get_public_pmtiles(
                 let end_val = if parts[1].is_empty() {
                     file_len.saturating_sub(1)
                 } else {
-                    parts[1].parse::<u64>().unwrap_or(file_len.saturating_sub(1))
+                    parts[1]
+                        .parse::<u64>()
+                        .unwrap_or(file_len.saturating_sub(1))
                 };
                 (start_val, end_val, true)
             } else {
@@ -1355,16 +1392,14 @@ async fn get_public_pmtiles(
 
     // For simplicity, read the entire file into memory
     // For large files, this should be replaced with streaming
-    let data = fs::read(&canonical_path)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to read file".to_string(),
-                }),
-            )
-        })?;
+    let data = fs::read(&canonical_path).await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Failed to read file".to_string(),
+            }),
+        )
+    })?;
 
     let start_usize = start as usize;
     let end_usize = end.saturating_add(1) as usize;
@@ -1393,22 +1428,22 @@ async fn get_public_pmtiles(
         header::CONTENT_LENGTH,
         format!("{}", data_len).parse().unwrap(),
     );
-    response.headers_mut().insert(
-        header::ACCEPT_RANGES,
-        "bytes".parse().unwrap(),
-    );
+    response
+        .headers_mut()
+        .insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         "public, max-age=31536000, immutable".parse().unwrap(),
     );
-    response.headers_mut().insert(
-        header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        "*".parse().unwrap(),
-    );
+    response
+        .headers_mut()
+        .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
     if is_range {
         response.headers_mut().insert(
             header::CONTENT_RANGE,
-            format!("bytes {}-{}/{}", start, end, file_len).parse().unwrap(),
+            format!("bytes {}-{}/{}", start, end, file_len)
+                .parse()
+                .unwrap(),
         );
     }
 
