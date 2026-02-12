@@ -22,8 +22,10 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
 
     let conn = duckdb::Connection::open(db_path).expect("Failed to open database");
 
-    conn.execute_batch("INSTALL spatial; LOAD spatial;")
-        .expect("Failed to install and load spatial extension");
+    if let Err(e) = conn.execute_batch("INSTALL spatial; LOAD spatial;") {
+        eprintln!("Warning: Failed to load spatial extension: {}", e);
+        eprintln!("Spatial features will not be available");
+    }
 
     conn.execute_batch(
         r"
