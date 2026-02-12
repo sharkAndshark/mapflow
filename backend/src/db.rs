@@ -39,28 +39,49 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             table_name VARCHAR,
             error VARCHAR,
             is_public BOOLEAN DEFAULT FALSE,
+            tile_source VARCHAR DEFAULT 'duckdb',
             tile_format VARCHAR,
             minzoom INTEGER,
             maxzoom INTEGER,
-            tile_bounds VARCHAR
+            tile_bounds VARCHAR,
+            mbtiles_path VARCHAR,
+            pmtiles_path VARCHAR
         );
 
         CREATE TABLE IF NOT EXISTS published_files (
             file_id VARCHAR PRIMARY KEY,
             slug VARCHAR UNIQUE NOT NULL,
             published_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            tile_source VARCHAR DEFAULT 'duckdb',
+            tile_format VARCHAR,
+            minzoom INTEGER,
+            maxzoom INTEGER,
+            tile_bounds VARCHAR,
+            mbtiles_path VARCHAR,
+            pmtiles_path VARCHAR,
             FOREIGN KEY (file_id) REFERENCES files(id)
         );
         ",
     )
     .expect("Failed to create files table");
 
-    // Add new columns for MBTiles support (if they don't exist)
-    // These ALTER TABLE statements are idempotent - they will fail silently if columns exist
+    // Add new columns for existing databases (migration)
+    // These ALTER TABLE statements are idempotent
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN tile_source VARCHAR DEFAULT 'duckdb'", []);
     let _ = conn.execute("ALTER TABLE files ADD COLUMN tile_format VARCHAR", []);
     let _ = conn.execute("ALTER TABLE files ADD COLUMN minzoom INTEGER", []);
     let _ = conn.execute("ALTER TABLE files ADD COLUMN maxzoom INTEGER", []);
     let _ = conn.execute("ALTER TABLE files ADD COLUMN tile_bounds VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN mbtiles_path VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN pmtiles_path VARCHAR", []);
+
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN tile_source VARCHAR DEFAULT 'duckdb'", []);
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN tile_format VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN minzoom INTEGER", []);
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN maxzoom INTEGER", []);
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN tile_bounds VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN mbtiles_path VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN pmtiles_path VARCHAR", []);
 
     conn.execute_batch(
         r"

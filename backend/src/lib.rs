@@ -1,7 +1,8 @@
 use axum::{
+    body::Body,
     extract::{DefaultBodyLimit, Multipart, Path as AxumPath, State},
-    http::{header, StatusCode},
-    response::IntoResponse,
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -41,7 +42,7 @@ use duckdb::types::ValueRef;
 use http_errors::{bad_request, internal_error, payload_too_large};
 use import::import_spatial_data;
 pub use models::{
-    AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta, PublicTileUrl,
+    AppState, ErrorResponse, FileItem, FileSchemaResponse, PreviewMeta, PublicTileMeta, PublicTileUrl,
     PublishRequest, PublishResponse,
 };
 use models::{FeaturePropertiesResponse, FeatureProperty};
@@ -98,7 +99,9 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
     let auth_router = build_auth_router();
     let public_router = Router::new()
         .route("/api/test/is-initialized", get(check_is_initialized))
-        .route("/tiles/{slug}/{z}/{x}/{y}", get(get_public_tile));
+        .route("/tiles/{slug}/{z}/{x}/{y}", get(get_public_tile))
+        .route("/tiles/{slug}", get(get_public_pmtiles))
+        .route("/tiles/{slug}/meta", get(get_public_tile_meta));
 
     let mut api_router = Router::new()
         .route("/api/files", get(list_files))
@@ -136,7 +139,7 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.path, f.table_name, f.error, f.is_public, pf.slug
+            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_source
           FROM files f
           LEFT JOIN published_files pf ON f.id = pf.file_id
           ORDER BY f.uploaded_at DESC",
@@ -149,6 +152,7 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
             let error: Option<String> = row.get(9)?;
             let is_public: bool = row.get(10).unwrap_or(false);
             let public_slug: Option<String> = row.get(11).ok();
+            let tile_source: String = row.get(12).unwrap_or_else(|_| "duckdb".to_string());
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -165,6 +169,7 @@ async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
                 error,
                 is_public: Some(is_public),
                 public_slug,
+                tile_source: Some(tile_source),
             })
         })
         .unwrap()
@@ -183,16 +188,16 @@ async fn get_preview_meta(
 
     // Check if file exists and get meta
     let mut stmt = conn
-        .prepare("SELECT name, crs, status, table_name, tile_format, tile_bounds FROM files WHERE id = ?")
+        .prepare("SELECT name, crs, status, table_name, tile_source, tile_format, tile_bounds, minzoom, maxzoom FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
-    let meta: Option<(String, Option<String>, String, Option<String>, Option<String>, Option<String>)> = stmt
+    let meta: Option<(String, Option<String>, String, Option<String>, String, Option<String>, Option<String>, Option<i32>, Option<i32>)> = stmt
         .query_row(duckdb::params![id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?))
         })
         .ok();
 
-    let (name, crs, status, table_name, tile_format, tile_bounds) = match meta {
+    let (name, crs, status, table_name, tile_source, tile_format, tile_bounds, _minzoom, _maxzoom) = match meta {
         Some(m) => m,
         None => {
             return Err((
@@ -254,6 +259,7 @@ async fn get_preview_meta(
         crs,
         bbox: bbox_values,
         tile_format,
+        tile_source: Some(tile_source),
     }))
 }
 
@@ -619,8 +625,9 @@ async fn upload_file(
         ".gpx" => "gpx",
         ".topojson" => "topojson",
         ".mbtiles" => "mbtiles",
+        ".pmtiles" => "pmtiles",
         _ => return Err(bad_request(
-            "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, .topojson, or .mbtiles",
+            "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, .topojson, .mbtiles, or .pmtiles",
         )),
     };
 
@@ -655,11 +662,20 @@ async fn upload_file(
         "shapefile" => validate_shapefile_zip(&file_path).await,
         "geojson" => validate_geojson(&file_path).await,
         "mbtiles" => mbtiles::validate_mbtiles_structure(&file_path),
-        "geojsonl" | "kml" | "gpx" | "topojson" => Ok(()), // Trust GDAL to validate
+        "geojsonl" | "kml" | "gpx" | "topojson" | "pmtiles" => Ok(()), // Trust GDAL to validate, PMTiles don't need validation
         _ => Ok(()), // Unreachable due to earlier validation, but required for type safety
     };
 
     let uploaded_at = Utc::now().to_rfc3339();
+    let is_mbtiles = ext.as_str() == ".mbtiles";
+    let is_pmtiles = ext.as_str() == ".pmtiles";
+    let tile_source = if is_mbtiles {
+        "mbtiles"
+    } else if is_pmtiles {
+        "pmtiles"
+    } else {
+        "duckdb"
+    };
 
     // Calculate relative path for storage
     let relative = file_path
@@ -671,13 +687,25 @@ async fn upload_file(
         rel_string = format!("./{rel_string}");
     }
 
+    // For MBTiles/PMtiles files, path is relative path within uploads directory
+    let mbtiles_path = if is_mbtiles {
+        Some(format!("{}/{}", upload_id, safe_name))
+    } else {
+        None
+    };
+    let pmtiles_path = if is_pmtiles {
+        Some(format!("{}/{}", upload_id, safe_name))
+    } else {
+        None
+    };
+
     let conn = state.db.lock().await;
 
     if let Err(message) = validation {
         let size_i64 = size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, tile_source, mbtiles_path, pmtiles_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             duckdb::params![
                 &upload_id,
                 &base_name,
@@ -688,8 +716,11 @@ async fn upload_file(
                 &None::<String>,
                 &rel_string,
                 &None::<String>,
-                &Some(message.clone()),
+                &Some::<String>(message.clone()),
                 false,
+                tile_source,
+                &mbtiles_path,
+                &pmtiles_path,
             ],
         )
         .map_err(internal_error)?;
@@ -700,8 +731,8 @@ async fn upload_file(
 
     let size_i64 = size as i64;
     conn.execute(
-        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, tile_source, mbtiles_path, pmtiles_path)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         duckdb::params![
             &upload_id,
             &base_name,
@@ -714,11 +745,83 @@ async fn upload_file(
             &None::<String>,
             &None::<String>,
             false,
+            tile_source,
+            &mbtiles_path,
+            &pmtiles_path,
         ],
     )
     .map_err(internal_error)?;
 
     drop(conn);
+
+    // For MBTiles, extract metadata and mark as ready immediately
+    if is_mbtiles {
+        let db = state.db.clone();
+        let upload_id_clone = upload_id.clone();
+        let file_path_clone = file_path.clone();
+
+        // Import MBTiles metadata (extracts tile_format, bounds, zoom levels)
+        let import_result = import_mbtiles(&db, &upload_id_clone, &file_path_clone).await;
+
+        if let Err(e) = import_result {
+            return Err(bad_request(&e));
+        }
+
+        // Mark as ready after successful import
+        tokio::spawn(async move {
+            let conn = db.lock().await;
+            let _ = conn.execute(
+                "UPDATE files SET status = 'ready' WHERE id = ?",
+                duckdb::params![upload_id_clone],
+            );
+        });
+
+        return Ok((StatusCode::CREATED, Json(FileItem {
+            id: upload_id,
+            name: base_name,
+            file_type: file_type.to_string(),
+            size,
+            uploaded_at,
+            status: "uploaded".to_string(),  // Initial status, will change to ready asynchronously
+            crs: Some("EPSG:3857".to_string()),
+            path: rel_string,
+            table_name: None,
+            error: None,
+            is_public: Some(false),
+            public_slug: None,
+            tile_source: Some(tile_source.to_string()),
+        })));
+    }
+
+    // For PMTiles, mark as ready immediately (metadata is extracted on first tile request)
+    if is_pmtiles {
+        let db = state.db.clone();
+        let upload_id_clone = upload_id.clone();
+        // Mark as ready asynchronously
+        tokio::spawn(async move {
+            let conn = db.lock().await;
+            let _ = conn.execute(
+                "UPDATE files SET status = 'ready' WHERE id = ?",
+                duckdb::params![upload_id_clone],
+            );
+        });
+
+        return Ok((StatusCode::CREATED, Json(FileItem {
+            id: upload_id,
+            name: base_name,
+            file_type: file_type.to_string(),
+            size,
+            uploaded_at,
+            status: "uploaded".to_string(),  // Initial status, will change to ready asynchronously
+            crs: Some("EPSG:3857".to_string()),
+            path: rel_string,
+            table_name: None,
+            error: None,
+            is_public: Some(false),
+            public_slug: None,
+            tile_source: Some(tile_source.to_string()),
+        })));
+    }
 
     let db = state.db.clone();
     let upload_id_clone = upload_id.clone();
@@ -776,6 +879,7 @@ async fn upload_file(
         error: None,
         is_public: Some(false),
         public_slug: None,
+        tile_source: Some(tile_source.to_string()),
     };
 
     Ok((StatusCode::CREATED, Json(meta)))
@@ -815,11 +919,11 @@ async fn publish_file(
         .map_err(internal_error)?;
 
     // Check file status within transaction to provide better error messages
-    let (status, _name): (String, String) = conn
+    let (status, _name, tile_source, pmtiles_path): (String, String, String, Option<String>) = conn
         .query_row(
-            "SELECT status, name FROM files WHERE id = ?",
+            "SELECT status, name, tile_source, pmtiles_path FROM files WHERE id = ?",
             duckdb::params![&id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|_| {
             (
@@ -842,8 +946,8 @@ async fn publish_file(
     }
 
     let insert_result = conn.execute(
-        "INSERT INTO published_files (file_id, slug) VALUES (?, ?)",
-        duckdb::params![&id, &slug],
+        "INSERT INTO published_files (file_id, slug, tile_source, pmtiles_path) VALUES (?, ?, ?, ?)",
+        duckdb::params![&id, &slug, &tile_source, &pmtiles_path],
     );
 
     let publish_result: Result<(), String> = match insert_result {
@@ -1139,6 +1243,219 @@ async fn get_public_tile(
     }
 }
 
+async fn get_public_pmtiles(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    headers: HeaderMap,
+) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
+    // Validate slug format to prevent injection attacks
+    let validated_slug = validate_slug(&slug).map_err(|e| bad_request(&e))?;
+
+    let conn = state.db.lock().await;
+
+    // Get file metadata from published_files
+    let (_file_id, pmtiles_path): (String, Option<String>) = conn
+        .query_row(
+            "SELECT pf.file_id, f.pmtiles_path
+             FROM published_files pf
+             JOIN files f ON pf.file_id = f.id
+             WHERE pf.slug = ? AND f.is_public = TRUE AND f.tile_source = 'pmtiles'",
+            duckdb::params![&validated_slug],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Public PMTiles file not found".to_string(),
+                }),
+            )
+        })?;
+
+    drop(conn);
+
+    let pmtiles_path = pmtiles_path.ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "PMTiles path not configured".to_string(),
+            }),
+        )
+    })?;
+
+    // Validate path is within upload_dir (security check)
+    let full_path = state.upload_dir_canonical.join(&pmtiles_path);
+    let canonical_path = full_path
+        .canonicalize()
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Invalid file path".to_string(),
+                }),
+            )
+        })?;
+
+    if !canonical_path.starts_with(&state.upload_dir_canonical) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Access denied".to_string(),
+            }),
+        ));
+    }
+
+    // Get file metadata for Range support
+    let file_len = fs::metadata(&canonical_path)
+        .await
+        .map(|m| m.len())
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to read file metadata".to_string(),
+                }),
+            )
+        })?;
+
+    // Parse Range header if present
+    let range_header = headers.get("range");
+    let (start, end, is_range) = if let Some(range_val) = range_header {
+        let range_str = range_val.to_str().unwrap_or("");
+        if let Some(rest) = range_str.strip_prefix("bytes=") {
+            let parts: Vec<&str> = rest.split('-').collect();
+            if parts.len() == 2 {
+                let start_val = parts[0].parse::<u64>().unwrap_or(0);
+                let end_val = if parts[1].is_empty() {
+                    file_len.saturating_sub(1)
+                } else {
+                    parts[1].parse::<u64>().unwrap_or(file_len.saturating_sub(1))
+                };
+                (start_val, end_val, true)
+            } else {
+                (0, file_len.saturating_sub(1), false)
+            }
+        } else {
+            (0, file_len.saturating_sub(1), false)
+        }
+    } else {
+        (0, file_len.saturating_sub(1), false)
+    };
+
+    // Validate range
+    if start >= file_len || end >= file_len || start > end {
+        let mut response = Response::new(Body::from(Vec::new()));
+        *response.status_mut() = StatusCode::RANGE_NOT_SATISFIABLE;
+        response.headers_mut().insert(
+            header::CONTENT_RANGE,
+            format!("bytes */{file_len}").parse().unwrap(),
+        );
+        return Ok(response);
+    }
+
+    // For simplicity, read the entire file into memory
+    // For large files, this should be replaced with streaming
+    let data = fs::read(&canonical_path)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to read file".to_string(),
+                }),
+            )
+        })?;
+
+    let start_usize = start as usize;
+    let end_usize = end.saturating_add(1) as usize;
+    let data = if start_usize < data.len() {
+        data.get(start_usize..end_usize.min(data.len()))
+            .unwrap_or(&[])
+            .to_vec()
+    } else {
+        vec![]
+    };
+
+    let data_len = data.len();
+    let status = if is_range {
+        StatusCode::PARTIAL_CONTENT
+    } else {
+        StatusCode::OK
+    };
+
+    let mut response = Response::new(Body::from(data));
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        "application/x-protobuf".parse().unwrap(),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_LENGTH,
+        format!("{}", data_len).parse().unwrap(),
+    );
+    response.headers_mut().insert(
+        header::ACCEPT_RANGES,
+        "bytes".parse().unwrap(),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        "public, max-age=31536000, immutable".parse().unwrap(),
+    );
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        "*".parse().unwrap(),
+    );
+    if is_range {
+        response.headers_mut().insert(
+            header::CONTENT_RANGE,
+            format!("bytes {}-{}/{}", start, end, file_len).parse().unwrap(),
+        );
+    }
+
+    Ok(response)
+}
+
+async fn get_public_tile_meta(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    // Validate slug format to prevent injection attacks
+    let validated_slug = validate_slug(&slug).map_err(|e| bad_request(&e))?;
+
+    let conn = state.db.lock().await;
+
+    let (name, tile_source, _file_id): (String, String, String) = conn
+        .query_row(
+            "SELECT f.name, f.tile_source, pf.file_id
+             FROM published_files pf
+             JOIN files f ON pf.file_id = f.id
+             WHERE pf.slug = ? AND f.is_public = TRUE",
+            duckdb::params![&validated_slug],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Public tile not found".to_string(),
+                }),
+            )
+        })?;
+
+    drop(conn);
+
+    let tile_url = format!("/tiles/{validated_slug}/{{z}}/{{x}}/{{y}}");
+    let viewer_url = format!("/tiles/{validated_slug}");
+
+    Ok(Json(PublicTileMeta {
+        slug: validated_slug,
+        name,
+        tile_source,
+        tile_url,
+        viewer_url,
+    }))
+}
+
 fn validate_slug(slug: &str) -> Result<String, String> {
     let slug = slug.trim().to_string();
 
@@ -1229,8 +1546,10 @@ mod tests {
         .unwrap();
 
         let conn = Arc::new(Mutex::new(conn));
+        let upload_dir_canonical = upload_dir.canonicalize().expect("canonicalize upload dir");
         let state = AppState {
             upload_dir,
+            upload_dir_canonical,
             db: conn.clone(),
             max_size,
             max_size_label: format_bytes(max_size),
@@ -1272,13 +1591,14 @@ mod tests {
             error: None,
             is_public: Some(false),
             public_slug: None,
+            tile_source: Some("duckdb".to_string()),
         };
 
         let conn = state.db.lock().await;
         let size = item.size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, tile_source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             duckdb::params![
                 &item.id,
                 &item.name,
@@ -1291,6 +1611,7 @@ mod tests {
                 &item.table_name,
                 &item.error,
                 false,
+                &item.tile_source,
             ],
         )
         .unwrap();

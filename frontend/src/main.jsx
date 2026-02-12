@@ -7,6 +7,7 @@ import App from './App.jsx';
 import Login from './Login.jsx';
 import Init from './Init.jsx';
 import Preview from './Preview.jsx';
+import PublicMap from './PublicMap.jsx';
 import './index.css';
 
 const root = createRoot(document.getElementById('root'));
@@ -32,6 +33,7 @@ root.render(
             </ProtectedRoute>
           }
         />
+        <Route path="/tiles/:slug" element={<PublicMap />} />
       </Routes>
     </AuthProvider>
   </BrowserRouter>,

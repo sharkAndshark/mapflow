@@ -248,6 +248,14 @@ export default function Preview() {
       vectorLayerRef.current = null;
     }
 
+    // Check if this is a PMTiles file
+    if (meta.tileSource === 'pmtiles') {
+      // PMTiles files need to be published first for preview
+      // Show a message to the user
+      setError('PMTiles files need to be published before preview. Please publish this file first.');
+      return;
+    }
+
     // 1. Tile Layer source
     // URL pattern: /api/files/{id}/tiles/{z}/{x}/{y} (no .mvt extension)
     const tileUrl = `${window.location.origin}/api/files/${id}/tiles/{z}/{x}/{y}`;

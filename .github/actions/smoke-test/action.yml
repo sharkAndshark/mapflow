@@ -77,8 +77,9 @@ runs:
 
         curl -fsS -o /tmp/mapflow_smoke_tile.mvt "http://127.0.0.1:${port}/api/files/${id}/tiles/0/0/0"
         python3 - <<'PY'
-        import base64, hashlib
-        expected_b64 = open('testdata/smoke/expected_sample_z0_x0_y0.mvt.base64','r',encoding='ascii').read().strip()
+        import base64, hashlib, os, sys
+        testdata_path = os.path.join(os.environ['GITHUB_WORKSPACE'], 'testdata/smoke/expected_sample_z0_x0_y0.mvt.base64')
+        expected_b64 = open(testdata_path,'r',encoding='ascii').read().strip()
         expected = base64.b64decode(expected_b64)
         got = open('/tmp/mapflow_smoke_tile.mvt','rb').read()
         if got != expected:

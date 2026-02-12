@@ -1,7 +1,7 @@
 use axum::body::Body;
 use axum::http::Request;
 use backend::{
-    build_test_router, init_database, reconcile_processing_files, AppState, AuthBackend,
+    build_test_router, format_bytes, init_database, reconcile_processing_files, AppState, AuthBackend,
     DuckDBStore, FileItem, PROCESSING_RECONCILIATION_ERROR,
 };
 use http_body_util::BodyExt; // for collect()
@@ -146,41 +146,29 @@ async fn upload_geojson_file(app: &axum::Router) -> String {
 
 // Helper to setup the app for testing
 async fn setup_app() -> (axum::Router, TempDir) {
-    let temp_dir = TempDir::new().expect("temp dir");
-    let upload_dir = temp_dir.path().join("uploads");
-    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
-
-    let db_path = temp_dir.path().join("test.duckdb");
-    let conn = init_database(&db_path);
-    let db = Arc::new(tokio::sync::Mutex::new(conn));
-
-    let state = AppState {
-        upload_dir,
-        db: db.clone(),
-        max_size: 10 * 1024 * 1024, // 10MB
-        max_size_label: "10MB".to_string(),
-        auth_backend: AuthBackend::new(db.clone()),
-        session_store: DuckDBStore::new(db),
-    };
-
-    let router = build_test_router(state);
-    (router, temp_dir)
+    setup_app_with_max_size(10 * 1024 * 1024).await
 }
 
 async fn setup_app_with_large_max_size() -> (axum::Router, TempDir) {
+    setup_app_with_max_size(100 * 1024 * 1024).await // 100MB for OSM datasets
+}
+
+async fn setup_app_with_max_size(max_size: u64) -> (axum::Router, TempDir) {
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
     std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir.canonicalize().expect("canonicalize upload dir");
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
     let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
-        upload_dir,
+        upload_dir: upload_dir.clone(),
+        upload_dir_canonical,
         db: db.clone(),
-        max_size: 100 * 1024 * 1024, // 100MB for OSM datasets
-        max_size_label: "100MB".to_string(),
+        max_size,
+        max_size_label: format_bytes(max_size),
         auth_backend: AuthBackend::new(db.clone()),
         session_store: DuckDBStore::new(db),
     };
@@ -404,24 +392,7 @@ async fn test_tile_invalid_coords_returns_400() {
 
 #[tokio::test]
 async fn test_upload_payload_too_large_returns_413() {
-    let temp_dir = TempDir::new().expect("temp dir");
-    let upload_dir = temp_dir.path().join("uploads");
-    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
-
-    let db_path = temp_dir.path().join("test.duckdb");
-    let conn = init_database(&db_path);
-    let db = Arc::new(tokio::sync::Mutex::new(conn));
-
-    let state = AppState {
-        upload_dir,
-        db: db.clone(),
-        max_size: 1024, // 1KB
-        max_size_label: "1KB".to_string(),
-        auth_backend: AuthBackend::new(db.clone()),
-        session_store: DuckDBStore::new(db),
-    };
-
-    let app = build_test_router(state);
+    let (app, _temp) = setup_app_with_max_size(1024).await; // 1KB max
 
     let boundary = "------------------------boundaryBIG";
     let big = "a".repeat(2048);
@@ -499,6 +470,7 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
     std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir.canonicalize().expect("canonicalize");
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
@@ -506,12 +478,15 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
 
     let state = AppState {
         upload_dir,
+        upload_dir_canonical,
         db: db.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
         auth_backend: AuthBackend::new(db.clone()),
         session_store: DuckDBStore::new(db),
     };
+
+    let app = build_test_router(state.clone());
 
     // Seed a processing file.
     {
@@ -536,7 +511,6 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
 
     reconcile_processing_files(&state.db).await.unwrap();
 
-    let app = build_test_router(state);
     let request = Request::builder()
         .method("GET")
         .uri("/api/files")
@@ -579,7 +553,7 @@ async fn test_upload_invalid_extension() {
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(
         body_json["error"],
-        "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, .topojson, or .mbtiles"
+        "Unsupported file type. Use .zip, .geojson, .json, .geojsonl, .kml, .gpx, .topojson, .mbtiles, or .pmtiles"
     );
 }
 
@@ -894,6 +868,7 @@ async fn test_schema_endpoint_returns_409_for_non_ready_file() {
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
     std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir.canonicalize().expect("canonicalize");
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
@@ -901,6 +876,7 @@ async fn test_schema_endpoint_returns_409_for_non_ready_file() {
 
     let state = AppState {
         upload_dir,
+        upload_dir_canonical,
         db: db.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
@@ -1198,12 +1174,14 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
     std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir.canonicalize().expect("canonicalize upload dir");
 
     let db_path = temp_dir.path().join("persist.duckdb");
     let conn1 = init_database(&db_path);
     let db1 = Arc::new(tokio::sync::Mutex::new(conn1));
     let state1 = AppState {
         upload_dir: upload_dir.clone(),
+        upload_dir_canonical,
         db: db1.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),
@@ -1240,8 +1218,10 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
     let db2 = Arc::new(tokio::sync::Mutex::new(conn2));
     reconcile_processing_files(&db2).await.unwrap();
 
+    let upload_dir_canonical = upload_dir.canonicalize().expect("canonicalize");
     let state2 = AppState {
-        upload_dir,
+        upload_dir: upload_dir.clone(),
+        upload_dir_canonical,
         db: db2.clone(),
         max_size: 10 * 1024 * 1024,
         max_size_label: "10MB".to_string(),

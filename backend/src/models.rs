@@ -8,6 +8,7 @@ use crate::{AuthBackend, DuckDBStore};
 #[derive(Clone)]
 pub struct AppState {
     pub upload_dir: PathBuf,
+    pub upload_dir_canonical: PathBuf,  // Pre-computed for security checks
     pub db: Arc<Mutex<duckdb::Connection>>,
     pub max_size: u64,
     pub max_size_label: String,
@@ -37,6 +38,9 @@ pub struct FileItem {
     #[serde(rename = "publicSlug")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_slug: Option<String>,
+    #[serde(rename = "tileSource")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tile_source: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -52,6 +56,7 @@ pub struct PreviewMeta {
     pub bbox: Option<[f64; 4]>, // minx, miny, maxx, maxy in WGS84
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tile_format: Option<String>, // "mvt", "png", or null
+    pub tile_source: Option<String>,  // "duckdb", "mbtiles", "pmtiles"
 }
 
 #[allow(dead_code)]
@@ -95,4 +100,13 @@ pub struct PublishResponse {
 pub struct PublicTileUrl {
     pub slug: String,
     pub url: String,
+}
+
+#[derive(Serialize)]
+pub struct PublicTileMeta {
+    pub slug: String,
+    pub name: String,
+    pub tile_source: String,
+    pub tile_url: String,
+    pub viewer_url: String,
 }

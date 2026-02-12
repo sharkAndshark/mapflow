@@ -121,6 +121,7 @@ function formatSize(bytes) {
 
 function parseType(fileName) {
   const lower = fileName.toLowerCase();
+  if (lower.endsWith('.pmtiles')) return 'pmtiles';
   if (lower.endsWith('.zip')) return 'shapefile';
   if (lower.endsWith('.geojson') || lower.endsWith('.json')) return 'geojson';
   if (lower.endsWith('.geojsonl') || lower.endsWith('.geojsons')) return 'geojsonl';
@@ -483,7 +484,7 @@ export default function App() {
           <label className="upload-button">
             <input
               type="file"
-              accept=".zip,.geojson,.json,.geojsonl,.geojsons,.kml,.gpx,.topojson"
+              accept=".pmtiles,.zip,.geojson,.json,.geojsonl,.geojsons,.kml,.gpx,.topojson"
               onChange={handleFileChange}
               data-testid="file-input"
             />
@@ -503,7 +504,7 @@ export default function App() {
         <div className="panel-header">
           <h2>上传文件</h2>
           <span className="panel-meta">
-            支持 .zip / .geojson / .geojsonl / .kml / .gpx / .topojson，单文件最大 200MB（可配置）
+            支持 .pmtiles / .zip / .geojson / .geojsonl / .kml / .gpx / .topojson，单文件最大 200MB（可配置）
           </span>
         </div>
 

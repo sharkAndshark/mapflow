@@ -12,6 +12,11 @@ async fn main() {
     let upload_dir = PathBuf::from(upload_dir);
     let _ = fs::create_dir_all(&upload_dir).await;
 
+    // Pre-compute canonical path for security checks
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .expect("Failed to canonicalize upload directory");
+
     let (max_size, max_size_label) = backend::read_max_size_config();
 
     let db = Arc::new(Mutex::new(conn));
@@ -21,7 +26,8 @@ async fn main() {
     let session_store = backend::DuckDBStore::new(db.clone());
 
     let state = backend::AppState {
-        upload_dir,
+        upload_dir: upload_dir.clone(),
+        upload_dir_canonical,
         db: db.clone(),
         max_size,
         max_size_label,
