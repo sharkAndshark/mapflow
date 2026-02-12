@@ -116,6 +116,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: ./.github/actions/rust-setup
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
