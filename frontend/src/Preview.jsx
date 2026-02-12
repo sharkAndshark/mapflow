@@ -209,8 +209,22 @@ export default function Preview() {
         setSelectedFid(fid);
         // Trigger layer re-render to show highlight immediately
         vectorLayerRef.current?.changed();
-        // Load full row properties from DuckDB to ensure stable schema + NULL visibility.
-        loadFeatureProperties(fid);
+
+        // For MBTiles MVT, extract properties directly from feature
+        // For dynamic tables (GeoJSON, Shapefile, etc.), load from API
+        if (tileFormat === 'mvt') {
+          const props = feature.getProperties();
+          const filteredProps = Object.entries(props)
+            .filter(([key]) => !['geometry', 'fid', 'layerName'].includes(key))
+            .map(([key, value]) => ({ key, value }));
+          setPopupContent(filteredProps);
+          setPopupFid(fid);
+          setPopupLoading(false);
+          setPopupError(null);
+        } else {
+          // Load full row properties from DuckDB to ensure stable schema + NULL visibility.
+          loadFeatureProperties(fid);
+        }
       } else {
         cancelPopup();
         // Trigger layer re-render to clear highlight when clicking empty space
