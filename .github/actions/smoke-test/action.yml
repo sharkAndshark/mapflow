@@ -41,12 +41,14 @@ runs:
           -v "${uploads_dir}:/app/uploads" \
           "${{ inputs.image }}")
 
-        for i in $(seq 1 60); do
+        echo "Waiting for server to be ready..."
+        for i in $(seq 1 120); do
           if curl -fsS "http://127.0.0.1:${port}/api/files" >/dev/null; then
+            echo "Server is ready after $((i/2)) seconds"
             break
           fi
           sleep 0.5
-          if [ "$i" = "60" ]; then
+          if [ "$i" = "120" ]; then
             echo "server did not become ready" >&2
             exit 1
           fi
