@@ -57,10 +57,10 @@ test('mbtiles file has zoom limits', async ({ page, workerServer, request }) => 
   const previewData = await previewResponse.json();
 
   // Verify zoom limits exist for mbtiles (not null and not undefined)
-  expect(previewData.minzoom).not.toBeNull();
-  expect(previewData.minzoom).toBeDefined();
-  expect(previewData.maxzoom).not.toBeNull();
-  expect(previewData.maxzoom).toBeDefined();
+  expect(previewData.minZoom).not.toBeNull();
+  expect(previewData.minZoom).toBeDefined();
+  expect(previewData.maxZoom).not.toBeNull();
+  expect(previewData.maxZoom).toBeDefined();
 
   // Click row to select it (to open sidebar)
   const row = page.locator('.row', { hasText: /sample/ });
@@ -147,8 +147,8 @@ test('dynamic table has no zoom limits', async ({ page, workerServer, request })
   const previewData = await previewResponse.json();
 
   // Verify zoom limits are not present for dynamic tables (undefined or null)
-  expect(previewData.minzoom).toBeFalsy();
-  expect(previewData.maxzoom).toBeFalsy();
+  expect(previewData.minZoom == null).toBeTruthy();
+  expect(previewData.maxZoom == null).toBeTruthy();
 
   // Click row to select it (to open sidebar)
   const row = page.locator('.row', { hasText: 'sample' });

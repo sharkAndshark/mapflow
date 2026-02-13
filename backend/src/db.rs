@@ -1,9 +1,17 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex as StdMutex, OnceLock},
+    time::Duration,
+};
 
 use tokio::sync::Mutex;
 
 pub const DEFAULT_DB_PATH: &str = "./data/mapflow.duckdb";
 pub const PROCESSING_RECONCILIATION_ERROR: &str = "Server restarted during processing";
+const SPATIAL_INSTALL_MAX_ATTEMPTS: u32 = 5;
+const SPATIAL_INSTALL_RETRY_BASE_MS: u64 = 250;
+
+static SPATIAL_INSTALL_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 
 pub async fn reconcile_processing_files(
     db: &Arc<Mutex<duckdb::Connection>>,
@@ -22,8 +30,7 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
 
     let conn = duckdb::Connection::open(db_path).expect("Failed to open database");
 
-    conn.execute_batch("INSTALL spatial; LOAD spatial;")
-        .expect("Failed to install and load spatial extension");
+    ensure_spatial_extension(&conn).expect("Failed to install and load spatial extension");
 
     conn.execute_batch(
         r"
@@ -121,6 +128,58 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     .expect("Failed to create system_settings table");
 
     conn
+}
+
+pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String> {
+    // Fast path: extension already installed in local DuckDB cache, only load is needed.
+    if conn.execute_batch("LOAD spatial;").is_ok() {
+        return Ok(());
+    }
+
+    // Prevent concurrent install attempts in the same process from hammering the extension endpoint.
+    let lock = SPATIAL_INSTALL_LOCK.get_or_init(|| StdMutex::new(()));
+    let _guard = lock
+        .lock()
+        .map_err(|_| "Failed to acquire spatial extension install lock".to_string())?;
+
+    // Another thread may have completed install while we were waiting.
+    if conn.execute_batch("LOAD spatial;").is_ok() {
+        return Ok(());
+    }
+
+    let mut errors: Vec<String> = Vec::with_capacity(SPATIAL_INSTALL_MAX_ATTEMPTS as usize);
+
+    for attempt in 1..=SPATIAL_INSTALL_MAX_ATTEMPTS {
+        match conn.execute_batch("INSTALL spatial;") {
+            Ok(_) => match conn.execute_batch("LOAD spatial;") {
+                Ok(_) => return Ok(()),
+                Err(e) => errors.push(format!(
+                    "attempt {}: install ok, load failed: {}",
+                    attempt, e
+                )),
+            },
+            Err(e) => {
+                // INSTALL may fail on transient HTTP errors even when extension already exists locally.
+                // Retry a plain LOAD first before sleeping.
+                if conn.execute_batch("LOAD spatial;").is_ok() {
+                    return Ok(());
+                }
+                errors.push(format!("attempt {}: install failed: {}", attempt, e));
+            }
+        }
+
+        if attempt < SPATIAL_INSTALL_MAX_ATTEMPTS {
+            std::thread::sleep(Duration::from_millis(
+                SPATIAL_INSTALL_RETRY_BASE_MS * attempt as u64,
+            ));
+        }
+    }
+
+    Err(format!(
+        "Unable to install/load DuckDB spatial extension after {} attempts. {}",
+        SPATIAL_INSTALL_MAX_ATTEMPTS,
+        errors.join(" | ")
+    ))
 }
 
 pub fn is_initialized(conn: &duckdb::Connection) -> Result<bool, duckdb::Error> {
