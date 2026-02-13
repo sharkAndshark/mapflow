@@ -50,6 +50,9 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
+      - name: Check spatial extension version sync
+        run: bash scripts/ci/check_spatial_extension_version.sh
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend

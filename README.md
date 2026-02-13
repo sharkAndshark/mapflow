@@ -80,6 +80,21 @@ Environment variables (Docker):
 - `PORT` (default: `3000`) - Backend server port
 - `COOKIE_SECURE` (default: `false`) - Set to `true` in production to ensure session cookies are only transmitted over HTTPS
 - `CORS_ALLOWED_ORIGINS` (default: `http://localhost:3000`) - Comma-separated list of allowed origins for CORS
+- `SPATIAL_EXTENSION_PATH` (optional) - Absolute/relative file path to a local `spatial.duckdb_extension`
+- `SPATIAL_EXTENSION_DIR` (optional) - Directory containing `spatial.duckdb_extension` (used when `SPATIAL_EXTENSION_PATH` is not set)
+
+### Offline Spatial Extension (Optional)
+
+MapFlow uses DuckDB `spatial` extension at startup. Load order is:
+1. Local extension file (if configured/found)
+2. DuckDB local cache (`LOAD spatial`)
+3. DuckDB remote install (`INSTALL spatial`)
+
+For offline deployment, place the extension at one of these paths:
+- `SPATIAL_EXTENSION_PATH` (highest priority)
+- `SPATIAL_EXTENSION_DIR/spatial.duckdb_extension`
+- `./extensions/spatial.duckdb_extension` (default inside Docker image)
+- `./backend/extensions/spatial.duckdb_extension` (default in source tree)
 
 **Important:** For production deployments, set `CORS_ALLOWED_ORIGINS` to your actual domain(s):
 

@@ -1,0 +1,26 @@
+{
+  "duckdb_version": "1.4.4",
+  "extension_name": "spatial",
+  "artifacts": [
+    {
+      "platform": "linux_amd64",
+      "archive_url": "http://extensions.duckdb.org/v1.4.4/linux_amd64/spatial.duckdb_extension.gz",
+      "local_relpath": "backend/extensions/duckdb/v1.4.4/linux_amd64/spatial.duckdb_extension"
+    },
+    {
+      "platform": "linux_arm64",
+      "archive_url": "http://extensions.duckdb.org/v1.4.4/linux_arm64/spatial.duckdb_extension.gz",
+      "local_relpath": "backend/extensions/duckdb/v1.4.4/linux_arm64/spatial.duckdb_extension"
+    },
+    {
+      "platform": "osx_amd64",
+      "archive_url": "http://extensions.duckdb.org/v1.4.4/osx_amd64/spatial.duckdb_extension.gz",
+      "local_relpath": "backend/extensions/duckdb/v1.4.4/osx_amd64/spatial.duckdb_extension"
+    },
+    {
+      "platform": "osx_arm64",
+      "archive_url": "http://extensions.duckdb.org/v1.4.4/osx_arm64/spatial.duckdb_extension.gz",
+      "local_relpath": "backend/extensions/duckdb/v1.4.4/osx_arm64/spatial.duckdb_extension"
+    }
+  ]
+}

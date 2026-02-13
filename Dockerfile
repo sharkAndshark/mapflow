@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install -y libssl3 ca-certificates && rm -rf /var/
 # Copy artifacts
 COPY --from=frontend-builder /app/frontend/dist ./dist
 COPY --from=backend-builder /app/target/release/backend ./backend
+COPY backend/extensions ./extensions
 
 # Environment setup
 ENV WEB_DIST=/app/dist

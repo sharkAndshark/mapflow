@@ -12,6 +12,11 @@ React → HTTP → Axum → DuckDB
 - 矢量瓦片（MVT）：保留完整交互功能（特征点击、属性检查）
 - 栅格瓦片（PNG）：仅静态显示，禁用交互
 
+**DuckDB Spatial 扩展加载：**
+- 启动时优先加载本地 `spatial.duckdb_extension`（支持离线部署）
+- 本地加载失败时回退到 DuckDB 默认 `LOAD/INSTALL spatial` 流程
+- `backend/extensions/spatial-extension-manifest.json` 与 `Cargo.lock` 版本必须同步（CI 强校验）
+
 ## 认证
 
 Session Cookie → axum-login → tower-sessions → DuckDB

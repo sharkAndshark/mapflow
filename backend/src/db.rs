@@ -1,5 +1,5 @@
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex as StdMutex, OnceLock},
     time::Duration,
 };
@@ -10,6 +10,11 @@ pub const DEFAULT_DB_PATH: &str = "./data/mapflow.duckdb";
 pub const PROCESSING_RECONCILIATION_ERROR: &str = "Server restarted during processing";
 const SPATIAL_INSTALL_MAX_ATTEMPTS: u32 = 5;
 const SPATIAL_INSTALL_RETRY_BASE_MS: u64 = 250;
+const SPATIAL_EXTENSION_PATH_ENV: &str = "SPATIAL_EXTENSION_PATH";
+const SPATIAL_EXTENSION_DIR_ENV: &str = "SPATIAL_EXTENSION_DIR";
+const SPATIAL_EXTENSION_FILENAME: &str = "spatial.duckdb_extension";
+const DEFAULT_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "extensions/spatial.duckdb_extension";
+const DEV_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "backend/extensions/spatial.duckdb_extension";
 
 static SPATIAL_INSTALL_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 
@@ -130,8 +135,108 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     conn
 }
 
+fn append_unique_path(candidates: &mut Vec<PathBuf>, path: PathBuf) {
+    if !candidates.iter().any(|existing| existing == &path) {
+        candidates.push(path);
+    }
+}
+
+fn resolve_local_spatial_extension_candidates(
+    env_path: Option<&str>,
+    env_dir: Option<&str>,
+    cwd: Option<&Path>,
+    exe_dir: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(path) = env_path.map(str::trim).filter(|value| !value.is_empty()) {
+        append_unique_path(&mut candidates, PathBuf::from(path));
+    }
+
+    if let Some(dir) = env_dir.map(str::trim).filter(|value| !value.is_empty()) {
+        append_unique_path(
+            &mut candidates,
+            PathBuf::from(dir).join(SPATIAL_EXTENSION_FILENAME),
+        );
+    }
+
+    if let Some(dir) = exe_dir {
+        append_unique_path(
+            &mut candidates,
+            dir.join(DEFAULT_SPATIAL_EXTENSION_RELATIVE_PATH),
+        );
+        append_unique_path(&mut candidates, dir.join(SPATIAL_EXTENSION_FILENAME));
+    }
+
+    if let Some(dir) = cwd {
+        append_unique_path(
+            &mut candidates,
+            dir.join(DEFAULT_SPATIAL_EXTENSION_RELATIVE_PATH),
+        );
+        append_unique_path(
+            &mut candidates,
+            dir.join(DEV_SPATIAL_EXTENSION_RELATIVE_PATH),
+        );
+    }
+
+    candidates
+}
+
+fn local_spatial_extension_candidates() -> Vec<PathBuf> {
+    let env_path = std::env::var(SPATIAL_EXTENSION_PATH_ENV).ok();
+    let env_dir = std::env::var(SPATIAL_EXTENSION_DIR_ENV).ok();
+    let cwd = std::env::current_dir().ok();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+
+    resolve_local_spatial_extension_candidates(
+        env_path.as_deref(),
+        env_dir.as_deref(),
+        cwd.as_deref(),
+        exe_dir.as_deref(),
+    )
+}
+
+fn find_existing_local_spatial_extension_path(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .find(|path| path.is_file())
+        .map(PathBuf::from)
+}
+
+fn build_load_extension_sql(path: &Path) -> Result<String, String> {
+    let raw_path = path
+        .to_str()
+        .ok_or_else(|| format!("Extension path is not valid UTF-8: {}", path.display()))?;
+    let escaped = raw_path.replace('\'', "''");
+    Ok(format!("LOAD '{}';", escaped))
+}
+
+fn try_load_spatial_from_path(conn: &duckdb::Connection, path: &Path) -> Result<(), String> {
+    let load_sql = build_load_extension_sql(path)?;
+    conn.execute_batch(&load_sql).map_err(|e| {
+        format!(
+            "Failed to load spatial extension from {}: {}",
+            path.display(),
+            e
+        )
+    })
+}
+
 pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String> {
-    // Fast path: extension already installed in local DuckDB cache, only load is needed.
+    let local_candidates = local_spatial_extension_candidates();
+    let mut errors: Vec<String> = Vec::with_capacity(SPATIAL_INSTALL_MAX_ATTEMPTS as usize + 2);
+
+    // Local-first path: prefer a bundled extension file when available.
+    if let Some(local_path) = find_existing_local_spatial_extension_path(&local_candidates) {
+        match try_load_spatial_from_path(conn, &local_path) {
+            Ok(_) => return Ok(()),
+            Err(error) => errors.push(error),
+        }
+    }
+
+    // Fast path fallback: extension already installed in local DuckDB cache.
     if conn.execute_batch("LOAD spatial;").is_ok() {
         return Ok(());
     }
@@ -142,12 +247,17 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
         .lock()
         .map_err(|_| "Failed to acquire spatial extension install lock".to_string())?;
 
+    if let Some(local_path) = find_existing_local_spatial_extension_path(&local_candidates) {
+        match try_load_spatial_from_path(conn, &local_path) {
+            Ok(_) => return Ok(()),
+            Err(error) => errors.push(format!("post-lock {}", error)),
+        }
+    }
+
     // Another thread may have completed install while we were waiting.
     if conn.execute_batch("LOAD spatial;").is_ok() {
         return Ok(());
     }
-
-    let mut errors: Vec<String> = Vec::with_capacity(SPATIAL_INSTALL_MAX_ATTEMPTS as usize);
 
     for attempt in 1..=SPATIAL_INSTALL_MAX_ATTEMPTS {
         match conn.execute_batch("INSTALL spatial;") {
@@ -197,4 +307,51 @@ pub fn set_initialized(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
         [],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_candidates_prefers_explicit_env_path() {
+        let cwd = Path::new("/workspace/mapflow");
+        let exe = Path::new("/opt/mapflow");
+        let candidates = resolve_local_spatial_extension_candidates(
+            Some("/tmp/custom/spatial.duckdb_extension"),
+            Some("/tmp/custom-dir"),
+            Some(cwd),
+            Some(exe),
+        );
+
+        assert_eq!(
+            candidates[0],
+            PathBuf::from("/tmp/custom/spatial.duckdb_extension")
+        );
+        assert_eq!(
+            candidates[1],
+            PathBuf::from("/tmp/custom-dir").join(SPATIAL_EXTENSION_FILENAME)
+        );
+    }
+
+    #[test]
+    fn find_existing_path_picks_first_existing_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let missing = temp.path().join("missing.duckdb_extension");
+        let first = temp.path().join("first.duckdb_extension");
+        let second = temp.path().join("second.duckdb_extension");
+        std::fs::write(&first, b"fake").expect("write first");
+        std::fs::write(&second, b"fake").expect("write second");
+
+        let candidates = vec![missing, first.clone(), second];
+        let found = find_existing_local_spatial_extension_path(&candidates).expect("found");
+        assert_eq!(found, first);
+    }
+
+    #[test]
+    fn build_load_extension_sql_escapes_single_quotes() {
+        let path = Path::new("/tmp/mapflow's/spatial.duckdb_extension");
+        let sql = build_load_extension_sql(path).expect("sql");
+        assert_eq!(sql, "LOAD '/tmp/mapflow''s/spatial.duckdb_extension';");
+    }
 }
