@@ -45,9 +45,20 @@ wait_for_file_status() {
   local want="$2"
   local tries="${3:-240}"
   local delay_s="${4:-0.5}"
+  local files_json=""
+  local st=""
 
   for i in $(seq 1 "$tries"); do
-    st=$(curl -fsS "${base_url}/api/files" | python3 -c 'import json,sys; id=sys.argv[1]; want=sys.argv[2]; items=json.load(sys.stdin); st=next((it.get("status","") for it in items if it.get("id")==id), ""); print(st)' "$id" "$want")
+    if ! files_json=$(curl -fsS -b "$cookie_jar" "${base_url}/api/files" 2>/dev/null); then
+      sleep "$delay_s"
+      continue
+    fi
+
+    if ! st=$(FILES_JSON="$files_json" python3 -c 'import json,os,sys; id=sys.argv[1]; items=json.loads(os.environ.get("FILES_JSON", "[]")); print(next((it.get("status","") for it in items if it.get("id")==id), ""))' "$id" 2>/dev/null); then
+      sleep "$delay_s"
+      continue
+    fi
+
     if [ "$st" = "$want" ]; then
       return 0
     fi
