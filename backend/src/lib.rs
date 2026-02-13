@@ -1259,8 +1259,7 @@ mod tests {
         fs::create_dir_all(&upload_dir).await.ok();
 
         let conn = duckdb::Connection::open_in_memory().expect("Failed to create test database");
-        conn.execute_batch("INSTALL spatial; LOAD spatial;")
-            .unwrap();
+        crate::db::ensure_spatial_extension(&conn).expect("spatial extension");
 
         conn.execute_batch(
             r"
