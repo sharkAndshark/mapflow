@@ -82,9 +82,6 @@ jobs:
           port=39000
           data_dir="${RUNNER_TEMP}/mapflow-data"
           uploads_dir="${RUNNER_TEMP}/mapflow-uploads"
-          cookie_jar="${RUNNER_TEMP}/mapflow-smoke-cookie.txt"
-          smoke_user="smoke_admin"
-          smoke_pass="SmokePass1!"
           mkdir -p "$data_dir" "$uploads_dir"
 
           cid=""
@@ -105,66 +102,15 @@ jobs:
             -v "${uploads_dir}:/app/uploads" \
             "mapflow-smoke:${{ github.ref_name }}")
 
-          for i in $(seq 1 60); do
-            if curl -fsS "http://127.0.0.1:${port}/api/test/is-initialized" >/dev/null; then
-              break
-            fi
-            sleep 0.5
-            if [ "$i" = "60" ]; then
-              echo "server did not become ready" >&2
-              exit 1
-            fi
-          done
-
-          curl -fsS \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"${smoke_user}\",\"password\":\"${smoke_pass}\"}" \
-            "http://127.0.0.1:${port}/api/auth/init" >/dev/null
-
-          curl -fsS \
-            -c "$cookie_jar" \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"${smoke_user}\",\"password\":\"${smoke_pass}\"}" \
-            "http://127.0.0.1:${port}/api/auth/login" >/dev/null
-
-          curl -fsS -b "$cookie_jar" "http://127.0.0.1:${port}/api/files" >/dev/null
-          curl -fsS "http://127.0.0.1:${port}/" >/dev/null
-
-          upload_resp=$(curl -fsS -b "$cookie_jar" -F "file=@frontend/tests/fixtures/sample.geojson" "http://127.0.0.1:${port}/api/uploads")
-          id=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["id"])' <<<"$upload_resp")
-
-          for i in $(seq 1 120); do
-            st=$(curl -fsS -b "$cookie_jar" "http://127.0.0.1:${port}/api/files" | python3 -c 'import json,sys; id=sys.argv[1]; items=json.load(sys.stdin); print(next((it.get("status","") for it in items if it.get("id")==id), ""))' "$id")
-            if [ "$st" = "ready" ]; then
-              break
-            fi
-            if [ "$st" = "failed" ]; then
-              echo "upload processing failed" >&2
-              exit 1
-            fi
-            sleep 0.5
-            if [ "$i" = "120" ]; then
-              echo "timeout waiting for ready" >&2
-              exit 1
-            fi
-          done
-
-          curl -fsS -b "$cookie_jar" "http://127.0.0.1:${port}/api/files/${id}/preview" >/dev/null
-
-          # Golden tile compare to make the smoke test deterministic.
-          curl -fsS -b "$cookie_jar" -o /tmp/mapflow_smoke_tile.mvt "http://127.0.0.1:${port}/api/files/${id}/tiles/0/0/0"
-          python3 - <<'PY'
-          import base64, hashlib
-          expected_b64 = open('testdata/smoke/expected_sample_z0_x0_y0.mvt.base64','r',encoding='ascii').read().strip()
-          expected = base64.b64decode(expected_b64)
-          got = open('/tmp/mapflow_smoke_tile.mvt','rb').read()
-          if got != expected:
-            print('tile mismatch')
-            print('expected_sha256', hashlib.sha256(expected).hexdigest())
-            print('got_sha256', hashlib.sha256(got).hexdigest())
-            raise SystemExit(1)
-          print('tile ok sha256', hashlib.sha256(got).hexdigest())
-          PY
+          BASE_URL="http://127.0.0.1:${port}" \
+          FIXTURE_PATH="frontend/tests/fixtures/sample.geojson" \
+          TILE_Z=0 \
+          TILE_X=0 \
+          TILE_Y=0 \
+          OUT_PATH="/tmp/mapflow_smoke_tile.mvt" \
+          COOKIE_JAR="${RUNNER_TEMP}/mapflow-smoke-cookie.txt" \
+          EXPECTED_B64_PATH="testdata/smoke/expected_sample_z0_x0_y0.mvt.base64" \
+            bash scripts/ci/fetch_tile.sh
 
   docker:
     runs-on: ubuntu-latest
