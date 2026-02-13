@@ -5,6 +5,9 @@ ROOT_DIR="$(git rev-parse --show-toplevel)"
 
 SKIP_TESTS="${MAPFLOW_SKIP_HOOK_TESTS:-}"
 
+echo "[pre-commit] spatial extension version sync check"
+bash "$ROOT_DIR/scripts/ci/check_spatial_extension_version.sh"
+
 echo "[pre-commit] cargo fmt (check)"
 cargo fmt --all -- --check
 

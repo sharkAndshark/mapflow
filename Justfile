@@ -27,6 +27,7 @@ install:
 
 # Check code quality
 check:
+  bash scripts/ci/check_spatial_extension_version.sh
   cargo fmt --manifest-path backend/Cargo.toml -- --check
   cargo clippy --manifest-path backend/Cargo.toml -- -D warnings
   npm --prefix frontend run format:check
