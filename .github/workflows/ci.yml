@@ -84,7 +84,7 @@ jobs:
 
       - name: Frontend format (check)
         working-directory: frontend
-        run: npx biome format .
+        run: npm run format:check
 
   frontend_e2e:
     runs-on: ubuntu-latest
@@ -149,39 +149,4 @@ jobs:
           tags: mapflow-smoke:ci
 
       - name: Smoke test container (golden tile)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          port=39000
-          data_dir="${RUNNER_TEMP}/mapflow-data"
-          uploads_dir="${RUNNER_TEMP}/mapflow-uploads"
-          mkdir -p "$data_dir" "$uploads_dir"
-
-          cid=""
-          cleanup() {
-            if [ -n "$cid" ]; then
-              docker logs --tail 200 "$cid" || true
-              docker stop "$cid" >/dev/null 2>&1 || true
-            fi
-          }
-          trap cleanup EXIT
-
-          cid=$(docker run -d --rm \
-            -p "${port}:3000" \
-            -e PORT=3000 \
-            -e DB_PATH=/app/data/mapflow.duckdb \
-            -e UPLOAD_DIR=/app/uploads \
-            -v "${data_dir}:/app/data" \
-            -v "${uploads_dir}:/app/uploads" \
-            "mapflow-smoke:ci")
-
-          BASE_URL="http://127.0.0.1:${port}" \
-          FIXTURE_PATH="frontend/tests/fixtures/sample.geojson" \
-          TILE_Z=0 \
-          TILE_X=0 \
-          TILE_Y=0 \
-          OUT_PATH="/tmp/mapflow_smoke_tile.mvt" \
-          COOKIE_JAR="${RUNNER_TEMP}/mapflow-smoke-cookie.txt" \
-          EXPECTED_B64_PATH="testdata/smoke/expected_sample_z0_x0_y0.mvt.base64" \
-            bash scripts/ci/fetch_tile.sh
+        run: SMOKE_IMAGE="mapflow-smoke:ci" bash scripts/ci/smoke_test.sh
