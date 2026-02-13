@@ -2,6 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom';
 
 import { formatInspectorValue } from './featureInspectorFormat.js';
+import {
+  extractInspectableFeatureProperties,
+  getFeatureFid,
+  hasValidFid,
+} from './previewFeatureProperties.js';
 
 import 'ol/ol.css';
 import OLMap from 'ol/Map';
@@ -30,6 +35,8 @@ export default function Preview() {
   const popupRef = useRef(null);
   const requestSeqRef = useRef(0);
   const selectedFidRef = useRef(null);
+  const tileFormatRef = useRef(null);
+  const loadFeaturePropertiesRef = useRef(async () => {});
   const [showTileGrid, setShowTileGrid] = useState(false);
   const tileGridLayerRef = useRef(null);
   const [tileFormat, setTileFormat] = useState(null);
@@ -96,6 +103,14 @@ export default function Preview() {
     },
     [id],
   );
+
+  useEffect(() => {
+    tileFormatRef.current = tileFormat;
+  }, [tileFormat]);
+
+  useEffect(() => {
+    loadFeaturePropertiesRef.current = loadFeatureProperties;
+  }, [loadFeatureProperties]);
 
   const defaultStyle = useMemo(
     () =>
@@ -190,40 +205,44 @@ export default function Preview() {
     // Click handler for features
     olMap.on('click', (evt) => {
       // Skip feature interaction for PNG tiles (raster)
-      if (tileFormat === 'png') return;
+      if (tileFormatRef.current === 'png') return;
 
       const feature = olMap.forEachFeatureAtPixel(evt.pixel, (feature) => feature);
       if (feature) {
-        const fid = feature.getId?.() ?? feature.get('fid') ?? feature.getProperties?.()?.fid;
-        if (fid === undefined || fid === null || fid === '') {
-          setPopupError('Selected feature has no fid');
-          setPopupContent(null);
-          setPopupLoading(false);
-          setPopupFid(null);
-          cancelPopup();
-          setSelectedFid(null);
-          return;
-        }
+        const fid = getFeatureFid(feature);
+        const featureHasValidFid = hasValidFid(fid);
 
-        selectedFidRef.current = fid;
-        setSelectedFid(fid);
-        // Trigger layer re-render to show highlight immediately
-        vectorLayerRef.current?.changed();
+        // For MBTiles MVT, extract properties directly from feature.
+        // MBTiles features may not carry fid, so we should still render properties.
+        if (tileFormatRef.current === 'mvt') {
+          selectedFidRef.current = featureHasValidFid ? fid : null;
+          setSelectedFid(featureHasValidFid ? fid : null);
+          vectorLayerRef.current?.changed();
 
-        // For MBTiles MVT, extract properties directly from feature
-        // For dynamic tables (GeoJSON, Shapefile, etc.), load from API
-        if (tileFormat === 'mvt') {
-          const props = feature.getProperties();
-          const filteredProps = Object.entries(props)
-            .filter(([key]) => !['geometry', 'fid', 'layerName'].includes(key))
-            .map(([key, value]) => ({ key, value }));
+          const filteredProps = extractInspectableFeatureProperties(feature);
           setPopupContent(filteredProps);
-          setPopupFid(fid);
+          setPopupFid(featureHasValidFid ? fid : null);
           setPopupLoading(false);
           setPopupError(null);
         } else {
+          if (!featureHasValidFid) {
+            selectedFidRef.current = null;
+            setSelectedFid(null);
+            vectorLayerRef.current?.changed();
+            setPopupError('Selected feature has no fid');
+            setPopupContent(null);
+            setPopupLoading(false);
+            setPopupFid(null);
+            return;
+          }
+
+          selectedFidRef.current = fid;
+          setSelectedFid(fid);
+          // Trigger layer re-render to show highlight immediately
+          vectorLayerRef.current?.changed();
+
           // Load full row properties from DuckDB to ensure stable schema + NULL visibility.
-          loadFeatureProperties(fid);
+          loadFeaturePropertiesRef.current(fid);
         }
       } else {
         cancelPopup();
@@ -249,7 +268,7 @@ export default function Preview() {
       vectorLayerRef.current = null;
       tileGridLayerRef.current = null;
     };
-  }, [cancelPopup, loadFeatureProperties, tileFormat]);
+  }, [cancelPopup]);
 
   // Update VectorTile Layer and View when Meta changes
   useEffect(() => {
