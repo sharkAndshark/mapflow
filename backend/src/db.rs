@@ -225,19 +225,20 @@ fn try_load_spatial_from_path(conn: &duckdb::Connection, path: &Path) -> Result<
 }
 
 pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String> {
-    // Fast path: extension already installed in local DuckDB cache, only load is needed.
-    if conn.execute_batch("LOAD spatial;").is_ok() {
-        return Ok(());
-    }
-
     let local_candidates = local_spatial_extension_candidates();
     let mut errors: Vec<String> = Vec::with_capacity(SPATIAL_INSTALL_MAX_ATTEMPTS as usize + 2);
 
+    // Local-first path: prefer a bundled extension file when available.
     if let Some(local_path) = find_existing_local_spatial_extension_path(&local_candidates) {
         match try_load_spatial_from_path(conn, &local_path) {
             Ok(_) => return Ok(()),
             Err(error) => errors.push(error),
         }
+    }
+
+    // Fast path fallback: extension already installed in local DuckDB cache.
+    if conn.execute_batch("LOAD spatial;").is_ok() {
+        return Ok(());
     }
 
     // Prevent concurrent install attempts in the same process from hammering the extension endpoint.
@@ -246,16 +247,16 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
         .lock()
         .map_err(|_| "Failed to acquire spatial extension install lock".to_string())?;
 
-    // Another thread may have completed install while we were waiting.
-    if conn.execute_batch("LOAD spatial;").is_ok() {
-        return Ok(());
-    }
-
     if let Some(local_path) = find_existing_local_spatial_extension_path(&local_candidates) {
         match try_load_spatial_from_path(conn, &local_path) {
             Ok(_) => return Ok(()),
             Err(error) => errors.push(format!("post-lock {}", error)),
         }
+    }
+
+    // Another thread may have completed install while we were waiting.
+    if conn.execute_batch("LOAD spatial;").is_ok() {
+        return Ok(());
     }
 
     for attempt in 1..=SPATIAL_INSTALL_MAX_ATTEMPTS {
