@@ -19,11 +19,14 @@ License: Apache-2.0
 Each binary bundle contains:
 - `mapflow` backend executable
 - prebuilt frontend (`dist/`)
+- offline spatial extension binary (`extensions/spatial.duckdb_extension`)
 - `spatial-extension-manifest.json`
 
 ## Quickstart (Docker)
 
 Prerequisites: Docker + Docker Compose v2.
+
+Published images already contain `spatial.duckdb_extension`, so offline startup does not require runtime download.
 
 Run stable:
 
@@ -51,6 +54,8 @@ docker compose -f docker-compose.ghcr.yml down
 ```bash
 ./mapflow
 ```
+
+Binary bundles include `extensions/spatial.duckdb_extension` and load it automatically by default.
 
 Optional runtime config:
 

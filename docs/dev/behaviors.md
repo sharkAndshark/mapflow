@@ -76,6 +76,7 @@
 | CI-001 | 冒烟测试 | 构建 Docker → 上传 GeoJSON → 等待 ready → 获取瓦片 | 与 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64 比较字节 | `scripts/ci/smoke_test.sh` | Integration | P0 |
 | CI-002 | Nightly 发布 | Nightly 工作流每日触发，先执行 verify + smoke，再发布二进制 bundle 和 GHCR nightly 镜像标签 | 生成 prerelease，包含 Linux/macOS bundle；镜像标签包含 nightly、日期、sha | `.github/workflows/nightly.yml` | Delivery | P1 |
 | CI-003 | Stable 发布 | `v*` tag 工作流先执行 verify + smoke，再发布二进制 bundle 和 GHCR stable 镜像标签 | 生成 release，包含 Linux/macOS bundle；镜像标签包含版本号和 latest | `.github/workflows/release.yml` | Delivery | P1 |
+| CI-004 | 离线扩展打包 | 发布流程按目标平台下载 DuckDB spatial extension 并写入 Docker 镜像与二进制 bundle | 镜像内存在 `/app/extensions/spatial.duckdb_extension`；bundle 内存在 `extensions/spatial.duckdb_extension` | `scripts/release/spatial_extension_artifact.sh` | Delivery | P1 |
 | OSM-001 | 瓦片生成（lines） | OSM sf_lines（20,898 道路特征）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_lines_samples` | Integration | P1 |
 | OSM-002 | 瓦片生成（points） | OSM sf_points（交通信号灯、地点）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_points_samples` | Integration | P1 |
 | OSM-003 | 瓦片生成（polygons） | OSM sf_polygons（31,715 建筑/土地利用特征，MultiPolygon几何）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_polygons_samples` | Integration | P1 |

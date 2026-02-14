@@ -28,13 +28,21 @@ RUN cargo build --release --locked --manifest-path backend/Cargo.toml
 # Stage 3: Runtime
 FROM debian:bookworm-slim
 WORKDIR /app
+ARG SPATIAL_EXTENSION_ARCHIVE_URL
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libssl3 ca-certificates curl gzip && rm -rf /var/lib/apt/lists/*
+
+# Bundle DuckDB spatial extension for offline startup.
+RUN test -n "${SPATIAL_EXTENSION_ARCHIVE_URL}" \
+  && mkdir -p /app/extensions \
+  && curl -fsSL "${SPATIAL_EXTENSION_ARCHIVE_URL}" -o /tmp/spatial.duckdb_extension.gz \
+  && gunzip -c /tmp/spatial.duckdb_extension.gz > /app/extensions/spatial.duckdb_extension \
+  && rm -f /tmp/spatial.duckdb_extension.gz
 
 # Copy artifacts
 COPY --from=frontend-builder /app/frontend/dist ./dist
 COPY --from=backend-builder /app/target/release/backend ./backend
-COPY backend/extensions ./extensions
+COPY backend/extensions/spatial-extension-manifest.json ./extensions/spatial-extension-manifest.json
 
 # Environment setup
 ENV WEB_DIST=/app/dist

@@ -29,3 +29,4 @@ Axum 0.8, axum-login, tower-sessions, DuckDB, OpenLayers
 
 - Stable：`v*` tag 触发，发布 GHCR 多架构镜像与二进制 bundle 资产
 - Nightly：每日 UTC 02:00 自动触发（也支持手动触发），发布 prerelease 与 nightly 镜像标签
+- 发布产物内置 `spatial.duckdb_extension`（按目标平台打包），支持离线启动
