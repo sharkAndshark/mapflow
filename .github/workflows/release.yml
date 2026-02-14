@@ -156,9 +156,20 @@ jobs:
           name: binary-${{ matrix.artifact_id }}
           path: release-assets/*.tar.gz
 
-  docker:
-    runs-on: ubuntu-latest
+  docker_build:
     needs: docker_smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v6
 
@@ -179,6 +190,57 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ github.workflow }}-${{ matrix.arch }}
+
+      - name: Export digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.arch }}.txt"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-digest-${{ matrix.arch }}
+          path: /tmp/digests/${{ matrix.arch }}.txt
+
+  docker_manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: docker_build
+    steps:
+      - name: Compute image name
+        id: image
+        shell: bash
+        run: |
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "name=ghcr.io/${owner_lc}/mapflow" >> "$GITHUB_OUTPUT"
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: docker-digest-*
+          path: /tmp/digests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -188,19 +250,29 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - name: Create multi-arch manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ steps.image.outputs.name }}"
+
+          sources=""
+          for file in /tmp/digests/*/*.txt; do
+            digest="$(cat "$file")"
+            sources="${sources} ${image}@${digest}"
+          done
+
+          tags=""
+          while IFS= read -r tag; do
+            tags="${tags} --tag ${tag}"
+          done <<< "${{ steps.meta.outputs.tags }}"
+
+          docker buildx imagetools create ${tags} ${sources}
 
   github_release:
     runs-on: ubuntu-latest
     needs:
-      - docker
+      - docker_manifest
       - binaries
     steps:
       - name: Download binary artifacts
