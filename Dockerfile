@@ -28,16 +28,34 @@ RUN cargo build --release --locked --manifest-path backend/Cargo.toml
 # Stage 3: Runtime
 FROM debian:bookworm-slim
 WORKDIR /app
+ARG TARGETARCH
 ARG SPATIAL_EXTENSION_ARCHIVE_URL
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y libssl3 ca-certificates curl gzip && rm -rf /var/lib/apt/lists/*
+COPY backend/extensions/spatial-extension-manifest.json /tmp/spatial-extension-manifest.json
 
 # Bundle DuckDB spatial extension for offline startup.
-RUN test -n "${SPATIAL_EXTENSION_ARCHIVE_URL}" \
-  && mkdir -p /app/extensions \
-  && curl -fsSL "${SPATIAL_EXTENSION_ARCHIVE_URL}" -o /tmp/spatial.duckdb_extension.gz \
-  && gunzip -c /tmp/spatial.duckdb_extension.gz > /app/extensions/spatial.duckdb_extension \
-  && rm -f /tmp/spatial.duckdb_extension.gz
+RUN set -eu; \
+  archive_url="${SPATIAL_EXTENSION_ARCHIVE_URL:-}"; \
+  if [ -z "${archive_url}" ]; then \
+    duckdb_version="$(sed -n 's/.*"duckdb_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/spatial-extension-manifest.json | head -n 1)"; \
+    if [ -z "${duckdb_version}" ]; then \
+      echo "failed to parse duckdb_version from spatial-extension-manifest.json" >&2; \
+      exit 1; \
+    fi; \
+    case "${TARGETARCH:-}" in \
+      amd64) duckdb_platform="linux_amd64" ;; \
+      arm64) duckdb_platform="linux_arm64" ;; \
+      *) \
+        echo "unsupported TARGETARCH for spatial extension auto-resolution: ${TARGETARCH:-unknown}" >&2; \
+        exit 1 ;; \
+    esac; \
+    archive_url="http://extensions.duckdb.org/v${duckdb_version}/${duckdb_platform}/spatial.duckdb_extension.gz"; \
+  fi; \
+  mkdir -p /app/extensions; \
+  curl -fsSL "${archive_url}" -o /tmp/spatial.duckdb_extension.gz; \
+  gunzip -c /tmp/spatial.duckdb_extension.gz > /app/extensions/spatial.duckdb_extension; \
+  rm -f /tmp/spatial.duckdb_extension.gz /tmp/spatial-extension-manifest.json
 
 # Copy artifacts
 COPY --from=frontend-builder /app/frontend/dist ./dist
