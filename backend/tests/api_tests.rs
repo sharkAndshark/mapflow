@@ -3358,3 +3358,22 @@ async fn test_mbtiles_publish_and_public_tiles() {
         .and_then(|v| v.to_str().ok());
     assert_eq!(content_type, Some("application/vnd.mapbox-vector-tile"));
 }
+
+#[tokio::test]
+async fn test_health_check() {
+    let (app, _temp) = setup_app().await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["status"], "ok");
+}
