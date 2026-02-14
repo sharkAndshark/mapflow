@@ -98,9 +98,11 @@ jobs:
           - os: ubuntu-latest
             rust_target: x86_64-unknown-linux-gnu
             artifact_id: linux-amd64
+            duckdb_platform: linux_amd64
           - os: macos-14
             rust_target: aarch64-apple-darwin
             artifact_id: darwin-arm64
+            duckdb_platform: osx_arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -144,10 +146,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
+          spatial_ext_path="release-assets/spatial.duckdb_extension"
+          bash scripts/release/spatial_extension_artifact.sh download \
+            "${{ matrix.duckdb_platform }}" \
+            "${spatial_ext_path}"
           bash scripts/release/package_bundle.sh \
             "${{ github.ref_name }}" \
             "${{ matrix.artifact_id }}" \
             "target/${{ matrix.rust_target }}/release/backend" \
+            "${spatial_ext_path}" \
             "release-assets"
 
       - name: Upload binary bundle
@@ -165,9 +172,11 @@ jobs:
           - arch: amd64
             platform: linux/amd64
             runner: ubuntu-latest
+            duckdb_platform: linux_amd64
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            duckdb_platform: linux_arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
     steps:
@@ -190,12 +199,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve spatial extension archive
+        id: spatial
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(bash scripts/release/spatial_extension_artifact.sh url "${{ matrix.duckdb_platform }}")"
+          echo "archive_url=${url}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          build-args: |
+            SPATIAL_EXTENSION_ARCHIVE_URL=${{ steps.spatial.outputs.archive_url }}
           outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ github.workflow }}-${{ matrix.arch }}
