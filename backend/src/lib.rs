@@ -109,6 +109,7 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
 
     let auth_router = build_auth_router();
     let public_router = Router::new()
+        .route("/health", get(health_check))
         .route("/api/test/is-initialized", get(check_is_initialized))
         .route("/tiles/{slug}/{z}/{x}/{y}", get(get_public_tile));
 
@@ -852,6 +853,10 @@ async fn upload_file(
     };
 
     Ok((StatusCode::CREATED, Json(meta)))
+}
+
+async fn health_check() -> impl IntoResponse {
+    (StatusCode::OK, Json(serde_json::json!({ "status": "ok" })))
 }
 
 async fn check_is_initialized(State(state): State<AppState>) -> impl IntoResponse {
