@@ -1,193 +1,108 @@
-# MapFlow (Explorer Edition)
+# MapFlow
 
-**MapFlow** is a lightweight tool for data curators to upload, organize, and preview spatial data files.
+[![CI](https://github.com/sharkAndshark/mapflow/actions/workflows/ci.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/ci.yml)
+[![Release](https://github.com/sharkAndshark/mapflow/actions/workflows/release.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/release.yml)
+[![Nightly](https://github.com/sharkAndshark/mapflow/actions/workflows/nightly.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/nightly.yml)
+[![Security](https://github.com/sharkAndshark/mapflow/actions/workflows/security.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/security.yml)
+
+MapFlow is a lightweight spatial data management app for data curators: upload files, inspect schema, preview tiles, and publish public tile URLs.
 
 License: Apache-2.0
 
-## Features
-- **Authentication:** Secure user authentication with session-based login.
-- **Upload:** Support for multiple spatial data formats:
-  - Shapefile (zipped `.zip`)
-  - GeoJSON (`.geojson`, `.json`)
-  - GeoJSONSeq / Newline-Delimited GeoJSON (`.geojsonl`, `.geojsons`)
-  - KML (`.kml`)
-  - GPX (`.gpx`)
-  - TopoJSON (`.topojson`)
-  - MBTiles (`.mbtiles`) - Pre-rendered tile packages (vector MVT and raster PNG supported)
-- **Manage:** Simple file list with status tracking.
-- **Preview:** Instant map preview for uploaded datasets.
+## Release Channels
 
-## Quickstart
+| Channel | Trigger | GitHub Release | GHCR Tags | Assets |
+|---|---|---|---|---|
+| Stable | `v*` tag push | Full release | `latest`, `vX.Y.Z` | Linux + macOS bundles |
+| Nightly | Daily schedule (`02:00 UTC`) + manual dispatch | Pre-release | `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Linux + macOS bundles |
 
-### Run With Docker (Recommended)
+Each binary bundle contains:
+- `mapflow` backend executable
+- prebuilt frontend (`dist/`)
+- `spatial-extension-manifest.json`
 
-Prerequisites: Docker Desktop (or Docker Engine) with Docker Compose v2.
+## Quickstart (Docker)
 
-Option 1: Run the prebuilt image from GHCR (recommended for users):
+Prerequisites: Docker + Docker Compose v2.
+
+Run stable:
 
 ```bash
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-If you fork the repo or publish under a different image name:
+Run nightly:
 
 ```bash
-MAPFLOW_IMAGE=ghcr.io/<your-org-or-user>/mapflow:latest docker compose -f docker-compose.ghcr.yml up -d
+MAPFLOW_IMAGE=ghcr.io/sharkandshark/mapflow:nightly docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-Option 2: Build locally with Docker:
+Stop:
 
 ```bash
-docker compose up -d --build
+docker compose -f docker-compose.ghcr.yml down
 ```
 
-Data is persisted on your machine (same folder as the compose file):
-- `./data` (DuckDB)
-- `./uploads` (raw uploads)
+## Quickstart (Binary Bundle)
 
-To stop:
+1. Download an asset from [GitHub Releases](https://github.com/sharkAndshark/mapflow/releases).
+2. Extract it, then run:
 
 ```bash
-docker compose down
+./mapflow
 ```
 
-### Usage
-
-#### First-Time Setup
-
-1. Start the application.
-2. Open `http://localhost:3000` in your browser.
-3. **Create an admin account** on the initialization page (first-time only).
-   - Password must be at least 8 characters and include uppercase, lowercase, number, and special character.
-4. **Login** with your admin credentials.
-
-#### Daily Usage
-
-1. Drag and drop a spatial data file to upload:
-   - `.zip` (Shapefile with .shp/.shx/.dbf)
-   - `.geojson` / `.json` (GeoJSON)
-   - `.geojsonl` / `.geojsons` (GeoJSONSeq/NDJSON)
-   - `.kml` (KML)
-   - `.gpx` (GPX)
-   - `.topojson` (TopoJSON)
-   - `.mbtiles` (Pre-rendered tiles - supports both vector MVT and raster PNG formats)
-2. Click a file in the list to view details or open the map preview.
-
-### Configuration
-
-Environment variables (Docker):
-- `UPLOAD_MAX_SIZE_MB` (default: `200`) - Maximum file upload size in megabytes
-- `PORT` (default: `3000`) - Backend server port
-- `COOKIE_SECURE` (default: `false`) - Set to `true` in production to ensure session cookies are only transmitted over HTTPS
-- `CORS_ALLOWED_ORIGINS` (default: `http://localhost:3000`) - Comma-separated list of allowed origins for CORS
-- `SPATIAL_EXTENSION_PATH` (optional) - Absolute/relative file path to a local `spatial.duckdb_extension`
-- `SPATIAL_EXTENSION_DIR` (optional) - Directory containing `spatial.duckdb_extension` (used when `SPATIAL_EXTENSION_PATH` is not set)
-
-### Offline Spatial Extension (Optional)
-
-MapFlow uses DuckDB `spatial` extension at startup. Load order is:
-1. Local extension file (if configured/found)
-2. DuckDB local cache (`LOAD spatial`)
-3. DuckDB remote install (`INSTALL spatial`)
-
-For offline deployment, place the extension at one of these paths:
-- `SPATIAL_EXTENSION_PATH` (highest priority)
-- `SPATIAL_EXTENSION_DIR/spatial.duckdb_extension`
-- `./extensions/spatial.duckdb_extension` (default inside Docker image)
-- `./backend/extensions/spatial.duckdb_extension` (default in source tree)
-
-**Important:** For production deployments, set `CORS_ALLOWED_ORIGINS` to your actual domain(s):
+Optional runtime config:
 
 ```bash
-# Example for production
-docker compose up -d -e CORS_ALLOWED_ORIGINS=https://mapflow.example.com,https://www.mapflow.example.com
+export WEB_DIST=./dist
+export DB_PATH=./data/mapflow.duckdb
+export UPLOAD_DIR=./uploads
+export PORT=3000
+./mapflow
 ```
 
-Or create a `.env` file:
+## Supported Upload Formats
 
-```bash
-CORS_ALLOWED_ORIGINS=https://mapflow.example.com,https://www.mapflow.example.com
-COOKIE_SECURE=true
-```
+- Shapefile (`.zip` with `.shp/.shx/.dbf`)
+- GeoJSON (`.geojson`, `.json`)
+- GeoJSONSeq / NDJSON (`.geojsonl`, `.geojsons`)
+- KML (`.kml`)
+- GPX (`.gpx`)
+- TopoJSON (`.topojson`)
+- MBTiles (`.mbtiles`, vector MVT + raster PNG)
+
+## Runtime Configuration
+
+| Env | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | HTTP server port |
+| `DB_PATH` | `./data/mapflow.duckdb` | DuckDB path |
+| `UPLOAD_DIR` | `./uploads` | Upload storage directory |
+| `WEB_DIST` | `frontend/dist` | Frontend static assets path |
+| `UPLOAD_MAX_SIZE_MB` | `200` | Upload max size |
+| `COOKIE_SECURE` | `false` | Set `true` behind HTTPS |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated CORS allowlist |
+| `SPATIAL_EXTENSION_PATH` | unset | Explicit local spatial extension path |
+| `SPATIAL_EXTENSION_DIR` | unset | Directory containing `spatial.duckdb_extension` |
 
 ## Development
 
-- [behaviors.md](./docs/dev/behaviors.md) - System contracts and verification
-- [AGENTS.md](./AGENTS.md) - Agent collaboration guidelines
+```bash
+just install
+just dev
+```
 
-## Authentication
+Common commands:
 
-MapFlow uses session-based authentication with secure password hashing (bcrypt).
+```bash
+just check
+just test
+just docker-up-build
+```
 
-### API Endpoints
+## Contracts & Internal Docs
 
-**Public Endpoints** (no authentication required):
-- `POST /api/auth/init` - Initialize system (first-time setup)
-- `POST /api/auth/login` - Login with username/password
-- `POST /api/auth/logout` - Logout current user
-- `GET /api/auth/check` - Check authentication status
-
-**Protected Endpoints** (require authentication):
-- `GET /api/files` - List all files
-- `POST /api/uploads` - Upload a new file
-- `GET /api/files/:id/preview` - Get file preview metadata
-- `GET /api/files/:id/tiles/:z/:x/:y` - Get map tiles
-- `GET /api/files/:id/schema` - Get file schema
-  Returns `{ layers: [{ id, description?, fields: [{ name, type }] }] }`.
-  - For imported datasets (Shapefile, GeoJSON, etc.): Returns a default layer with all fields
-  - For MBTiles vector tiles: Extracts layer information from metadata.json's vector_layers
-  - For MBTiles raster tiles: Returns empty array (no layer information)
-- `GET /api/files/:id/features/:fid` - Get feature properties
-  *Note:* This endpoint works for data imported into DuckDB (Shapefile, GeoJSON, etc.). For MBTiles, feature properties should be extracted client-side from MVT tiles using `feature.getProperties()` (planned enhancement).
-
-### Password Requirements
-
-Passwords must meet the following complexity requirements:
-- Minimum 8 characters
-- At least one uppercase letter (A-Z)
-- At least one lowercase letter (a-z)
-- At least one digit (0-9)
-- At least one special character (!@#$%^&* etc.)
-
-### Session Management
-
-- Sessions are stored in the database with automatic expiration
-- Session cookies are HTTP-only and use secure flags in production
-- Sessions persist across server restarts
-
-## TODO
-
-### Performance Optimizations
-
-- **MBTiles Connection Pooling:** Currently, each tile request opens a new SQLite connection. For high-traffic deployments, implement a connection pool (e.g., using `r2d2` crate) to reuse connections and reduce overhead.
-
-### Future Enhancements
-
-- **MBTiles Feature Properties:** Extract feature properties directly from MVT tiles on the client side. Unlike other formats stored in DuckDB, MBTiles feature attributes are already encoded in MVT protobuf. Frontend should use OpenLayers' feature object to directly access properties via `feature.getProperties()`, eliminating the need for backend API support. This approach:
-  - Reduces backend complexity (no MVT parsing needed)
-  - Improves UX (instant property display without extra requests)
-  - Maintains MBTiles performance advantages
-
-- **Multi-Table Data Sources:** Support for data formats containing multiple layers/tables:
-  - GeoPackage (.gpkg) - Contains multiple vector layers
-  - File Geodatabase (.gdb) - ESRI format with multiple feature classes
-  - Schema endpoints for these formats need to return table/layer-organized structure rather than flat field lists.
-
-- Support for additional tile formats (WebP, TIFF)
-- Tile caching layer for improved performance
-- Batch upload functionality
-- Data export capabilities
-
-## References
-
-### Specifications & Standards
-
-- **[MBTiles Specification](https://github.com/mapbox/mbtiles-spec)** - The MBTiles format specification for storing map tiles in SQLite databases
-- **[Vector Tile Specification](https://github.com/mapbox/vector-tile-spec)** - Mapbox Vector Tile specification for MVT/PBF format
-- **[Tile Map Service (TMS)](https://wiki.osgeo.org/wiki/Tile_Map_Service_Specification)** - OSGeo TMS specification (XYZ to TMS coordinate conversion)
-
-### Libraries & Tools
-
-- **[DuckDB](https://duckdb.org/)** - Embedded analytical database for spatial data processing
-- **[OpenLayers](https://openlayers.org/)** - JavaScript library for displaying maps in web browsers
-- **[GDAL](https://gdal.org/)** - Geospatial Data Abstraction Library for raster and vector data formats
+- Behavior contracts: [docs/dev/behaviors.md](./docs/dev/behaviors.md)
+- Internal architecture notes: [docs/internal.md](./docs/internal.md)
+- Agent collaboration guidance: [AGENTS.md](./AGENTS.md)
