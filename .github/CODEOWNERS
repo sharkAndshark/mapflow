@@ -1,0 +1,17 @@
+# CODEOWNERS - Auto-assign reviewers
+
+# Default owners
+* @sharkAndshark @evan-zhang11
+
+# Backend Rust code
+/backend/ @evan-zhang11
+
+# Frontend code  
+/frontend/ @evan-zhang11
+
+# CI/CD workflows
+/.github/workflows/ @evan-zhang11
+
+# Documentation
+/docs/ @sharkAndshark @evan-zhang11
+*.md @sharkAndshark @evan-zhang11
