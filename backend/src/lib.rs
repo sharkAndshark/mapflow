@@ -124,7 +124,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs authentication"]
     async fn list_returns_seeded_items() {
         let (state, _temp_dir) = setup_state(1024).await;
         let uploaded_at = "2026-02-04T10:00:00Z";
@@ -166,7 +165,7 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let app = build_api_router(state);
+        let app = build_test_router(state);
         let response = app
             .oneshot(
                 Request::builder()
