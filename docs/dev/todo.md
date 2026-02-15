@@ -14,9 +14,10 @@
 
 ### MBTiles Connection Pool
 
-- **Current**: New SQLite connection per request
-- **Goal**: Connection pooling for high-traffic scenarios
-- **Priority**: High (for production)
+- **Status**: ✅ Done (2026-02-16)
+- **Solution**: moka cache + spawn_blocking
+  - LRU cache with max 100 connections
+  - spawn_blocking to avoid blocking tokio runtime
 
 ### Slug Race Condition
 

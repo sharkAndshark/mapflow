@@ -11,15 +11,37 @@
 //! - Bounds are stored in WGS84 (EPSG:4326) per MBTiles spec
 //! - Tiles are in Web Mercator (EPSG:3857) projection
 
+use moka::sync::Cache;
 use rusqlite::{Connection, OptionalExtension};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+type ConnCache = Cache<PathBuf, Arc<Mutex<Connection>>>;
+
+static MBTILES_CACHE: std::sync::OnceLock<ConnCache> = std::sync::OnceLock::new();
+
+fn get_cache() -> &'static ConnCache {
+    MBTILES_CACHE.get_or_init(|| Cache::builder().max_capacity(100).build())
+}
+
+fn get_cached_connection(file_path: &Path) -> Result<Arc<Mutex<Connection>>, String> {
+    let cache = get_cache();
+    let path_buf = file_path.to_path_buf();
+
+    cache
+        .try_get_with(path_buf.clone(), || {
+            Connection::open(&path_buf)
+                .map(|conn| Arc::new(Mutex::new(conn)))
+                .map_err(|e| format!("Cannot open MBTiles file: {}", e))
+        })
+        .map_err(|e| e.to_string())
+}
 
 /// Validate that a file is a valid MBTiles SQLite database
 /// with required metadata and tiles tables (or views)
 pub fn validate_mbtiles_structure(file_path: &Path) -> Result<(), String> {
     let conn = Connection::open(file_path).map_err(|e| format!("Invalid MBTiles file: {}", e))?;
 
-    // Helper function to check if table or view exists
     fn table_or_view_exists(conn: &Connection, name: &str) -> Result<bool, String> {
         conn.query_row(
             &format!(
@@ -34,16 +56,13 @@ pub fn validate_mbtiles_structure(file_path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Failed to check table/view: {}", e))
     }
 
-    // Check metadata table/view exists
     let has_metadata = table_or_view_exists(&conn, "metadata")?;
     if !has_metadata {
         return Err("MBTiles file missing metadata table".to_string());
     }
 
-    // Check tiles table/view exists
     let has_tiles = table_or_view_exists(&conn, "tiles")?;
     if !has_tiles {
-        // List available tables/views for better error message
         let tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name")
             .map_err(|e| format!("Failed to prepare query: {}", e))?
@@ -60,6 +79,13 @@ pub fn validate_mbtiles_structure(file_path: &Path) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+pub async fn validate_mbtiles_structure_async(file_path: &Path) -> Result<(), String> {
+    let path = file_path.to_path_buf();
+    tokio::task::spawn_blocking(move || validate_mbtiles_structure(&path))
+        .await
+        .map_err(|e| format!("spawn_blocking error: {}", e))?
 }
 
 /// MBTiles metadata extracted from metadata table
@@ -87,7 +113,6 @@ pub fn extract_mbtiles_metadata(file_path: &Path) -> Result<MbtilesMetadata, Str
     let mut maxzoom = None;
     let mut name = None;
 
-    // Query all metadata at once (performance optimization)
     let mut stmt = conn
         .prepare("SELECT name, value FROM metadata")
         .map_err(|e| format!("Failed to prepare metadata query: {}", e))?;
@@ -107,9 +132,7 @@ pub fn extract_mbtiles_metadata(file_path: &Path) -> Result<MbtilesMetadata, Str
             "minzoom" => minzoom = value.parse().ok(),
             "maxzoom" => maxzoom = value.parse().ok(),
             "name" => name = Some(value),
-            _ => {
-                // Ignore unknown metadata keys
-            }
+            _ => {}
         }
     }
 
@@ -123,6 +146,13 @@ pub fn extract_mbtiles_metadata(file_path: &Path) -> Result<MbtilesMetadata, Str
     })
 }
 
+pub async fn extract_mbtiles_metadata_async(file_path: &Path) -> Result<MbtilesMetadata, String> {
+    let path = file_path.to_path_buf();
+    tokio::task::spawn_blocking(move || extract_mbtiles_metadata(&path))
+        .await
+        .map_err(|e| format!("spawn_blocking error: {}", e))?
+}
+
 /// Extract vector layers from MBTiles json metadata
 /// Returns list of layers with their fields
 pub fn extract_mbtiles_layers(file_path: &Path) -> Result<Vec<crate::models::LayerInfo>, String> {
@@ -130,7 +160,6 @@ pub fn extract_mbtiles_layers(file_path: &Path) -> Result<Vec<crate::models::Lay
 
     let conn = Connection::open(file_path).map_err(|e| format!("Cannot open MBTiles: {}", e))?;
 
-    // Query json metadata
     let json_metadata: Option<String> = conn
         .query_row("SELECT value FROM metadata WHERE name='json'", [], |row| {
             row.get(0)
@@ -140,11 +169,9 @@ pub fn extract_mbtiles_layers(file_path: &Path) -> Result<Vec<crate::models::Lay
 
     let json_str = json_metadata.ok_or("No json metadata found")?;
 
-    // Parse JSON
     let json_value: serde_json::Value = serde_json::from_str(&json_str)
         .map_err(|e| format!("Failed to parse json metadata: {}", e))?;
 
-    // Extract vector_layers
     let vector_layers = json_value["vector_layers"]
         .as_array()
         .ok_or("Missing vector_layers in json metadata")?;
@@ -181,6 +208,15 @@ pub fn extract_mbtiles_layers(file_path: &Path) -> Result<Vec<crate::models::Lay
     Ok(layers)
 }
 
+pub async fn extract_mbtiles_layers_async(
+    file_path: &Path,
+) -> Result<Vec<crate::models::LayerInfo>, String> {
+    let path = file_path.to_path_buf();
+    tokio::task::spawn_blocking(move || extract_mbtiles_layers(&path))
+        .await
+        .map_err(|e| format!("spawn_blocking error: {}", e))?
+}
+
 /// Import MBTiles metadata into the database
 /// This doesn't import the actual tiles - they stay in the SQLite file
 pub async fn import_mbtiles(
@@ -188,17 +224,14 @@ pub async fn import_mbtiles(
     source_id: &str,
     file_path: &Path,
 ) -> Result<(), String> {
-    let metadata = extract_mbtiles_metadata(file_path)?;
+    let metadata = extract_mbtiles_metadata_async(file_path).await?;
 
-    // Normalize format: "pbf" -> "mvt"
     let tile_format = match metadata.format.as_str() {
         "pbf" => "mvt",
         "png" | "jpg" | "jpeg" => "png",
         _ => return Err(format!("Unsupported tile format: {}", metadata.format)),
     };
 
-    // Parse bounds into JSON array
-    // MBTiles spec: bounds in WGS84 (EPSG:4326) as "minx,miny,maxx,maxy"
     let bounds_json = metadata.bounds.and_then(|b| {
         let parts: Vec<&str> = b.split(',').collect();
         if parts.len() != 4 {
@@ -230,23 +263,23 @@ pub async fn get_tile_from_mbtiles(
     x: i32,
     y: i32,
 ) -> Result<Option<Vec<u8>>, String> {
-    // Convert XYZ to TMS (MBTiles uses TMS y-coordinate)
-    // TMS y = 2^z - 1 - XYZ y
     let tms_y = (1_i32 << z) - 1 - y;
+    let path = file_path.to_path_buf();
 
-    let conn =
-        Connection::open(file_path).map_err(|e| format!("Cannot open MBTiles file: {}", e))?;
-
-    let tile_data: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT tile_data FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?",
-            [z, x, tms_y],
-            |row| row.get(0),
-        )
-        .unwrap_or(None);
-
-    // Filter out empty tiles
-    Ok(tile_data.filter(|d| !d.is_empty()))
+    tokio::task::spawn_blocking(move || {
+        let conn = get_cached_connection(&path)?;
+        let guard = conn.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+        let tile_data: Option<Vec<u8>> = guard
+            .query_row(
+                "SELECT tile_data FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?",
+                [z, x, tms_y],
+                |row| row.get(0),
+            )
+            .unwrap_or(None);
+        Ok(tile_data.filter(|d| !d.is_empty()))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking error: {}", e))?
 }
 
 /// Convert a stored file path to an absolute path for MBTiles access

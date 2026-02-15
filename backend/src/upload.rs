@@ -96,7 +96,7 @@ pub async fn upload_file(
     let validation = match file_type {
         "shapefile" => crate::validation::validate_shapefile_zip(&file_path).await,
         "geojson" => crate::validation::validate_geojson(&file_path).await,
-        "mbtiles" => mbtiles::validate_mbtiles_structure(&file_path),
+        "mbtiles" => mbtiles::validate_mbtiles_structure_async(&file_path).await,
         "pmtiles" => Ok(()),
         "geojsonl" | "kml" | "gpx" | "topojson" => Ok(()),
         _ => Ok(()),
