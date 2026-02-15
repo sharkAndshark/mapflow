@@ -6,12 +6,15 @@ use axum::{extract::State, http::StatusCode, routing::post, Json};
 #[cfg(debug_assertions)]
 use tokio::fs;
 
+#[cfg(debug_assertions)]
+use tracing::warn;
+
 use crate::AppState;
 
 #[cfg(debug_assertions)]
 pub fn add_test_routes(router: Router<AppState>) -> Router<AppState> {
     if std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1") {
-        println!("Test mode enabled (debug only): exposing POST /api/test/reset");
+        tracing::info!("Test mode enabled (debug only): exposing POST /api/test/reset");
         router.route("/api/test/reset", post(reset_test_state))
     } else {
         router
@@ -43,7 +46,7 @@ async fn reset_test_state(State(state): State<AppState>) -> impl axum::response:
     if let Err(e) = conn.execute_batch(
         "DELETE FROM published_files;\nDELETE FROM dataset_columns;\nDELETE FROM files;\nDELETE FROM sessions;\nDELETE FROM users;\nDELETE FROM system_settings;",
     ) {
-        eprintln!("Test Reset DB Error: {:?}", e);
+        warn!(error = ?e, "Test reset DB error");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": "DB cleanup failed" })),
@@ -56,14 +59,14 @@ async fn reset_test_state(State(state): State<AppState>) -> impl axum::response:
                 let path = entry.path();
                 if path.is_dir() {
                     if let Err(e) = fs::remove_dir_all(path).await {
-                        eprintln!("Test Reset FS Error: {:?}", e);
+                        warn!(error = ?e, "Test reset FS error");
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(serde_json::json!({ "error": "Upload dir cleanup failed" })),
                         );
                     }
                 } else if let Err(e) = fs::remove_file(path).await {
-                    eprintln!("Test Reset FS Error: {:?}", e);
+                    warn!(error = ?e, "Test reset FS error");
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(serde_json::json!({ "error": "Upload dir cleanup failed" })),
@@ -72,7 +75,7 @@ async fn reset_test_state(State(state): State<AppState>) -> impl axum::response:
             }
         }
         Err(e) => {
-            eprintln!("Test Reset FS Error: {:?}", e);
+            warn!(error = ?e, "Test reset FS error");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({ "error": "Upload dir read failed" })),

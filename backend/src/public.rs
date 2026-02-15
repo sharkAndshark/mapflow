@@ -8,6 +8,7 @@ use tokio::{
     fs,
     io::{AsyncReadExt, AsyncSeekExt},
 };
+use tracing::error;
 
 use crate::{
     handlers::validate_tile_coords,
@@ -119,7 +120,7 @@ pub async fn get_public_tile(
         }) {
             Ok(blob) => Some(blob),
             Err(e) => {
-                eprintln!("Tile Error (z={z}, x={x}, y={y}): {:?}", e);
+                error!(z, x, y, slug = %slug, error = %e, "Public tile generation failed");
                 return Err(internal_error(format!("Tile generation failed: {}", e)));
             }
         };

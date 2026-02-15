@@ -4,7 +4,11 @@ use axum::{
     Router,
 };
 use axum_login::AuthManagerLayerBuilder;
-use tower_http::cors::CorsLayer;
+use tower_http::{
+    cors::CorsLayer,
+    request_id::{MakeRequestUuid, SetRequestIdLayer},
+    trace::TraceLayer,
+};
 use tower_sessions::SessionManagerLayer;
 
 use crate::{
@@ -45,7 +49,7 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         if let Ok(parsed) = origin.parse::<axum::http::HeaderValue>() {
             cors = cors.allow_origin(parsed);
         } else {
-            eprintln!("Warning: Failed to parse CORS origin '{}', skipping. Check CORS_ALLOWED_ORIGINS environment variable.", origin);
+            tracing::warn!(origin = %origin, "Failed to parse CORS origin, skipping");
         }
     }
 
@@ -93,9 +97,13 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .merge(api_router)
         .merge(crate::test_routes::add_test_routes(Router::new()));
 
+    let x_request_id = axum::http::header::HeaderName::from_static("x-request-id");
+
     router
         .layer(DefaultBodyLimit::disable())
         .with_state(state)
         .layer(auth_layer)
         .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .layer(SetRequestIdLayer::new(x_request_id, MakeRequestUuid))
 }

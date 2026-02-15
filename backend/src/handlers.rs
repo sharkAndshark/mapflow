@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use duckdb::types::ValueRef;
+use tracing::{info, warn};
 
 use crate::{
     http_errors::{bad_request, internal_error},
@@ -261,15 +262,17 @@ pub async fn get_tile(
         }) {
             Ok(blob) => Some(blob),
             Err(e) => {
-                eprintln!("Tile Error (z={z}, x={x}, y={y}): {:?}", e);
-                eprintln!("SQL that failed: {}", select_sql);
+                tracing::error!(z, x, y, error = %e, sql = %select_sql, "Tile generation failed");
                 return Err(internal_error(format!("Tile generation failed: {}", e)));
             }
         };
 
-    println!(
-        "Tile Request: z={z}, x={x}, y={y}, Blob Size: {:?}",
-        mvt_blob.as_ref().map(|v| v.len())
+    tracing::debug!(
+        z,
+        x,
+        y,
+        size = mvt_blob.as_ref().map(|v| v.len()),
+        "Tile request"
     );
 
     match mvt_blob {
@@ -441,9 +444,7 @@ pub async fn get_file_schema(
                     return Ok(Json(crate::models::FileSchemaResponse { layers }));
                 }
                 Err(e) => {
-                    eprintln!("Failed to extract MBTiles layers for {}: {}", id, e);
-                    eprintln!("  File path: {}", full_path.display());
-                    eprintln!("  Tile format: {}", format);
+                    tracing::warn!(file_id = %id, path = %full_path.display(), format = %format, error = %e, "Failed to extract MBTiles layers, returning empty");
                     return Ok(Json(crate::models::FileSchemaResponse { layers: vec![] }));
                 }
             }
@@ -556,6 +557,8 @@ pub async fn publish_file(
         None => validate_slug(&id).map_err(|e| bad_request(&e))?,
     };
 
+    info!(file_id = %id, slug = %slug, "Publish request");
+
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_error)?;
 
@@ -642,6 +645,7 @@ pub async fn publish_file(
         Ok(()) => {
             conn.execute_batch("COMMIT").map_err(internal_error)?;
             drop(conn);
+            info!(file_id = %id, slug = %slug, tile_source = %tile_source, "File published");
             let url = if tile_source == "pmtiles" {
                 format!("/tiles/{slug}")
             } else {
@@ -656,6 +660,7 @@ pub async fn publish_file(
         Err(err_msg) => {
             conn.execute_batch("ROLLBACK").map_err(internal_error)?;
             drop(conn);
+            warn!(file_id = %id, error = %err_msg, "Publish failed");
             Err(bad_request(&err_msg))
         }
     }
@@ -665,6 +670,7 @@ pub async fn unpublish_file(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    info!(file_id = %id, "Unpublish request");
     let conn = state.db.lock().await;
 
     conn.execute_batch("BEGIN TRANSACTION")
@@ -700,11 +706,13 @@ pub async fn unpublish_file(
         Ok(_) => {
             conn.execute_batch("COMMIT").map_err(internal_error)?;
             drop(conn);
+            info!(file_id = %id, "File unpublished");
             Ok(Json(serde_json::json!({ "message": "File unpublished" })))
         }
         Err(err_msg) => {
             conn.execute_batch("ROLLBACK").map_err(internal_error)?;
             drop(conn);
+            warn!(file_id = %id, error = %err_msg, "Unpublish failed");
             Err(internal_error(err_msg.as_str()))
         }
     }
