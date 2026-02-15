@@ -17,11 +17,11 @@
 
 ## Performance Improvements
 
-### Docker Build Time (docker_smoke)
+### CI Docker Smoke Test
 
 - **Status**: ✅ Done (2026-02-16)
-- **Solution**: Added `cache-from`/`cache-to` to ci.yml, sharing cache with release workflow
-- **Expected**: ~1-2min with cache (from ~15min)
+- **Issue**: docker_smoke in CI took ~15min with poor ROI (e2e already covers functionality)
+- **Solution**: Removed from CI, kept only in release/nightly workflows for Docker image validation
 
 ## Future Enhancements
 
