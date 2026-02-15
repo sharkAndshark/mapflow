@@ -26,7 +26,9 @@ pub type FileMetadata = (
     Option<i32>,
 );
 
-pub async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_files(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
@@ -35,9 +37,9 @@ pub async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
           LEFT JOIN published_files pf ON f.id = pf.file_id
           ORDER BY f.uploaded_at DESC",
         )
-        .unwrap();
+        .map_err(internal_error)?;
 
-    let items: Vec<FileItem> = stmt
+    let items_iter = stmt
         .query_map([], |row| {
             let table_name: Option<String> = row.get(8)?;
             let error: Option<String> = row.get(9)?;
@@ -61,12 +63,15 @@ pub async fn list_files(State(state): State<AppState>) -> impl IntoResponse {
                 public_slug,
             })
         })
-        .unwrap()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .map_err(internal_error)?;
+
+    let mut items: Vec<FileItem> = Vec::new();
+    for item in items_iter {
+        items.push(item.map_err(internal_error)?);
+    }
 
     drop(conn);
-    Json(items)
+    Ok(Json(items))
 }
 
 pub async fn get_preview_meta(
