@@ -161,10 +161,7 @@ pub async fn get_tile(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     validate_tile_coords(z, x, y)?;
 
-    println!(
-        "Received tile request: id={}, z={}, x={}, y={}",
-        id, z, x, y
-    );
+    tracing::debug!(file_id = %id, z, x, y, "Tile request received");
     let conn = state.db.lock().await;
 
     let (crs, status, table_name, tile_format, file_path): (
@@ -253,8 +250,6 @@ pub async fn get_tile(
 
     let select_sql =
         build_mvt_select_sql(&conn, &id, &table_name, source_crs).map_err(internal_error)?;
-
-    println!("Executing SQL for tile z={z} x={x} y={y} id={id}");
 
     let mvt_blob: Option<Vec<u8>> =
         match conn.query_row(&select_sql, duckdb::params![z, x, y, z, x, y], |row| {
