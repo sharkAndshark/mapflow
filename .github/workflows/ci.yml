@@ -157,6 +157,8 @@ jobs:
           build-args: |
             SPATIAL_EXTENSION_ARCHIVE_URL=${{ steps.spatial.outputs.archive_url }}
           tags: mapflow-smoke:ci
+          cache-from: type=gha,scope=release-amd64
+          cache-to: type=gha,mode=max,scope=release-amd64
 
       - name: Smoke test container (golden tile)
         run: SMOKE_IMAGE="mapflow-smoke:ci" bash scripts/ci/smoke_test.sh

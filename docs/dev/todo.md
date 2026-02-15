@@ -6,13 +6,9 @@
 
 ### Docker Build Time (docker_smoke)
 
-- **Current**: ~15 minutes
-- **Bottleneck**: `cargo build --release` recompiles everything from scratch
-- **Potential Solutions**:
-  1. Enable Docker layer cache (`cache-from`/`cache-to`)
-  2. Reuse `backend_tests` compilation artifacts
-  3. Use pre-built base image with dependencies
-- **Priority**: Medium
+- **Status**: ✅ Done (2026-02-16)
+- **Solution**: Added `cache-from`/`cache-to` to ci.yml, sharing cache with release workflow
+- **Expected**: ~1-2min with cache (from ~15min)
 
 ## Future Enhancements
 
