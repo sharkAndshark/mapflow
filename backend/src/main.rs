@@ -45,8 +45,9 @@ async fn main() {
         session_store,
     };
 
-    if let Ok(count) = backend::reconcile_processing_files(&state.db).await {
-        tracing::info!(reconciled = count, "Reconciled processing files on startup");
+    match backend::reconcile_processing_files(&state.db).await {
+        Ok(count) => tracing::info!(reconciled = count, "Reconciled processing files on startup"),
+        Err(e) => tracing::warn!(error = %e, "Failed to reconcile processing files on startup"),
     }
 
     let mut app = backend::build_api_router(state.clone());
