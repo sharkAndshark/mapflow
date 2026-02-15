@@ -1315,6 +1315,60 @@ async fn test_upload_shapefile_zip_lifecycle() {
 }
 
 #[tokio::test]
+async fn test_upload_kml_lifecycle() {
+    let (app, _temp) = setup_app().await;
+
+    let kml_bytes = read_fixture_bytes("testdata/sample/formats/sample.kml");
+    let boundary = "------------------------boundaryKML";
+    let body = multipart_body(boundary, "sample.kml", &kml_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(file_item.name, "sample");
+    assert_eq!(file_item.status, "uploaded");
+    assert_eq!(file_item.file_type, "kml");
+
+    let file_id = file_item.id;
+    let ready_item = wait_until_ready(&app, &file_id).await;
+    assert_eq!(ready_item.status, "ready");
+    assert!(ready_item.table_name.is_some());
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/preview", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/tiles/0/0/0", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let tile_body = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        !tile_body.is_empty(),
+        "Expected non-empty MVT tile body for KML"
+    );
+}
+
+#[tokio::test]
 async fn test_persistence_across_restart_keeps_ready_dataset() {
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
@@ -1619,6 +1673,39 @@ async fn test_tile_golden_osm_polygons_samples() {
         .iter()
         .find(|d| d.name == "sf_polygons")
         .expect("sf_polygons dataset not found in config");
+    test_tile_golden_samples_for_dataset(dataset_config).await;
+}
+
+#[tokio::test]
+async fn test_tile_golden_osm_simple_polygons_samples() {
+    let config = load_osm_test_config();
+    let dataset_config = config
+        .datasets
+        .iter()
+        .find(|d| d.name == "sf_simple_polygons")
+        .expect("sf_simple_polygons dataset not found in config");
+    test_tile_golden_samples_for_dataset(dataset_config).await;
+}
+
+#[tokio::test]
+async fn test_tile_golden_osm_multipoints_samples() {
+    let config = load_osm_test_config();
+    let dataset_config = config
+        .datasets
+        .iter()
+        .find(|d| d.name == "sf_multipoints")
+        .expect("sf_multipoints dataset not found in config");
+    test_tile_golden_samples_for_dataset(dataset_config).await;
+}
+
+#[tokio::test]
+async fn test_tile_golden_osm_multilinestrings_samples() {
+    let config = load_osm_test_config();
+    let dataset_config = config
+        .datasets
+        .iter()
+        .find(|d| d.name == "sf_multilinestrings")
+        .expect("sf_multilinestrings dataset not found in config");
     test_tile_golden_samples_for_dataset(dataset_config).await;
 }
 

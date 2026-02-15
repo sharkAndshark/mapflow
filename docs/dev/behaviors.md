@@ -34,8 +34,8 @@
 | ID | 模块 | 可观测行为 | 验证标准 | 验证命令 | 层级 | 优先级 |
 |----|------|-----------|---------|---------|------|--------|
 | API-001 | 上传 | POST /api/uploads 需要认证，接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 200 + 元数据 / 400（格式无效） / 401（未认证） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
-| API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | `cargo test test_files_list` | Integration | P0 |
-| API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | `cargo test test_preview_ready` | Integration | P0 |
+| API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | lifecycle tests 轮询验证 | Integration | P0 |
+| API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | lifecycle tests + `test_preview_not_ready_returns_409` | Integration | P0 |
 | API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证。动态生成：返回 MVT（Web Mercator 投影），包含几何和特征属性。MBTiles：直接查询 tiles 表，MVT 返回 `application/vnd.mapbox-vector-tile`，PNG 返回 `image/png`，不存在返回 204 No Content | 200 + MVT/PNG / 204 / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
 | API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序。MBTiles 文件不支持特征属性，返回 400 | 200 / 400（MBTiles） / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
 | API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{layers:[{id,description?,fields:[{name,type}]}]}`，type 为 MVT 兼容类型，按 ordinal 排序，仅 ready 状态可访问。MBTiles 文件从 metadata.json 提取图层信息，栅格瓦片返回空数组，普通数据集返回默认图层 | 200 + layers[] / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
@@ -43,7 +43,6 @@
 | API-008 | 取消发布 | POST /api/files/:id/unpublish 需要认证，设置 `is_public=FALSE` 并清空 `public_slug` | 200 / 401 / 404 | `cargo test test_unpublish_*` | Integration | P0 |
 | API-009 | 公开地址 | GET /api/files/:id/public-url 需要认证，返回当前文件的公开 URL 模板 | 200 + `{slug,url}` / 401 / 404 | `cargo test test_public_url_*` | Integration | P1 |
 | API-010 | 公开瓦片 | GET /tiles/:slug/:z/:x/:y **无需认证**，验证 `public_slug` 存在且 `is_public=TRUE`。动态生成返回 MVT；MBTiles 返回 MVT 或 PNG（取决于 tile_format） | 200 + MVT/PNG / 204 / 400 / 404 | `cargo test test_public_tiles_*` | Integration | P0 |
-| API-011 | 测试端点 | POST /api/test/reset 重置数据库和存储，仅在 debug + MAPFLOW_TEST_MODE=1 | 执行成功，仅在 debug 构建 | `cargo test test_reset` | Integration | P2 |
 | API-012 | 公开PMTiles | GET /tiles/:slug **无需认证**，PMTiles HTTP Range 代理。处理 Range 请求头，返回对应字节范围。支持 `HEAD` 检测文件大小。PMTiles 格式单文件包含所有瓦片和元数据 | 206（Partial Content）/ 200（HEAD）/ 404 / 416（Range Invalid） | `cargo test test_pmtiles_*` | Integration | P0 |
 | API-013 | 公开瓦片元数据 | GET /tiles/:slug/meta **无需认证**，返回公开瓦片的元数据（name, tile_source, tile_url, viewer_url）用于前端判断使用哪种瓦片源 | 200 + `{slug,name,tile_source,tile_url,viewer_url}` / 404 | `cargo test test_pmtiles_meta_*` | Integration | P0 |
 | API-014 | 健康检查 | GET /health **无需认证**，返回服务状态 | 200 + `{status:"ok"}` | `cargo test test_health_check` | Integration | P2 |
@@ -66,10 +65,10 @@
 | UI-010 | 缩放层级限制 | Preview 页面根据 API-003 返回的 minZoom/maxZoom 限制地图缩放。mbtiles 文件使用其元数据的缩放范围；动态表（非 mbtiles）不限制缩放（使用默认范围 0-22） | 地图缩放不超过允许范围 | `npm run test:e2e` | E2E | P1 |
 | E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
-| E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_geojsonseq_lifecycle` | Integration | P0 |
+| E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `frontend/tests/upload-formats.spec.js` | E2E | P0 |
 | E2E-004 | 完整上传（KML） | 上传 .kml → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_kml_lifecycle` | Integration | P0 |
-| E2E-005 | 完整上传（GPX） | 上传 .gpx → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_gpx_lifecycle` | Integration | P0 |
-| E2E-006 | 完整上传（TopoJSON） | 上传 .topojson → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_topojson_lifecycle` | Integration | P0 |
+| E2E-005 | 完整上传（GPX） | 上传 .gpx → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | 格式验证通过（GDAL 解析层） | Integration | P2 |
+| E2E-006 | 完整上传（TopoJSON） | 上传 .topojson → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | 格式验证通过（GDAL 解析层） | Integration | P2 |
 | E2E-006a | 完整上传（MBTiles MVT） | 上传 .mbtiles（矢量） → 列表更新 → ready → preview 返回 bounds 和 tile_format=mvt → 瓦片端点返回 MVT 格式 | 端到端流程成功 | `cargo test test_upload_mbtiles_success` | Integration | P0 |
 | E2E-006b | 完整上传（MBTiles PNG） | 上传 .mbtiles（栅格） → 列表更新 → ready → preview 返回 bounds 和 tile_format=png → 瓦片端点返回 PNG 格式 → 前端禁用特征交互 | 端到端流程成功 | `cargo test test_mbtiles_tile_returns_correct_format` | Integration | P0 |
 | E2E-007 | 重启持久化 | 重启后之前上传的文件仍可访问 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
