@@ -1240,7 +1240,7 @@ fn validate_slug(slug: &str) -> Result<String, String> {
 
 fn create_id() -> String {
     let mut bytes = [0u8; 3];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
 
