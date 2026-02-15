@@ -76,7 +76,7 @@
 | E2E-008 | 预览集成 | 点击预览 → 新标签页打开 → 地图加载 → 瓦片请求成功（200 OK 且非空） | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-009 | 认证流程 | 首次访问 → 设置 → 登录 → 使用 → 登出 | 状态正确 | `npm run test:e2e` | E2E | P0 |
 | E2E-010 | 发布流程 | 上传文件 → ready → 点击发布 → 自定义 slug → 确认 → 复制公开地址 → 无需认证访问瓦片 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
-| CI-001 | 冒烟测试 | 构建 Docker → 上传 GeoJSON → 等待 ready → 获取瓦片 | 与 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64 比较字节 | `scripts/ci/smoke_test.sh` | Integration | P0 |
+| CI-001 | 冒烟测试 | 构建 Docker → 上传 GeoJSON → 等待 ready → 获取瓦片 | 与 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64 比较字节 | `scripts/ci/smoke_test.sh` (release/nightly only) | Integration | P1 |
 | CI-002 | Nightly 发布 | Nightly 工作流每日触发，先执行 verify + smoke，再发布二进制 bundle 和 GHCR nightly 镜像标签 | 生成 prerelease，包含 Linux/macOS bundle；镜像标签包含 nightly、日期、sha | `.github/workflows/nightly.yml` | Delivery | P1 |
 | CI-003 | Stable 发布 | `v*` tag 工作流先执行 verify + smoke，再发布二进制 bundle 和 GHCR stable 镜像标签 | 生成 release，包含 Linux/macOS bundle；镜像标签包含版本号和 latest | `.github/workflows/release.yml` | Delivery | P1 |
 | CI-004 | 离线扩展打包 | 发布流程按目标平台下载 DuckDB spatial extension 并写入 Docker 镜像与二进制 bundle | 镜像内存在 `/app/extensions/spatial.duckdb_extension`；bundle 内存在 `extensions/spatial.duckdb_extension` | `scripts/release/spatial_extension_artifact.sh` | Delivery | P1 |
