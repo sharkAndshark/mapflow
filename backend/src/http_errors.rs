@@ -21,7 +21,7 @@ pub fn payload_too_large(message: &str) -> (StatusCode, Json<ErrorResponse>) {
 }
 
 pub fn internal_error<E: std::fmt::Debug>(error: E) -> (StatusCode, Json<ErrorResponse>) {
-    eprintln!("Internal Error: {:?}", error);
+    tracing::error!(error = ?error, "Internal server error");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse {

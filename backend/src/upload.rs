@@ -11,6 +11,7 @@ use tokio::{
     fs,
     io::{AsyncWriteExt, BufWriter},
 };
+use tracing::{info_span, Instrument};
 
 use crate::{
     http_errors::{bad_request, internal_error, payload_too_large},
@@ -67,6 +68,8 @@ pub async fn upload_file(
     };
 
     let upload_id = create_id();
+    tracing::info!(upload_id = %upload_id, filename = %safe_name, file_type = file_type, "Upload started");
+
     let dir = state.upload_dir.join(&upload_id);
     fs::create_dir_all(&dir).await.map_err(internal_error)?;
 
@@ -166,50 +169,52 @@ pub async fn upload_file(
     let upload_id_clone = upload_id.clone();
     let file_path_clone = file_path.clone();
     let file_type_clone = file_type.to_string();
-    tokio::spawn(async move {
-        {
-            let conn = db.lock().await;
-            let _ = conn.execute(
-                "UPDATE files SET status = 'processing' WHERE id = ?",
-                duckdb::params![upload_id_clone],
-            );
-        }
-
-        let result = match file_type_clone.as_str() {
-            "mbtiles" => mbtiles::import_mbtiles(&db, &upload_id_clone, &file_path_clone).await,
-            "pmtiles" => {
+    let span = info_span!("import", upload_id = %upload_id, file_type = %file_type);
+    tokio::spawn(
+        async move {
+            tracing::info!("Starting import");
+            {
                 let conn = db.lock().await;
                 let _ = conn.execute(
-                    "UPDATE files SET status = 'ready', tile_source = 'pmtiles' WHERE id = ?",
-                    duckdb::params![upload_id_clone],
-                );
-                Ok(())
-            }
-            _ => import_spatial_data(&db, &upload_id_clone, &file_path_clone).await,
-        };
-
-        match result {
-            Ok(_) => {
-                println!("Successfully imported spatial data for {}", upload_id_clone);
-                let conn = db.lock().await;
-                let _ = conn.execute(
-                    "UPDATE files SET status = 'ready' WHERE id = ?",
+                    "UPDATE files SET status = 'processing' WHERE id = ?",
                     duckdb::params![upload_id_clone],
                 );
             }
-            Err(e) => {
-                eprintln!(
-                    "Failed to import spatial data for {}: {}",
-                    upload_id_clone, e
-                );
-                let conn = db.lock().await;
-                let _ = conn.execute(
-                    "UPDATE files SET status = 'failed', error = ? WHERE id = ?",
-                    duckdb::params![e, upload_id_clone],
-                );
+
+            let result = match file_type_clone.as_str() {
+                "mbtiles" => mbtiles::import_mbtiles(&db, &upload_id_clone, &file_path_clone).await,
+                "pmtiles" => {
+                    let conn = db.lock().await;
+                    let _ = conn.execute(
+                        "UPDATE files SET status = 'ready', tile_source = 'pmtiles' WHERE id = ?",
+                        duckdb::params![upload_id_clone],
+                    );
+                    Ok(())
+                }
+                _ => import_spatial_data(&db, &upload_id_clone, &file_path_clone).await,
+            };
+
+            match result {
+                Ok(_) => {
+                    tracing::info!("Import completed successfully");
+                    let conn = db.lock().await;
+                    let _ = conn.execute(
+                        "UPDATE files SET status = 'ready' WHERE id = ?",
+                        duckdb::params![upload_id_clone],
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Import failed");
+                    let conn = db.lock().await;
+                    let _ = conn.execute(
+                        "UPDATE files SET status = 'failed', error = ? WHERE id = ?",
+                        duckdb::params![e, upload_id_clone],
+                    );
+                }
             }
         }
-    });
+        .instrument(span),
+    );
 
     let meta = FileItem {
         id: upload_id,
