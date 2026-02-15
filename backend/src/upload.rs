@@ -5,13 +5,13 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use rand::RngCore;
 use std::path::Path;
 use tokio::{
     fs,
     io::{AsyncWriteExt, BufWriter},
 };
 use tracing::{info_span, Instrument};
+use uuid::Uuid;
 
 use crate::{
     http_errors::{bad_request, internal_error, payload_too_large},
@@ -235,7 +235,5 @@ pub async fn upload_file(
 }
 
 fn create_id() -> String {
-    let mut bytes = [0u8; 3];
-    rand::rng().fill_bytes(&mut bytes);
-    hex::encode(bytes)
+    Uuid::new_v4().to_string()
 }
