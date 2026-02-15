@@ -436,7 +436,7 @@ pub async fn get_file_schema(
         drop(conn);
         if format == "mvt" {
             let full_path = mbtiles::resolve_mbtiles_path(&file_path);
-            match mbtiles::extract_mbtiles_layers(&full_path) {
+            match mbtiles::extract_mbtiles_layers_async(&full_path).await {
                 Ok(layers) => {
                     return Ok(Json(crate::models::FileSchemaResponse { layers }));
                 }
