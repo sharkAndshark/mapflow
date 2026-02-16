@@ -8,15 +8,18 @@ use duckdb::types::ValueRef;
 use tracing::{info, warn};
 
 use crate::{
+    crs::{normalize_crs, DataBounds, CRS_TYPE_CUSTOM},
     http_errors::{bad_request, internal_error},
     mbtiles,
     models::{ErrorResponse, FeaturePropertiesResponse, FeatureProperty, FileItem, PreviewMeta},
-    tiles::build_mvt_select_sql,
+    tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
 };
 
 pub type FileMetadata = (
     String,
+    Option<String>,
+    Option<String>,
     Option<String>,
     String,
     Option<String>,
@@ -26,13 +29,23 @@ pub type FileMetadata = (
     Option<i32>,
 );
 
+pub type TileFileMetadata = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+);
+
 pub async fn list_files(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.path, f.table_name, f.error, f.is_public, pf.slug
+            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug
           FROM files f
           LEFT JOIN published_files pf ON f.id = pf.file_id
           ORDER BY f.uploaded_at DESC",
@@ -41,10 +54,12 @@ pub async fn list_files(
 
     let items_iter = stmt
         .query_map([], |row| {
-            let table_name: Option<String> = row.get(8)?;
-            let error: Option<String> = row.get(9)?;
-            let is_public: bool = row.get(10).unwrap_or(false);
-            let public_slug: Option<String> = row.get(11).ok();
+            let crs_type: Option<String> = row.get(7)?;
+            let path: String = row.get(8)?;
+            let table_name: Option<String> = row.get(9)?;
+            let error: Option<String> = row.get(10)?;
+            let is_public: bool = row.get(11).unwrap_or(false);
+            let public_slug: Option<String> = row.get(12).ok();
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -56,7 +71,8 @@ pub async fn list_files(
                 },
                 status: row.get(5)?,
                 crs: row.get(6)?,
-                path: row.get(7)?,
+                crs_type,
+                path,
                 table_name,
                 error,
                 is_public: Some(is_public),
@@ -81,7 +97,7 @@ pub async fn get_preview_meta(
     let conn = state.db.lock().await;
 
     let mut stmt = conn
-        .prepare("SELECT name, crs, status, table_name, tile_format, tile_bounds, minzoom, maxzoom FROM files WHERE id = ?")
+        .prepare("SELECT name, crs, crs_type, data_bounds, status, table_name, tile_format, tile_bounds, minzoom, maxzoom FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
     let meta: Option<FileMetadata> = stmt
@@ -95,11 +111,24 @@ pub async fn get_preview_meta(
                 row.get(5)?,
                 row.get(6)?,
                 row.get(7)?,
+                row.get(8)?,
+                row.get(9)?,
             ))
         })
         .ok();
 
-    let (name, crs, status, table_name, tile_format, tile_bounds, minzoom, maxzoom) = match meta {
+    let (
+        name,
+        crs,
+        crs_type,
+        data_bounds_json,
+        status,
+        table_name,
+        tile_format,
+        tile_bounds,
+        minzoom,
+        maxzoom,
+    ) = match meta {
         Some(m) => m,
         None => {
             return Err((
@@ -120,9 +149,17 @@ pub async fn get_preview_meta(
         ));
     }
 
+    let crs_type = crs_type.unwrap_or_else(|| "standard".to_string());
+    let data_bounds: Option<DataBounds> = data_bounds_json
+        .as_ref()
+        .and_then(|j| DataBounds::from_json(j));
+    let data_bounds_array = data_bounds.as_ref().map(|b| b.to_array());
+
     let bbox_values = if let Some(bounds_json) = tile_bounds {
         serde_json::from_str::<[f64; 4]>(&bounds_json).ok()
-    } else if let Some(tbl) = table_name {
+    } else if crs_type == CRS_TYPE_CUSTOM {
+        data_bounds_array
+    } else if let Some(tbl) = &table_name {
         let bbox_components_query = format!(
             "SELECT ST_XMin(b), ST_YMin(b), ST_XMax(b), ST_YMax(b) FROM (
                 SELECT ST_Extent(ST_Transform(geom, '{}', 'EPSG:4326', always_xy := true)) as b
@@ -146,14 +183,16 @@ pub async fn get_preview_meta(
         .ok()
         .filter(|b| b != &[0.0, 0.0, 0.0, 0.0])
     } else {
-        None
+        data_bounds_array
     };
 
     Ok(Json(PreviewMeta {
         id,
         name,
         crs,
+        crs_type,
         bbox: bbox_values,
+        data_bounds: data_bounds_array,
         tile_format,
         minzoom,
         maxzoom,
@@ -169,15 +208,9 @@ pub async fn get_tile(
     tracing::debug!(file_id = %id, z, x, y, "Tile request received");
     let conn = state.db.lock().await;
 
-    let (crs, status, table_name, tile_format, file_path): (
-        Option<String>,
-        String,
-        Option<String>,
-        Option<String>,
-        String,
-    ) = conn
+    let meta: TileFileMetadata = conn
         .query_row(
-            "SELECT crs, status, table_name, tile_format, path FROM files WHERE id = ?",
+            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path FROM files WHERE id = ?",
             duckdb::params![id],
             |row| {
                 Ok((
@@ -186,6 +219,8 @@ pub async fn get_tile(
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
                 ))
             },
         )
@@ -197,6 +232,8 @@ pub async fn get_tile(
                 }),
             )
         })?;
+
+    let (crs, crs_type, data_bounds_json, status, table_name, tile_format, file_path) = meta;
 
     if status != "ready" {
         return Err((
@@ -251,15 +288,29 @@ pub async fn get_tile(
         )
     })?;
 
-    let source_crs = crs.as_deref().unwrap_or("EPSG:4326");
+    let tile_params = TileParams {
+        source_crs: crs.clone().unwrap_or_else(|| "EPSG:4326".to_string()),
+        crs_type: crs_type.clone().unwrap_or_else(|| "standard".to_string()),
+        data_bounds: data_bounds_json
+            .as_ref()
+            .and_then(|j| DataBounds::from_json(j)),
+    };
 
     let select_sql =
-        build_mvt_select_sql(&conn, &id, &table_name, source_crs).map_err(internal_error)?;
+        build_mvt_select_sql(&conn, &id, &table_name, &tile_params, z, x, y).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Tile generation error: {}", e.0),
+                }),
+            )
+        })?;
+
+    let query_params = build_mvt_query_params(&tile_params, z, x, y);
+    let params_slice: Vec<&dyn duckdb::ToSql> = query_params.iter().map(|p| p.as_ref()).collect();
 
     let mvt_blob: Option<Vec<u8>> =
-        match conn.query_row(&select_sql, duckdb::params![z, x, y, z, x, y], |row| {
-            row.get(0)
-        }) {
+        match conn.query_row(&select_sql, params_slice.as_slice(), |row| row.get(0)) {
             Ok(blob) => Some(blob),
             Err(e) => {
                 tracing::error!(z, x, y, error = %e, sql = %select_sql, "Tile generation failed");
@@ -746,4 +797,86 @@ pub async fn get_public_url(
             }),
         )),
     }
+}
+
+pub async fn update_crs(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(req): Json<crate::models::UpdateCrsRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    let (status, old_crs): (String, Option<String>) = conn
+        .query_row(
+            "SELECT status, crs FROM files WHERE id = ?",
+            duckdb::params![&id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    if status != "ready" {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready".to_string(),
+            }),
+        ));
+    }
+
+    // Only update if crs is provided and different from current
+    let new_crs = match req.crs {
+        Some(crs) if crs.trim().is_empty() => None,
+        Some(crs) => Some(crs.trim().to_string()),
+        None => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "crs field is required".to_string(),
+                }),
+            ));
+        }
+    };
+
+    // Skip update if value unchanged
+    if new_crs == old_crs {
+        let current_crs_type: Option<String> = conn
+            .query_row(
+                "SELECT crs_type FROM files WHERE id = ?",
+                duckdb::params![&id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        drop(conn);
+
+        return Ok(Json(serde_json::json!({
+            "id": id,
+            "crs": old_crs,
+            "crsType": current_crs_type.unwrap_or_else(|| "standard".to_string())
+        })));
+    }
+
+    let normalized = normalize_crs(new_crs.as_deref());
+
+    conn.execute(
+        "UPDATE files SET crs = ?, crs_type = ? WHERE id = ?",
+        duckdb::params![normalized.crs, normalized.crs_type, &id],
+    )
+    .map_err(internal_error)?;
+
+    drop(conn);
+
+    Ok(Json(serde_json::json!({
+        "id": id,
+        "crs": normalized.crs,
+        "crsType": normalized.crs_type
+    })))
 }

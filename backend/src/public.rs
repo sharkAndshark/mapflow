@@ -11,11 +11,12 @@ use tokio::{
 use tracing::error;
 
 use crate::{
-    handlers::validate_tile_coords,
+    crs::DataBounds,
+    handlers::{validate_tile_coords, TileFileMetadata},
     http_errors::internal_error,
     mbtiles,
     models::{ErrorResponse, PublicTileMeta},
-    tiles::build_mvt_select_sql,
+    tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
 };
 
@@ -42,17 +43,11 @@ pub async fn get_public_tile(
             )
         })?;
 
-    let (crs, status, table_name, tile_format, file_path): (
-        Option<String>,
-        String,
-        Option<String>,
-        Option<String>,
-        String,
-    ) = conn
+    let meta: TileFileMetadata = conn
         .query_row(
-            "SELECT crs, status, table_name, tile_format, path FROM files WHERE id = ? AND is_public = TRUE",
+            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path FROM files WHERE id = ? AND is_public = TRUE",
             duckdb::params![&file_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
         )
         .map_err(|_| {
             (
@@ -62,6 +57,8 @@ pub async fn get_public_tile(
                 }),
             )
         })?;
+
+    let (crs, crs_type, data_bounds_json, status, table_name, tile_format, file_path) = meta;
 
     if status != "ready" {
         return Err((
@@ -109,15 +106,29 @@ pub async fn get_public_tile(
         )
     })?;
 
-    let source_crs = crs.as_deref().unwrap_or("EPSG:4326");
+    let tile_params = TileParams {
+        source_crs: crs.clone().unwrap_or_else(|| "EPSG:4326".to_string()),
+        crs_type: crs_type.clone().unwrap_or_else(|| "standard".to_string()),
+        data_bounds: data_bounds_json
+            .as_ref()
+            .and_then(|j| DataBounds::from_json(j)),
+    };
 
-    let select_sql =
-        build_mvt_select_sql(&conn, &file_id, &table_name, source_crs).map_err(internal_error)?;
+    let select_sql = build_mvt_select_sql(&conn, &file_id, &table_name, &tile_params, z, x, y)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Tile generation error: {}", e.0),
+                }),
+            )
+        })?;
+
+    let query_params = build_mvt_query_params(&tile_params, z, x, y);
+    let params_slice: Vec<&dyn duckdb::ToSql> = query_params.iter().map(|p| p.as_ref()).collect();
 
     let mvt_blob: Option<Vec<u8>> =
-        match conn.query_row(&select_sql, duckdb::params![z, x, y, z, x, y], |row| {
-            row.get(0)
-        }) {
+        match conn.query_row(&select_sql, params_slice.as_slice(), |row| row.get(0)) {
             Ok(blob) => Some(blob),
             Err(e) => {
                 error!(z, x, y, slug = %slug, error = %e, "Public tile generation failed");

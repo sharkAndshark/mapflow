@@ -81,6 +81,11 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         "ALTER TABLE published_files ADD COLUMN tile_source VARCHAR DEFAULT 'duckdb'",
         [],
     );
+    let _ = conn.execute(
+        "ALTER TABLE files ADD COLUMN crs_type VARCHAR DEFAULT 'standard'",
+        [],
+    );
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN data_bounds VARCHAR", []);
 
     conn.execute_batch(
         r"

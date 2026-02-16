@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+use crate::crs::{normalize_crs, DataBounds};
+
 pub async fn import_spatial_data(
     db: &Arc<Mutex<duckdb::Connection>>,
     source_id: &str,
@@ -36,13 +38,8 @@ pub async fn import_spatial_data(
 
     let detected_crs: Option<String> = conn.query_row(&crs_query, [], |row| row.get(0)).ok();
 
-    // Update files table with detected CRS
-    if let Some(crs) = &detected_crs {
-        let _ = conn.execute(
-            "UPDATE files SET crs = ? WHERE id = ?",
-            duckdb::params![crs, source_id],
-        );
-    }
+    // Normalize CRS and determine type
+    let normalized = normalize_crs(detected_crs.as_deref());
 
     // 2. Import Data into a per-dataset table (layer_<id>) so we can preserve columns.
     // We keep a stable feature id column (fid) for MVT feature ids.
@@ -60,11 +57,42 @@ pub async fn import_spatial_data(
     conn.execute(&create_sql, [])
         .map_err(|e| format!("Spatial import failed: {}", e))?;
 
-    // Record table name on the file record.
-    let _ = conn.execute(
-        "UPDATE files SET table_name = ? WHERE id = ?",
-        duckdb::params![safe_table_name.as_str(), source_id],
+    // Calculate data_bounds (extent of all geometries)
+    let bounds_query = format!(
+        "SELECT ST_XMin(e), ST_YMin(e), ST_XMax(e), ST_YMax(e) FROM (SELECT ST_Extent(geom) as e FROM \"{safe_table_name}\")"
     );
+    let data_bounds: Option<DataBounds> = conn
+        .query_row(&bounds_query, [], |row| {
+            let minx: Option<f64> = row.get(0).ok();
+            let miny: Option<f64> = row.get(1).ok();
+            let maxx: Option<f64> = row.get(2).ok();
+            let maxy: Option<f64> = row.get(3).ok();
+            match (minx, miny, maxx, maxy) {
+                (Some(x1), Some(y1), Some(x2), Some(y2)) => Ok(Some(DataBounds {
+                    minx: x1,
+                    miny: y1,
+                    maxx: x2,
+                    maxy: y2,
+                })),
+                _ => Ok(None),
+            }
+        })
+        .ok()
+        .flatten();
+
+    // Update files table with CRS info and data_bounds
+    let data_bounds_json = data_bounds.map(|b| b.to_json());
+    conn.execute(
+        "UPDATE files SET crs = ?, crs_type = ?, data_bounds = ?, table_name = ? WHERE id = ?",
+        duckdb::params![
+            normalized.crs,
+            normalized.crs_type,
+            data_bounds_json,
+            safe_table_name.as_str(),
+            source_id
+        ],
+    )
+    .map_err(|e| format!("Failed to update file metadata: {}", e))?;
 
     // 3. Normalize/rename columns when needed and capture metadata.
     // DuckDB is case-insensitive for identifiers, so we treat case-only differences as conflicts.

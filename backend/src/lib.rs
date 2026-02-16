@@ -1,6 +1,7 @@
 mod auth;
 mod auth_routes;
 mod config;
+mod crs;
 mod db;
 mod handlers;
 mod http_errors;
@@ -68,6 +69,8 @@ mod tests {
             uploaded_at TIMESTAMP NOT NULL,
             status VARCHAR NOT NULL,
             crs VARCHAR,
+            crs_type VARCHAR DEFAULT 'standard',
+            data_bounds VARCHAR,
             path VARCHAR NOT NULL,
             table_name VARCHAR,
             error VARCHAR,
@@ -136,6 +139,7 @@ mod tests {
             uploaded_at: uploaded_at.to_string(),
             status: "uploaded".to_string(),
             crs: None,
+            crs_type: None,
             path: file_path.to_string_lossy().to_string(),
             table_name: None,
             error: None,
