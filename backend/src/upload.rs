@@ -224,6 +224,7 @@ pub async fn upload_file(
         uploaded_at,
         status: "uploaded".to_string(),
         crs: None,
+        crs_type: None,
         path: rel_string,
         table_name: None,
         error: None,

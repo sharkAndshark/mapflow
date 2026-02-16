@@ -1,0 +1,55 @@
+{
+  "type": "FeatureCollection",
+  "name": "negative_coords_test",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "name": "Zone A"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-500.0, -300.0],
+            [-400.0, -300.0],
+            [-400.0, -200.0],
+            [-500.0, -200.0],
+            [-500.0, -300.0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "name": "Zone B"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-350.0, -250.0],
+            [-250.0, -250.0],
+            [-250.0, -150.0],
+            [-350.0, -150.0],
+            [-350.0, -250.0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 3,
+        "name": "Center Point"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-300.0, -200.0]
+      }
+    }
+  ]
+}

@@ -1,51 +1,76 @@
 # 自定义坐标系测试数据
 
-本目录包含用于测试自定义CRS（无EPSG code）功能的测试数据。
+本目录包含用于测试自定义 CRS（无 EPSG code）功能的测试数据。
 
-## 文件说明
+## 测试文件
 
-### simple_custom_crs.geojson
-简单测试文件，包含4个features：
-- 2个Polygon（Building A, Building B）
-- 1个LineString（Road Segment）
-- 1个Point（Landmark）
-
-坐标范围：[1000, 2000] 到 [1500, 2500]
-CRS: LOCAL_GRID（无EPSG code）
-
-### complex_custom_crs.geojson
-复杂测试文件，包含5个features：
-- 1个MultiPolygon（building）
-- 1个Polygon（park）
-- 1个MultiLineString（road）
-- 2个Point（utility）
-
-坐标范围：[4800, 2800] 到 [5800, 3900]
-CRS: LOCAL_GRID_PROJECT（无EPSG code）
+| 文件 | CRS 场景 | 坐标范围 | 几何类型 | 预期行为 |
+|------|----------|----------|----------|----------|
+| `simple_custom_crs.geojson` | 无 CRS 声明 | [1000, 2000] - [1500, 2500] | Point, LineString, Polygon | crs=null, crs_type=custom |
+| `complex_custom_crs.geojson` | 自定义 CRS 名称 | [4800, 2800] - [5800, 3900] | Point, MultiLineString, Polygon, MultiPolygon | crs="LOCAL_GRID_PROJECT", crs_type=custom |
+| `no_crs_test.geojson` | 无 CRS 声明 | [950, 2000] - [1400, 2400] | Point, LineString, Polygon | crs=null, crs_type=custom |
+| `negative_coords_test.geojson` | 无 CRS + 负坐标 | [-500, -300] - [-250, -150] | Point, Polygon | crs=null, crs_type=custom, 测试负坐标处理 |
 
 ## 预期行为
 
 上传这些文件后：
-1. crs_type 应该被标记为 'custom'
-2. crs_wkt 应该存储完整的WKT定义
-3. tiling_scheme 应该自动计算
-4. Preview API 返回的 bbox 应该是原坐标系
-5. 瓦片生成应该在原坐标系内进行（不转换到EPSG:3857）
+
+1. `crs_type` 应该被标记为 `'custom'`
+2. `data_bounds` 应该存储原始坐标范围（JSON 格式）
+3. Preview API 返回的 `bbox` 应该直接使用 `data_bounds`（不做坐标转换）
+4. 瓦片生成应该在原坐标系内进行（不转换到 EPSG:3857）
+5. 前端应该使用自定义 TileGrid 和 Projection
+
+## API 响应示例
+
+### Preview API 响应
+
+```json
+{
+  "id": "abc123",
+  "name": "no_crs_test",
+  "crs": null,
+  "crsType": "custom",
+  "bbox": [950.0, 2000.0, 1400.0, 2400.0],
+  "dataBounds": [950.0, 2000.0, 1400.0, 2400.0],
+  "tileFormat": null,
+  "minZoom": null,
+  "maxZoom": null
+}
+```
+
+### File List API 响应
+
+```json
+{
+  "id": "abc123",
+  "name": "no_crs_test",
+  "crs": null,
+  "crsType": "custom",
+  ...
+}
+```
 
 ## 使用示例
 
 ```bash
 # 上传测试文件
-curl -X POST -F "file=@simple_custom_crs.geojson" http://localhost:3000/api/uploads
+curl -X POST -F "file=@no_crs_test.geojson" http://localhost:3000/api/uploads
 
 # 等待处理完成，然后获取预览元数据
 curl http://localhost:3000/api/files/{id}/preview
 
-# 应该看到：
-# {
-#   "crs_type": "custom",
-#   "crs_wkt": "...",
-#   "tiling_scheme": { ... },
-#   "bbox": [1000.0, 2000.0, 1500.0, 2500.0]
-# }
+# 请求瓦片
+curl http://localhost:3000/api/files/{id}/tiles/0/0/0 --output tile.mvt
 ```
+
+## CRS 分类规则
+
+| 输入 CRS | 归一化结果 | crs_type |
+|----------|------------|----------|
+| NULL（无声明） | NULL | custom |
+| EPSG:XXXX | EPSG:XXXX | standard |
+| WGS84 / CRS84 | EPSG:4326 | standard |
+| WKT + AUTHORITY["EPSG"] | EPSG:XXXX | standard |
+| WKT 无 EPSG AUTHORITY | 完整 WKT | custom |
+| 其他字符串 | 原值 | custom |

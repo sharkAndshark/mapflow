@@ -23,7 +23,163 @@
 - **Issue**: docker_smoke in CI took ~15min with poor ROI (e2e already covers functionality)
 - **Solution**: Removed from CI, kept only in release/nightly workflows for Docker image validation
 
-## Future Enhancements
+## Custom CRS Support (Phase 1)
+
+**Goal**: 支持预览自定义坐标系数据（如本地测量坐标、建筑平面图）
+
+**Scope**: 单文件预览，不支持发布公开瓦片
+
+### User Story
+
+1. 用户上传本地坐标系数据（无 EPSG code）
+2. 系统自动识别为 custom CRS
+3. Preview 正常显示，坐标轴显示原始坐标
+4. 用户可手动修改 CRS 定义
+
+### CRS Classification Rules
+
+```
+ST_Read_Meta 结果 → 归一化 + 分类
+├── NULL（无 CRS 声明）→ crs=null, crs_type=custom
+├── EPSG:XXXX → crs="EPSG:XXXX", crs_type=standard
+├── WGS84 / CRS84 → crs="EPSG:4326", crs_type=standard
+├── WKT + AUTHORITY["EPSG","XXXX"] → crs="EPSG:XXXX", crs_type=standard
+├── WKT 无 EPSG AUTHORITY → crs=完整WKT, crs_type=custom
+└── 其他字符串 → crs=原值, crs_type=custom
+```
+
+### Tasks
+
+#### 1. Database
+- [x] files 表添加 `crs_type VARCHAR DEFAULT 'standard'`
+- [x] files 表添加 `data_bounds VARCHAR` (JSON: {minx, miny, maxx, maxy})
+
+#### 2. Backend
+
+**2.1 新建 crs.rs**
+- [x] `normalize_crs(raw: Option<&str>) -> NormalizedCrs`
+- [x] `parse_wkt(wkt: &str) -> NormalizedCrs` - 解析 WKT 中的 AUTHORITY
+- [x] `DataBounds` struct + `is_valid()` 方法
+- [x] `calculate_custom_tile_bbox(bounds, z, x, y) -> (minx, miny, maxx, maxy)`
+
+**2.2 models.rs**
+- [x] FileItem 新增 `crs_type: Option<String>`
+- [x] PreviewMeta 新增 `crs_type: String, data_bounds: Option<[f64; 4]>`
+- [x] UpdateCrsRequest struct
+
+**2.3 import.rs**
+- [x] 调用 `normalize_crs()` 归一化 CRS
+- [x] 更新 files.crs, files.crs_type
+- [x] 计算所有文件的 data_bounds: `ST_Extent(geom)`
+
+**2.4 tiles.rs**
+- [x] TileParams struct
+- [x] TileError struct + From<duckdb::Error>
+- [x] `build_mvt_select_sql`: custom 用 `calculate_custom_tile_bbox` + `ST_MakeEnvelope`
+- [x] `build_mvt_query_params`: 根据类型返回正确的参数
+
+**2.5 handlers.rs**
+- [x] `get_preview_meta`: 返回 crs_type, data_bounds
+- [x] `get_preview_meta`: bbox 计算 - custom 用 data_bounds，standard 用 ST_Transform
+- [x] `update_crs`: `PUT /api/files/:id/crs`
+  - 请求体 `{ crs: string }` (必填)
+  - 只更新元数据，不重算 data_bounds
+
+**2.6 routes.rs**
+- [x] 添加 PUT 方法到 CORS 配置
+- [x] 添加 `/api/files/{id}/crs` 路由
+
+**2.7 public.rs**
+- [x] 更新 `get_public_tile` 支持自定义 CRS
+
+#### 3. Frontend
+
+**3.1 Preview.jsx**
+- [x] 检测 `meta.crsType === 'custom'`
+- [x] `calculateCustomResolutions()` 函数 + 边界检查
+- [x] custom 时构建 TileGrid:
+  - extent = meta.dataBounds
+  - origin = [minx, maxy] (左上角)
+  - resolutions = 计算 z=0 到 z=20
+- [x] 创建 Projection: code, units='m', extent
+- [x] 显示 custom CRS 标签（橙色样式）
+
+#### 4. Test Data
+
+**4.1 GeoJSON (testdata/custom-crs/)**
+- [x] simple_custom_crs.geojson - 无 CRS → custom
+- [x] complex_custom_crs.geojson - 自定义名 → custom
+- [x] no_crs_test.geojson - 无 CRS → custom
+- [x] negative_coords_test.geojson - 负坐标测试
+- [x] README.md 更新
+
+#### 5. Tests
+- [x] Unit: crs.rs 各类输入 (9 tests)
+- [x] Unit: calculate_custom_tile_bbox (2 tests)
+- [x] Unit: DataBounds::is_valid (1 test)
+- [x] Backend: 40 tests passed
+- [ ] Integration: 自定义 CRS 上传流程
+- [ ] Integration: PUT /api/files/:id/crs
+- [ ] Integration: 自定义 CRS 瓦片请求
+- [ ] E2E: 预览页正常显示
+
+#### 6. Future Test Data (Optional)
+
+**6.1 Shapefile (testdata/custom-crs/shapefile/)**
+- [ ] custom_prj_no_auth.zip - .prj 无 EPSG AUTHORITY → custom
+- [ ] custom_prj_with_auth.zip - .prj 有 EPSG AUTHORITY → standard
+- [ ] no_prj_file.zip - 无 .prj 文件 → custom
+
+**6.2 GeoJSONSeq**
+- [ ] osm_lines_custom.geojsonl - 无 CRS → custom
+
+**6.3 TopoJSON**
+- [ ] osm_polygons_custom.topojson - 无 CRS → custom
+
+### Key Implementation Details
+
+**Custom Tile BBox Calculation:**
+```rust
+fn calculate_custom_tile_bbox(bounds: &DataBounds, z: i32, x: i32, y: i32) -> (f64, f64, f64, f64) {
+    let tiles_per_side = 2f64.powi(z);
+    let tile_width = (bounds.maxx - bounds.minx) / tiles_per_side;
+    let tile_height = (bounds.maxy - bounds.miny) / tiles_per_side;
+    
+    let minx = bounds.minx + x as f64 * tile_width;
+    let maxx = bounds.minx + (x + 1) as f64 * tile_width;
+    let maxy = bounds.maxy - y as f64 * tile_height;  // Y 轴从上往下
+    let miny = bounds.maxy - (y + 1) as f64 * tile_height;
+    
+    (minx, miny, maxx, maxy)
+}
+```
+
+**Frontend Resolutions:**
+```javascript
+function calculateResolutions(bounds, maxZoom = 20) {
+  const maxDim = Math.max(bounds.maxx - bounds.minx, bounds.maxy - bounds.miny);
+  return Array.from({ length: maxZoom + 1 }, (_, z) => maxDim / (256 * Math.pow(2, z)));
+}
+```
+
+---
+
+## Code Quality Improvements
+
+### CRS Validation in Tile Generation
+
+- **Issue**: `tiles.rs` 中的 `source_crs` 在 standard 模式下直接插入 SQL
+- **Current Protection**: `crs_type` 由 `normalize_crs` 控制，只有 EPSG 格式才会被标记为 standard
+- **Risk**: 低（需要绕过 API 直接修改数据库才能利用）
+- **Solution**: 在 `build_mvt_select_sql` 中添加 CRS 格式验证
+- **Priority**: Low
+
+### Debug Logging Cleanup
+
+- **Issue**: handlers.rs contains debug `println!` statements (lines 179-182, 287, 304-307)
+- **Impact**: Verbose output in production logs
+- **Solution**: Remove or replace with proper logging framework (tracing/log crate)
+- **Priority**: Low
 
 ### MBTiles Connection Pool
 

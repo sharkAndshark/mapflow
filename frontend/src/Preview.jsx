@@ -17,8 +17,23 @@ import TileLayer from 'ol/layer/Tile';
 import TileSource from 'ol/source/Tile';
 import TileDebug from 'ol/source/TileDebug';
 import MVT from 'ol/format/MVT';
+import Projection from 'ol/proj/Projection';
+import TileGrid from 'ol/tilegrid/TileGrid';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { Fill, Stroke, Style, Circle as CircleStyle } from 'ol/style';
+
+function calculateCustomResolutions(dataBounds, maxZoom = 20) {
+  const width = dataBounds[2] - dataBounds[0];
+  const height = dataBounds[3] - dataBounds[1];
+  const maxDim = Math.max(width, height);
+
+  if (maxDim <= 0) {
+    console.warn('Invalid data bounds: zero or negative extent');
+    return Array.from({ length: maxZoom + 1 }, (_, z) => 1 / Math.pow(2, z));
+  }
+
+  return Array.from({ length: maxZoom + 1 }, (_, z) => maxDim / (256 * Math.pow(2, z)));
+}
 
 export default function Preview() {
   const { id } = useParams();
@@ -277,9 +292,12 @@ export default function Preview() {
     const map = mapRef.current;
     const view = map.getView();
 
+    // Determine if this is a custom CRS
+    const isCustomCRS = meta.crsType === 'custom' && meta.dataBounds;
+
     // Update zoom limits based on meta
     const minZoom = meta.minZoom ?? 0;
-    const maxZoom = meta.maxZoom ?? 22;
+    const maxZoom = isCustomCRS ? 20 : (meta.maxZoom ?? 22);
 
     if (view.getMinZoom() !== minZoom) {
       view.setMinZoom(minZoom);
@@ -300,11 +318,37 @@ export default function Preview() {
     const tileUrl = `${window.location.origin}/api/files/${id}/tiles/{z}/{x}/{y}`;
 
     let tileLayer;
+    let customProjection = null;
+    let customTileGrid = null;
+
+    if (isCustomCRS) {
+      // Custom CRS: create custom projection and tile grid
+      const [minx, miny, maxx, maxy] = meta.dataBounds;
+
+      customProjection = new Projection({
+        code: meta.crs || 'CUSTOM_CRS',
+        units: 'm',
+        extent: [minx, miny, maxx, maxy],
+      });
+
+      const resolutions = calculateCustomResolutions(meta.dataBounds, 20);
+
+      customTileGrid = new TileGrid({
+        extent: [minx, miny, maxx, maxy],
+        origin: [minx, maxy], // Top-left origin (TMS-style)
+        resolutions: resolutions,
+        tileSize: 256,
+      });
+    }
 
     if (tileFormat === 'png') {
       // Raster tiles (PNG)
       tileLayer = new TileLayer({
-        source: new TileSource({ url: tileUrl }),
+        source: new TileSource({
+          url: tileUrl,
+          projection: customProjection || 'EPSG:3857',
+          tileGrid: customTileGrid,
+        }),
       });
     } else {
       // Vector tiles (MVT) - default
@@ -312,6 +356,8 @@ export default function Preview() {
         source: new VectorTileSource({
           format: new MVT(),
           url: tileUrl,
+          projection: customProjection || 'EPSG:3857',
+          tileGrid: customTileGrid,
         }),
         style: styleFunction,
       });
@@ -324,13 +370,20 @@ export default function Preview() {
     // 2. Fit bounds
     if (meta.bbox && meta.bbox.length === 4) {
       const [minx, miny, maxx, maxy] = meta.bbox;
-      // Backend sends WGS84, map is default Web Mercator (EPSG:3857)
-      const extent = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857');
+
+      let extent;
+      if (isCustomCRS) {
+        // Custom CRS: use bbox directly (no transform needed)
+        extent = [minx, miny, maxx, maxy];
+      } else {
+        // Standard CRS: transform from WGS84 to Web Mercator
+        extent = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857');
+      }
 
       map.getView().fit(extent, {
         padding: [50, 50, 50, 50],
         duration: 1000,
-        maxZoom: maxZoom, // Use the max zoom from metadata
+        maxZoom: maxZoom,
       });
     }
   }, [meta, id, styleFunction, tileFormat]);
@@ -362,7 +415,13 @@ export default function Preview() {
         {meta && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
-            {meta.crs && <span className="badge">{meta.crs}</span>}
+            {meta.crsType === 'custom' ? (
+              <span className="badge" style={{ backgroundColor: '#f0ad4e', color: '#fff' }}>
+                {meta.crs || 'Custom CRS'}
+              </span>
+            ) : meta.crs ? (
+              <span className="badge">{meta.crs}</span>
+            ) : null}
           </div>
         )}
 

@@ -27,6 +27,8 @@ pub struct FileItem {
     pub uploaded_at: String,
     pub status: String,
     pub crs: Option<String>,
+    #[serde(rename = "crsType", skip_serializing_if = "Option::is_none")]
+    pub crs_type: Option<String>,
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub table_name: Option<String>,
@@ -50,13 +52,17 @@ pub struct PreviewMeta {
     pub id: String,
     pub name: String,
     pub crs: Option<String>,
-    pub bbox: Option<[f64; 4]>, // minx, miny, maxx, maxy in WGS84
+    #[serde(rename = "crsType")]
+    pub crs_type: String,
+    pub bbox: Option<[f64; 4]>,
+    #[serde(rename = "dataBounds", skip_serializing_if = "Option::is_none")]
+    pub data_bounds: Option<[f64; 4]>,
     #[serde(rename = "tileFormat", skip_serializing_if = "Option::is_none")]
-    pub tile_format: Option<String>, // "mvt", "png", or null
+    pub tile_format: Option<String>,
     #[serde(rename = "minZoom", skip_serializing_if = "Option::is_none")]
-    pub minzoom: Option<i32>, // MBTiles: valid zoom range (min), null for dynamic tables
+    pub minzoom: Option<i32>,
     #[serde(rename = "maxZoom", skip_serializing_if = "Option::is_none")]
-    pub maxzoom: Option<i32>, // MBTiles: valid zoom range (max), null for dynamic tables
+    pub maxzoom: Option<i32>,
 }
 
 #[allow(dead_code)]
@@ -120,4 +126,9 @@ pub struct PublicTileMeta {
     pub tile_url: String,
     #[serde(rename = "viewerUrl")]
     pub viewer_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateCrsRequest {
+    pub crs: Option<String>,
 }
