@@ -82,18 +82,21 @@ test('mbtiles file has zoom limits', async ({ page, workerServer, request }) => 
   // Verify URL and Content on new page
   expect(newPage.url()).toContain('/preview/');
 
-  // Wait for tiles to load
-  await newPage.waitForTimeout(2000);
-
-  // Check that tile requests were made (confirm map loaded)
-  const tileRequests = await newPage.evaluate(() => {
-    return performance
-      .getEntriesByType('resource')
-      .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
-      .map((r) => ({ url: r.name, status: r.responseStatus }));
-  });
-
-  expect(tileRequests.length).toBeGreaterThan(0);
+  // Poll for tile requests (confirm map loaded)
+  await expect
+    .poll(
+      async () => {
+        const tileRequests = await newPage.evaluate(() => {
+          return performance
+            .getEntriesByType('resource')
+            .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
+            .map((r) => ({ url: r.name, status: r.responseStatus }));
+        });
+        return tileRequests.length;
+      },
+      { message: 'wait for tile requests', timeout: 10000 },
+    )
+    .toBeGreaterThan(0);
 
   // Note: The actual zoom limits are enforced in the frontend code.
   // We verify that the API returns the correct zoom limits above.
@@ -170,18 +173,21 @@ test('dynamic table has no zoom limits', async ({ page, workerServer, request })
   // Verify URL and Content on new page
   expect(newPage.url()).toContain('/preview/');
 
-  // Wait for tiles to load
-  await newPage.waitForTimeout(2000);
-
-  // Check that tile requests were made (confirm map loaded)
-  const tileRequests = await newPage.evaluate(() => {
-    return performance
-      .getEntriesByType('resource')
-      .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
-      .map((r) => ({ url: r.name, status: r.responseStatus }));
-  });
-
-  expect(tileRequests.length).toBeGreaterThan(0);
+  // Poll for tile requests (confirm map loaded)
+  await expect
+    .poll(
+      async () => {
+        const tileRequests = await newPage.evaluate(() => {
+          return performance
+            .getEntriesByType('resource')
+            .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
+            .map((r) => ({ url: r.name, status: r.responseStatus }));
+        });
+        return tileRequests.length;
+      },
+      { message: 'wait for tile requests', timeout: 10000 },
+    )
+    .toBeGreaterThan(0);
 
   // Note: For dynamic tables, the frontend uses default zoom limits (0-22).
   // We verify that the API returns null for minzoom and maxzoom above.

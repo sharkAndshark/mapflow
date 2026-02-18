@@ -70,25 +70,19 @@ test('click preview opens new tab with map', async ({ page, workerServer, reques
   await expect(newPage.getByText('sample')).toBeVisible(); // Filename in header
 
   // 6. Verify Tile Requests (Observability Contract)
-  // We expect the map to load tiles. We intercept/wait for at least one successful tile request.
-  // URL pattern: /api/files/:id/tiles/:z/:x/:y
-  // Wait a bit for the map to start loading tiles
-  await newPage.waitForTimeout(2000);
-
-  // Check if any tile requests were made by looking at the page's performance entries
-  const tileRequests = await newPage.evaluate(() => {
-    return performance
-      .getEntriesByType('resource')
-      .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
-      .map((r) => ({ url: r.name, status: r.responseStatus }));
-  });
-
-  // Log for debugging
-  console.log('Tile requests found:', tileRequests.length);
-  tileRequests.slice(0, 5).forEach((r) => {
-    console.log('  -', r.url, 'status:', r.status);
-  });
-
-  // We expect at least one tile request was made
-  expect(tileRequests.length).toBeGreaterThan(0);
+  // Poll for at least one tile request to complete
+  await expect
+    .poll(
+      async () => {
+        const tileRequests = await newPage.evaluate(() => {
+          return performance
+            .getEntriesByType('resource')
+            .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
+            .map((r) => ({ url: r.name, status: r.responseStatus }));
+        });
+        return tileRequests.length;
+      },
+      { message: 'wait for tile requests', timeout: 10000 },
+    )
+    .toBeGreaterThan(0);
 });

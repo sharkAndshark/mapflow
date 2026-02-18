@@ -52,12 +52,20 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   const copyButton = row.getByText('复制');
   await copyButton.click();
 
-  await page.waitForTimeout(1000);
-
+  // Wait for public tile endpoint to be accessible and verify response
   const publicContext = await context.browser().newContext();
   const publicRequest = publicContext.request;
+  await expect
+    .poll(
+      async () => {
+        const response = await publicRequest.get(`${workerServer.url}/tiles/my-custom-map/0/0/0`);
+        return response.status();
+      },
+      { message: 'wait for public tile to be accessible', timeout: 10000 },
+    )
+    .toBe(200);
+
   const response = await publicRequest.get(`${workerServer.url}/tiles/my-custom-map/0/0/0`);
-  expect(response.status()).toBe(200);
   expect(response.headers()['content-type']).toContain('application/vnd.mapbox-vector-tile');
   expect(response.headers()['cache-control']).toContain('public, max-age=300');
   await publicContext.close();
