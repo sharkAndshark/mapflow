@@ -332,11 +332,7 @@ pub async fn get_tile(
             blob,
         )
             .into_response()),
-        _ => Ok((
-            [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
-            Vec::new(),
-        )
-            .into_response()),
+        _ => Ok(StatusCode::NO_CONTENT.into_response()),
     }
 }
 

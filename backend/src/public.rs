@@ -145,14 +145,7 @@ pub async fn get_public_tile(
             blob,
         )
             .into_response()),
-        _ => Ok((
-            [
-                (header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile"),
-                (header::CACHE_CONTROL, "public, max-age=300"),
-            ],
-            Vec::new(),
-        )
-            .into_response()),
+        _ => Ok(StatusCode::NO_CONTENT.into_response()),
     }
 }
 
