@@ -168,125 +168,129 @@ function DetailSidebar({ file }) {
   const canPreview = isReady;
 
   return (
-    <div className="detail-content" data-testid="detail-sidebar">
-      <div className="detail-header">
-        <h3 className="detail-title">{file.name}</h3>
-        <span className="detail-id">{file.id}</span>
-      </div>
-
-      <div className="detail-group">
-        <div className="detail-label">Type</div>
-        <div className="detail-value">{file.type}</div>
-      </div>
-
-      <div className="detail-group">
-        <div className="detail-label">Size</div>
-        <div className="detail-value">{formatSize(file.size || 0)}</div>
-      </div>
-
-      <div className="detail-group">
-        <div className="detail-label">Status</div>
-        <div className={`status ${file.status}`} data-testid="file-status">
-          {STATUS_LABELS[file.status] || file.status}
+    <div className="detail-sidebar" data-testid="detail-sidebar">
+      <div className="detail-content">
+        <div className="detail-header">
+          <h3 className="detail-title">{file.name}</h3>
+          <span className="detail-id">{file.id}</span>
         </div>
-      </div>
 
-      <div className="detail-group">
-        <div className="detail-label">Uploaded At</div>
-        <div className="detail-value">
-          {file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '--'}
-        </div>
-      </div>
-
-      {file.crs && (
         <div className="detail-group">
-          <div className="detail-label">CRS</div>
-          <div className="detail-value">{file.crs}</div>
+          <div className="detail-label">Type</div>
+          <div className="detail-value">{file.type}</div>
         </div>
-      )}
 
-      {isReady && (
         <div className="detail-group">
-          <div className="detail-label">字段信息</div>
-          <div className="detail-value">
-            {isLoadingSchema ? (
-              <span style={{ color: '#888', fontSize: '12px' }}>加载中...</span>
-            ) : schemaError ? (
-              <span style={{ color: '#d32f2f', fontSize: '12px' }}>{schemaError}</span>
-            ) : schema?.layers ? (
-              <div style={{ fontSize: '13px' }}>
-                {schema.layers.length === 0 ? (
-                  <span style={{ color: '#888' }}>无字段</span>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {schema.layers.map((layer) => (
-                      <div key={layer.id}>
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            fontSize: '12px',
-                            color: '#444',
-                            marginBottom: '4px',
-                            paddingBottom: '4px',
-                            borderBottom: '1px solid #e0e0e0',
-                          }}
-                        >
-                          {layer.description ? `${layer.id} - ${layer.description}` : layer.id}
-                        </div>
-                        <div
-                          style={{
-                            paddingLeft: '12px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '4px',
-                          }}
-                        >
-                          {layer.fields.length === 0 ? (
-                            <span style={{ color: '#999', fontSize: '12px', fontStyle: 'italic' }}>
-                              无字段
-                            </span>
-                          ) : (
-                            layer.fields.map((field) => (
-                              <div
-                                key={field.name}
-                                style={{
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  padding: '2px 0',
-                                }}
-                              >
-                                <span style={{ fontWeight: 500 }}>{field.name}</span>
-                                <span
-                                  style={{
-                                    fontSize: '11px',
-                                    color: '#666',
-                                    background: '#f5f5f5',
-                                    padding: '1px 6px',
-                                    borderRadius: '3px',
-                                  }}
-                                >
-                                  {field.type}
-                                </span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : null}
+          <div className="detail-label">Size</div>
+          <div className="detail-value">{formatSize(file.size || 0)}</div>
+        </div>
+
+        <div className="detail-group">
+          <div className="detail-label">Status</div>
+          <div className={`status ${file.status}`} data-testid="file-status">
+            {STATUS_LABELS[file.status] || file.status}
           </div>
         </div>
-      )}
 
-      {isFailed && file.error && (
-        <div className="detail-error">
-          <strong>Error:</strong> {file.error}
+        <div className="detail-group">
+          <div className="detail-label">Uploaded At</div>
+          <div className="detail-value">
+            {file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '--'}
+          </div>
         </div>
-      )}
+
+        {file.crs && (
+          <div className="detail-group">
+            <div className="detail-label">CRS</div>
+            <div className="detail-value">{file.crs}</div>
+          </div>
+        )}
+
+        {isReady && (
+          <div className="detail-group">
+            <div className="detail-label">字段信息</div>
+            <div className="detail-value">
+              {isLoadingSchema ? (
+                <span style={{ color: '#888', fontSize: '12px' }}>加载中...</span>
+              ) : schemaError ? (
+                <span style={{ color: '#d32f2f', fontSize: '12px' }}>{schemaError}</span>
+              ) : schema?.layers ? (
+                <div style={{ fontSize: '13px' }}>
+                  {schema.layers.length === 0 ? (
+                    <span style={{ color: '#888' }}>无字段</span>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {schema.layers.map((layer) => (
+                        <div key={layer.id}>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              fontSize: '12px',
+                              color: '#444',
+                              marginBottom: '4px',
+                              paddingBottom: '4px',
+                              borderBottom: '1px solid #e0e0e0',
+                            }}
+                          >
+                            {layer.description ? `${layer.id} - ${layer.description}` : layer.id}
+                          </div>
+                          <div
+                            style={{
+                              paddingLeft: '12px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '4px',
+                            }}
+                          >
+                            {layer.fields.length === 0 ? (
+                              <span
+                                style={{ color: '#999', fontSize: '12px', fontStyle: 'italic' }}
+                              >
+                                无字段
+                              </span>
+                            ) : (
+                              layer.fields.map((field) => (
+                                <div
+                                  key={field.name}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '2px 0',
+                                  }}
+                                >
+                                  <span style={{ fontWeight: 500 }}>{field.name}</span>
+                                  <span
+                                    style={{
+                                      fontSize: '11px',
+                                      color: '#666',
+                                      background: '#f5f5f5',
+                                      padding: '1px 6px',
+                                      borderRadius: '3px',
+                                    }}
+                                  >
+                                    {field.type}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        {isFailed && file.error && (
+          <div className="detail-error">
+            <strong>Error:</strong> {file.error}
+          </div>
+        )}
+      </div>
 
       <div className="detail-actions">
         {canPreview ? (

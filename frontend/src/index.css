@@ -114,6 +114,18 @@ h1 {
   flex-direction: column;
 }
 
+.detail-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.detail-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
 .panel-meta {
   color: #6b6b6b;
   font-size: 14px;
@@ -176,12 +188,6 @@ h1 {
 }
 
 /* Detail Area Styles */
-.detail-content {
-  padding: 24px;
-  flex: 1;
-  overflow-y: auto;
-}
-
 .detail-empty {
   display: flex;
   flex-direction: column;
@@ -244,9 +250,12 @@ h1 {
 }
 
 .detail-actions {
-  margin-top: 32px;
+  flex-shrink: 0;
   display: flex;
   gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #eee;
+  background: #fcfcfc;
 }
 
 .btn-primary {
