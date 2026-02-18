@@ -33,7 +33,7 @@
 
 | ID | 模块 | 可观测行为 | 验证标准 | 验证命令 | 层级 | 优先级 |
 |----|------|-----------|---------|---------|------|--------|
-| API-001 | 上传 | POST /api/uploads 需要认证，接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 200 + 元数据 / 400（格式无效） / 401（未认证） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
+| API-001 | 上传 | POST /api/uploads 需要认证，接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 201 + 元数据 / 400（格式无效） / 401（未认证） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
 | API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | lifecycle tests 轮询验证 | Integration | P0 |
 | API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | lifecycle tests + `test_preview_not_ready_returns_409` | Integration | P0 |
 | API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证。动态生成：返回 MVT（Web Mercator 投影），包含几何和特征属性。MBTiles：直接查询 tiles 表，MVT 返回 `application/vnd.mapbox-vector-tile`，PNG 返回 `image/png`，不存在返回 204 No Content | 200 + MVT/PNG / 204 / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
