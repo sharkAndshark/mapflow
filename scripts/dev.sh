@@ -64,6 +64,8 @@ err()  { echo -e "${RED}[dev.sh]${NC} $1"; }
 # -----------------------------------------------------------------------------
 BACKEND_PID=""
 FRONTEND_PID=""
+TAIL_PID=""
+BACKEND_STDERR=""
 
 kill_pid_and_children() {
     local pid="$1"
@@ -97,6 +99,12 @@ cleanup() {
 
     kill_pid_and_children "$FRONTEND_PID" "Frontend"
     kill_pid_and_children "$BACKEND_PID" "Backend"
+    
+    if [ -n "$TAIL_PID" ] && kill -0 "$TAIL_PID" 2>/dev/null; then
+        kill -TERM "$TAIL_PID" 2>/dev/null || true
+    fi
+
+    rm -f "$BACKEND_STDERR" 2>/dev/null || true
 
     exit "$exit_code"
 }
@@ -116,10 +124,8 @@ kill_port_owner() {
     
     if [ -n "$pids" ]; then
         warn "Port $port is in use by PID(s): $pids. Killing..."
-        # Split by newline and kill each
         echo "$pids" | xargs kill -TERM 2>/dev/null || true
         sleep 1
-        # Force kill survivors
         pids=$(lsof -ti:"$port" 2>/dev/null || true)
         if [ -n "$pids" ]; then
             echo "$pids" | xargs kill -KILL 2>/dev/null || true
@@ -127,7 +133,7 @@ kill_port_owner() {
     fi
 }
 
-kill_port_owner "$PORT"
+# Only kill frontend port; backend will auto-select an available port
 kill_port_owner "$VITE_PORT"
 
 # -----------------------------------------------------------------------------
@@ -161,28 +167,31 @@ if [ ! -f "$BINARY_PATH" ]; then
     fi
 fi
 
-log "Starting backend on port $PORT..."
-PORT="$PORT" "$BINARY_PATH" &
+# Create a temp file for backend stderr (to capture PORT=xxx output)
+BACKEND_STDERR=$(mktemp)
+
+log "Starting backend (preferred port: $PORT)..."
+PORT="$PORT" "$BINARY_PATH" 2>"$BACKEND_STDERR" &
 BACKEND_PID=$!
 log "Backend PID: $BACKEND_PID"
 
 # -----------------------------------------------------------------------------
-# Wait for Backend Ready
+# Wait for Backend Port
 # -----------------------------------------------------------------------------
-log "Waiting for backend to be ready..."
-max_retries=60 # 30 seconds
+ACTUAL_PORT=""
+max_wait=60
 count=0
-backend_ready=0
 
-while [ "$count" -lt "$max_retries" ]; do
-    # Check if process died early
+while [ "$count" -lt "$max_wait" ]; do
     if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
         err "Backend process died unexpectedly."
+        cat "$BACKEND_STDERR" >&2
         exit 1
     fi
 
-    if curl -s "http://127.0.0.1:$PORT/api/files" >/dev/null 2>&1; then
-        backend_ready=1
+    # Check for PORT=xxx in stderr
+    ACTUAL_PORT=$(grep -m1 "^PORT=" "$BACKEND_STDERR" 2>/dev/null | cut -d= -f2 || true)
+    if [ -n "$ACTUAL_PORT" ]; then
         break
     fi
 
@@ -190,20 +199,65 @@ while [ "$count" -lt "$max_retries" ]; do
     count=$((count + 1))
 done
 
-if [ "$backend_ready" -eq 0 ]; then
-    err "Backend failed to start in 30s."
+if [ -z "$ACTUAL_PORT" ]; then
+    err "Backend did not report port within 30s."
+    cat "$BACKEND_STDERR" >&2
     exit 1
 fi
 
-log "Backend is ready!"
+if [ "$ACTUAL_PORT" != "$PORT" ]; then
+    warn "Port $PORT in use, backend using $ACTUAL_PORT instead"
+fi
+log "Backend is ready on port $ACTUAL_PORT!"
+
+# Tail backend logs to console (skip the PORT= line we already processed)
+tail -f "$BACKEND_STDERR" &
+TAIL_PID=$!
+
+# -----------------------------------------------------------------------------
+# Wait for Backend API Ready
+# -----------------------------------------------------------------------------
+log "Waiting for backend API..."
+max_retries=60
+count=0
+api_ready=0
+
+while [ "$count" -lt "$max_retries" ]; do
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        err "Backend process died unexpectedly."
+        cat "$BACKEND_STDERR" >&2
+        exit 1
+    fi
+
+    if curl -s "http://127.0.0.1:$ACTUAL_PORT/api/files" >/dev/null 2>&1; then
+        api_ready=1
+        break
+    fi
+
+    sleep 0.5
+    count=$((count + 1))
+done
+
+if [ "$api_ready" -eq 0 ]; then
+    err "Backend API failed to respond in 30s."
+    exit 1
+fi
 
 # -----------------------------------------------------------------------------
 # Start Frontend
 # -----------------------------------------------------------------------------
 log "Starting frontend on port $VITE_PORT..."
-PORT="$PORT" VITE_PORT="$VITE_PORT" npm --prefix frontend run dev -- --port "$VITE_PORT" --strictPort &
+PORT="$ACTUAL_PORT" VITE_PORT="$VITE_PORT" npm --prefix frontend run dev -- --port "$VITE_PORT" --strictPort &
 FRONTEND_PID=$!
 log "Frontend PID: $FRONTEND_PID"
+
+# Print summary
+echo ""
+log "=========================================="
+log "  Frontend: http://localhost:$VITE_PORT"
+log "  Backend:  http://localhost:$ACTUAL_PORT"
+log "=========================================="
+echo ""
 
 # -----------------------------------------------------------------------------
 # Watch Loop (Bash 3.2 Compatible)

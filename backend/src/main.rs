@@ -62,13 +62,41 @@ async fn main() {
         );
     }
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    let addr = format!("0.0.0.0:{port}");
-    tracing::info!(addr = %addr, "Server starting");
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3000);
 
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .expect("failed to bind");
+    let listener = bind_with_fallback(port).await;
+    let actual_addr = listener.local_addr().expect("failed to get local addr");
+    let actual_port = actual_addr.port();
+
+    if actual_port != port {
+        tracing::info!(
+            requested = port,
+            actual = actual_port,
+            "Port {} in use, using {} instead",
+            port,
+            actual_port
+        );
+    }
+    tracing::info!(addr = %actual_addr, "Server starting");
+    eprintln!("PORT={actual_port}");
 
     axum::serve(listener, app).await.expect("server failed");
+}
+
+async fn bind_with_fallback(preferred_port: u16) -> tokio::net::TcpListener {
+    let max_port = preferred_port.saturating_add(100);
+    for port in preferred_port..=max_port {
+        match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
+            Ok(listener) => return listener,
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(e) => panic!("failed to bind: {}", e),
+        }
+    }
+    panic!(
+        "No available port found in range {}-{}",
+        preferred_port, max_port
+    );
 }
