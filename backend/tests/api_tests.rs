@@ -4151,6 +4151,80 @@ async fn test_public_tile_respects_zoom_limits() {
 }
 
 #[tokio::test]
+async fn test_public_tile_respects_minzoom_only() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "minzoom-only-test", "minZoom": 5}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let tile_request_within = Request::builder()
+        .method("GET")
+        .uri("/tiles/minzoom-only-test/7/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(tile_request_within).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let tile_request_below = Request::builder()
+        .method("GET")
+        .uri("/tiles/minzoom-only-test/3/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(tile_request_below).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn test_public_tile_respects_maxzoom_only() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"slug": "maxzoom-only-test", "maxZoom": 10}"#,
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let tile_request_within = Request::builder()
+        .method("GET")
+        .uri("/tiles/maxzoom-only-test/7/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(tile_request_within).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let tile_request_above = Request::builder()
+        .method("GET")
+        .uri("/tiles/maxzoom-only-test/12/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(tile_request_above).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
 async fn test_public_tile_meta_includes_zoom() {
     let (app, _temp) = setup_app().await;
 

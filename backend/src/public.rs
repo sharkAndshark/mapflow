@@ -117,11 +117,9 @@ pub async fn get_public_tile(
         }
     }
 
-    if let (Some(min), Some(max)) = (meta.minzoom, meta.maxzoom) {
-        if z < min || z > max {
-            drop(conn);
-            return Ok(StatusCode::NO_CONTENT.into_response());
-        }
+    if meta.minzoom.is_some_and(|min| z < min) || meta.maxzoom.is_some_and(|max| z > max) {
+        drop(conn);
+        return Ok(StatusCode::NO_CONTENT.into_response());
     }
 
     let table_name = meta.table_name.ok_or_else(|| {
