@@ -117,11 +117,12 @@ ST_Read_Meta 结果 → 归一化 + 分类
 - [x] Unit: crs.rs 各类输入 (9 tests)
 - [x] Unit: calculate_custom_tile_bbox (2 tests)
 - [x] Unit: DataBounds::is_valid (1 test)
-- [x] Backend: 40 tests passed
-- [ ] Integration: 自定义 CRS 上传流程
+- [x] Unit: DataBounds::is_valid_wgs84 (5 tests)
+- [x] Backend: 67 tests passed
+- [x] E2E: 自定义 CRS 上传流程 (custom-crs.spec.js)
+- [x] E2E: 自定义 CRS 瓦片请求
+- [x] E2E: 预览页正常显示
 - [ ] Integration: PUT /api/files/:id/crs
-- [ ] Integration: 自定义 CRS 瓦片请求
-- [ ] E2E: 预览页正常显示
 
 #### 6. Future Test Data (Optional)
 
