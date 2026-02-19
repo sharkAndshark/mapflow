@@ -25,11 +25,16 @@ export async function fetchWithAuth(url, options = {}) {
   return response;
 }
 
-export async function publishFile(fileId, slug) {
+export async function publishFile(fileId, options = {}) {
+  const body = {};
+  if (options.slug) body.slug = options.slug;
+  if (options.minZoom !== undefined) body.minZoom = options.minZoom;
+  if (options.maxZoom !== undefined) body.maxZoom = options.maxZoom;
+
   const res = await fetchWithAuth(`/api/files/${fileId}/publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(slug ? { slug } : {}),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -45,6 +50,23 @@ export async function unpublishFile(fileId) {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || '取消发布失败');
+  }
+  return res.json();
+}
+
+export async function updateTileZoom(fileId, minZoom, maxZoom) {
+  const body = {};
+  if (minZoom !== undefined) body.minZoom = minZoom;
+  if (maxZoom !== undefined) body.maxZoom = maxZoom;
+
+  const res = await fetchWithAuth(`/api/files/${fileId}/zoom`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '更新缩放层级失败');
   }
   return res.json();
 }

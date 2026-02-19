@@ -4,30 +4,15 @@ import {
   hasActiveJobs as computeHasActiveJobs,
   mergeServerFilesWithOptimistic,
 } from './polling.js';
-import { publishFile, unpublishFile } from './api.js';
+import { publishFile, unpublishFile, updateTileZoom } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 
 function PublishModal({ file, onClose, onSuccess }) {
   const [slug, setSlug] = useState(file?.id || '');
+  const [minZoom, setMinZoom] = useState(file?.minZoom ?? 0);
+  const [maxZoom, setMaxZoom] = useState(file?.maxZoom ?? 22);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  if (!file) return null;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setIsSubmitting(true);
-
-    try {
-      const result = await publishFile(file.id, slug.trim() || undefined);
-      onSuccess(file.id, result);
-    } catch (err) {
-      setError(err.message || '发布失败');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   useEffect(() => {
     const handleEscape = (e) => {
@@ -37,11 +22,40 @@ function PublishModal({ file, onClose, onSuccess }) {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
+  if (!file) return null;
+
+  const isTileFile = file.tileFormat != null;
+  const displayMinZoom = isTileFile ? (file.minZoom ?? '-') : minZoom;
+  const displayMaxZoom = isTileFile ? (file.maxZoom ?? '-') : maxZoom;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      const options = {
+        slug: slug.trim() || undefined,
+      };
+      if (!isTileFile) {
+        options.minZoom = minZoom;
+        options.maxZoom = maxZoom;
+      }
+      const result = await publishFile(file.id, options);
+      onSuccess(file.id, result);
+    } catch (err) {
+      setError(err.message || '发布失败');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const trimmedSlug = slug.trim();
   const previewUrl = trimmedSlug
     ? `/tiles/${trimmedSlug}/{z}/{x}/{y}`
     : `/tiles/${file.id}/{z}/{x}/{y}`;
   const { error: slugError } = validateSlug(trimmedSlug);
+  const zoomError = !isTileFile && minZoom > maxZoom ? '最小层级不能大于最大层级' : null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -77,6 +91,50 @@ function PublishModal({ file, onClose, onSuccess }) {
                 留空则使用文件 ID。仅支持字母、数字、连字符和下划线
               </small>
             </div>
+            <div className="form-group">
+              <label>
+                缩放层级{' '}
+                {isTileFile && <span style={{ color: '#888', fontWeight: 'normal' }}>(只读)</span>}
+              </label>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <small className="form-hint">最小</small>
+                  {isTileFile ? (
+                    <div className="form-value">{displayMinZoom}</div>
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      max="22"
+                      value={minZoom}
+                      onChange={(e) => setMinZoom(parseInt(e.target.value) || 0)}
+                      className="form-input"
+                    />
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <small className="form-hint">最大</small>
+                  {isTileFile ? (
+                    <div className="form-value">{displayMaxZoom}</div>
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      max="22"
+                      value={maxZoom}
+                      onChange={(e) => setMaxZoom(parseInt(e.target.value) || 22)}
+                      className="form-input"
+                    />
+                  )}
+                </div>
+              </div>
+              {zoomError && (
+                <div className="alert" style={{ marginTop: '8px' }}>
+                  {zoomError}
+                </div>
+              )}
+              {!isTileFile && <small className="form-hint">动态矢量数据可设置 0-22 层级范围</small>}
+            </div>
             {previewUrl && (
               <div className="form-group">
                 <label>公开地址</label>
@@ -89,7 +147,11 @@ function PublishModal({ file, onClose, onSuccess }) {
             <button type="button" className="btn-secondary" onClick={onClose}>
               取消
             </button>
-            <button type="submit" className="btn-primary" disabled={isSubmitting || !!slugError}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={isSubmitting || !!slugError || !!zoomError}
+            >
               {isSubmitting ? '发布中...' : '确认发布'}
             </button>
           </div>
@@ -107,10 +169,15 @@ const STATUS_LABELS = {
   failed: '失败',
 };
 
-function DetailSidebar({ file }) {
+function DetailSidebar({ file, onZoomUpdate }) {
   const [schema, setSchema] = useState(null);
   const [schemaError, setSchemaError] = useState(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
+  const [editZoom, setEditZoom] = useState(false);
+  const [minZoom, setMinZoom] = useState(0);
+  const [maxZoom, setMaxZoom] = useState(22);
+  const [zoomError, setZoomError] = useState('');
+  const [isSavingZoom, setIsSavingZoom] = useState(false);
 
   useEffect(() => {
     const fileId = file?.id;
@@ -154,6 +221,15 @@ function DetailSidebar({ file }) {
       cancelled = true;
     };
   }, [file?.id, file?.status]);
+
+  useEffect(() => {
+    if (file) {
+      setMinZoom(file.minZoom ?? 0);
+      setMaxZoom(file.maxZoom ?? 22);
+      setEditZoom(false);
+      setZoomError('');
+    }
+  }, [file]);
 
   if (!file) {
     return (
@@ -203,6 +279,114 @@ function DetailSidebar({ file }) {
           <div className="detail-group">
             <div className="detail-label">CRS</div>
             <div className="detail-value">{file.crs}</div>
+          </div>
+        )}
+
+        {isReady && file.isPublic && (
+          <div className="detail-group">
+            <div className="detail-label">缩放层级</div>
+            <div className="detail-value">
+              {editZoom ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <small className="form-hint">最小</small>
+                      <input
+                        type="number"
+                        min="0"
+                        max="22"
+                        value={minZoom}
+                        onChange={(e) => setMinZoom(parseInt(e.target.value) || 0)}
+                        className="form-input"
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <small className="form-hint">最大</small>
+                      <input
+                        type="number"
+                        min="0"
+                        max="22"
+                        value={maxZoom}
+                        onChange={(e) => setMaxZoom(parseInt(e.target.value) || 22)}
+                        className="form-input"
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  </div>
+                  {zoomError && (
+                    <div className="alert" style={{ margin: 0 }}>
+                      {zoomError}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ fontSize: '12px', padding: '4px 12px' }}
+                      disabled={isSavingZoom}
+                      onClick={async () => {
+                        if (minZoom > maxZoom) {
+                          setZoomError('最小层级不能大于最大层级');
+                          return;
+                        }
+                        setZoomError('');
+                        setIsSavingZoom(true);
+                        try {
+                          await updateTileZoom(file.id, minZoom, maxZoom);
+                          setEditZoom(false);
+                          if (onZoomUpdate) {
+                            onZoomUpdate(file.id, minZoom, maxZoom);
+                          }
+                        } catch (err) {
+                          setZoomError(err.message || '保存失败');
+                        } finally {
+                          setIsSavingZoom(false);
+                        }
+                      }}
+                    >
+                      {isSavingZoom ? '保存中...' : '保存'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '12px', padding: '4px 12px' }}
+                      onClick={() => {
+                        setMinZoom(file.minZoom ?? 0);
+                        setMaxZoom(file.maxZoom ?? 22);
+                        setEditZoom(false);
+                        setZoomError('');
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <span>
+                    {file.minZoom ?? 0} ~ {file.maxZoom ?? 22}
+                  </span>
+                  {file.tileFormat == null && (
+                    <button
+                      type="button"
+                      className="btn-text"
+                      style={{ fontSize: '12px' }}
+                      onClick={() => setEditZoom(true)}
+                    >
+                      修改
+                    </button>
+                  )}
+                </div>
+              )}
+              {file.tileFormat != null && !editZoom && (
+                <small className="form-hint" style={{ marginTop: '4px' }}>
+                  瓦片文件的缩放层级由源文件决定
+                </small>
+              )}
+            </div>
           </div>
         )}
 
@@ -352,6 +536,10 @@ export default function App() {
     } catch (err) {
       setErrorMessage(err.message || '取消发布失败');
     }
+  }
+
+  function handleZoomUpdate(fileId, minZoom, maxZoom) {
+    setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, minZoom, maxZoom } : f)));
   }
 
   function copyPublicUrl(slug) {
@@ -595,7 +783,7 @@ export default function App() {
           </div>
 
           <div className="detail-area">
-            <DetailSidebar file={selectedFile} />
+            <DetailSidebar file={selectedFile} onZoomUpdate={handleZoomUpdate} />
           </div>
         </div>
       </section>

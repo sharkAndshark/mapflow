@@ -230,6 +230,9 @@ pub async fn upload_file(
         error: None,
         is_public: Some(false),
         public_slug: None,
+        tile_format: None,
+        minzoom: None,
+        maxzoom: None,
     };
 
     Ok((StatusCode::CREATED, Json(meta)))

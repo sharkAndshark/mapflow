@@ -40,6 +40,12 @@ pub struct FileItem {
     #[serde(rename = "publicSlug")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_slug: Option<String>,
+    #[serde(rename = "tileFormat", skip_serializing_if = "Option::is_none")]
+    pub tile_format: Option<String>,
+    #[serde(rename = "minZoom", skip_serializing_if = "Option::is_none")]
+    pub minzoom: Option<i32>,
+    #[serde(rename = "maxZoom", skip_serializing_if = "Option::is_none")]
+    pub maxzoom: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -101,6 +107,10 @@ pub struct FileSchemaResponse {
 #[derive(Debug, Deserialize)]
 pub struct PublishRequest {
     pub slug: Option<String>,
+    #[serde(rename = "minZoom")]
+    pub min_zoom: Option<i32>,
+    #[serde(rename = "maxZoom")]
+    pub max_zoom: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -126,9 +136,21 @@ pub struct PublicTileMeta {
     pub tile_url: String,
     #[serde(rename = "viewerUrl")]
     pub viewer_url: String,
+    #[serde(rename = "minZoom", skip_serializing_if = "Option::is_none")]
+    pub minzoom: Option<i32>,
+    #[serde(rename = "maxZoom", skip_serializing_if = "Option::is_none")]
+    pub maxzoom: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateCrsRequest {
     pub crs: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateZoomRequest {
+    #[serde(rename = "minZoom")]
+    pub min_zoom: Option<i32>,
+    #[serde(rename = "maxZoom")]
+    pub max_zoom: Option<i32>,
 }

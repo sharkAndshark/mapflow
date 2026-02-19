@@ -1,6 +1,6 @@
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, post, put},
+    routing::{get, patch, post, put},
     Router,
 };
 use axum_login::AuthManagerLayerBuilder;
@@ -15,6 +15,7 @@ use crate::{
     handlers::{
         check_is_initialized, get_feature_properties, get_file_schema, get_preview_meta,
         get_public_url, health_check, list_files, publish_file, unpublish_file, update_crs,
+        update_tile_zoom,
     },
     public::{get_public_pmtiles, get_public_tile, get_public_tile_meta, head_public_pmtiles},
     upload::upload_file,
@@ -88,7 +89,8 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .route("/api/files/{id}/publish", post(publish_file))
         .route("/api/files/{id}/unpublish", post(unpublish_file))
         .route("/api/files/{id}/public-url", get(get_public_url))
-        .route("/api/files/{id}/crs", put(update_crs));
+        .route("/api/files/{id}/crs", put(update_crs))
+        .route("/api/files/{id}/zoom", patch(update_tile_zoom));
 
     if with_auth {
         api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));

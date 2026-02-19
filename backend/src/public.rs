@@ -12,13 +12,25 @@ use tracing::error;
 
 use crate::{
     crs::DataBounds,
-    handlers::{validate_tile_coords, TileFileMetadata},
+    handlers::validate_tile_coords,
     http_errors::internal_error,
     mbtiles,
     models::{ErrorResponse, PublicTileMeta},
     tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
 };
+
+struct PublicTileFileMeta {
+    crs: Option<String>,
+    crs_type: Option<String>,
+    data_bounds_json: Option<String>,
+    status: String,
+    table_name: Option<String>,
+    tile_format: Option<String>,
+    file_path: String,
+    minzoom: Option<i32>,
+    maxzoom: Option<i32>,
+}
 
 pub async fn get_public_tile(
     State(state): State<AppState>,
@@ -43,11 +55,21 @@ pub async fn get_public_tile(
             )
         })?;
 
-    let meta: TileFileMetadata = conn
+    let meta: PublicTileFileMeta = conn
         .query_row(
-            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path FROM files WHERE id = ? AND is_public = TRUE",
+            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path, minzoom, maxzoom FROM files WHERE id = ? AND is_public = TRUE",
             duckdb::params![&file_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
+            |row| Ok(PublicTileFileMeta {
+                crs: row.get(0)?,
+                crs_type: row.get(1)?,
+                data_bounds_json: row.get(2)?,
+                status: row.get(3)?,
+                table_name: row.get(4)?,
+                tile_format: row.get(5)?,
+                file_path: row.get(6)?,
+                minzoom: row.get(7)?,
+                maxzoom: row.get(8)?,
+            }),
         )
         .map_err(|_| {
             (
@@ -58,9 +80,7 @@ pub async fn get_public_tile(
             )
         })?;
 
-    let (crs, crs_type, data_bounds_json, status, table_name, tile_format, file_path) = meta;
-
-    if status != "ready" {
+    if meta.status != "ready" {
         return Err((
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -69,8 +89,8 @@ pub async fn get_public_tile(
         ));
     }
 
-    if let Some(format) = tile_format {
-        let full_path = mbtiles::resolve_mbtiles_path(&file_path);
+    if let Some(format) = meta.tile_format {
+        let full_path = mbtiles::resolve_mbtiles_path(&meta.file_path);
         drop(conn);
         match mbtiles::get_tile_from_mbtiles(&full_path, z, x, y).await {
             Ok(Some(data)) => {
@@ -97,7 +117,14 @@ pub async fn get_public_tile(
         }
     }
 
-    let table_name = table_name.ok_or_else(|| {
+    if let (Some(min), Some(max)) = (meta.minzoom, meta.maxzoom) {
+        if z < min || z > max {
+            drop(conn);
+            return Ok(StatusCode::NO_CONTENT.into_response());
+        }
+    }
+
+    let table_name = meta.table_name.ok_or_else(|| {
         (
             StatusCode::CONFLICT,
             Json(ErrorResponse {
@@ -107,9 +134,13 @@ pub async fn get_public_tile(
     })?;
 
     let tile_params = TileParams {
-        source_crs: crs.clone().unwrap_or_else(|| "EPSG:4326".to_string()),
-        crs_type: crs_type.clone().unwrap_or_else(|| "standard".to_string()),
-        data_bounds: data_bounds_json
+        source_crs: meta.crs.clone().unwrap_or_else(|| "EPSG:4326".to_string()),
+        crs_type: meta
+            .crs_type
+            .clone()
+            .unwrap_or_else(|| "standard".to_string()),
+        data_bounds: meta
+            .data_bounds_json
             .as_ref()
             .and_then(|j| DataBounds::from_json(j)),
     };
@@ -436,14 +467,14 @@ pub async fn get_public_tile_meta(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let (name, tile_source): (String, String) = conn
+    let (name, tile_source, minzoom, maxzoom): (String, String, Option<i32>, Option<i32>) = conn
         .query_row(
-            "SELECT f.name, COALESCE(pf.tile_source, f.tile_source, 'duckdb')
+            "SELECT f.name, COALESCE(pf.tile_source, f.tile_source, 'duckdb'), f.minzoom, f.maxzoom
              FROM files f
              JOIN published_files pf ON f.id = pf.file_id
              WHERE pf.slug = ? AND f.is_public = TRUE",
             duckdb::params![&slug],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|_| {
             (
@@ -467,5 +498,7 @@ pub async fn get_public_tile_meta(
         tile_source,
         tile_url,
         viewer_url,
+        minzoom,
+        maxzoom,
     }))
 }
