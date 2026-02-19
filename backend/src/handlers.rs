@@ -11,7 +11,10 @@ use crate::{
     crs::{normalize_crs, DataBounds, CRS_TYPE_CUSTOM},
     http_errors::{bad_request, internal_error},
     mbtiles,
-    models::{ErrorResponse, FeaturePropertiesResponse, FeatureProperty, FileItem, PreviewMeta},
+    models::{
+        ErrorResponse, FeaturePropertiesResponse, FeatureProperty, FileItem, PreviewMeta,
+        UpdateZoomRequest,
+    },
     tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
 };
@@ -45,7 +48,7 @@ pub async fn list_files(
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug
+            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_format, f.minzoom, f.maxzoom
           FROM files f
           LEFT JOIN published_files pf ON f.id = pf.file_id
           ORDER BY f.uploaded_at DESC",
@@ -60,6 +63,9 @@ pub async fn list_files(
             let error: Option<String> = row.get(10)?;
             let is_public: bool = row.get(11).unwrap_or(false);
             let public_slug: Option<String> = row.get(12).ok();
+            let tile_format: Option<String> = row.get(13)?;
+            let minzoom: Option<i32> = row.get(14)?;
+            let maxzoom: Option<i32> = row.get(15)?;
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -77,6 +83,9 @@ pub async fn list_files(
                 error,
                 is_public: Some(is_public),
                 public_slug,
+                tile_format,
+                minzoom,
+                maxzoom,
             })
         })
         .map_err(internal_error)?;
@@ -551,6 +560,34 @@ pub fn validate_tile_coords(
     Ok(())
 }
 
+fn validate_zoom_range(min: Option<i32>, max: Option<i32>) -> Result<(), String> {
+    const MIN_ZOOM: i32 = 0;
+    const MAX_ZOOM: i32 = 22;
+
+    if let Some(z) = min {
+        if !(MIN_ZOOM..=MAX_ZOOM).contains(&z) {
+            return Err(format!(
+                "minZoom must be between {} and {}",
+                MIN_ZOOM, MAX_ZOOM
+            ));
+        }
+    }
+    if let Some(z) = max {
+        if !(MIN_ZOOM..=MAX_ZOOM).contains(&z) {
+            return Err(format!(
+                "maxZoom must be between {} and {}",
+                MIN_ZOOM, MAX_ZOOM
+            ));
+        }
+    }
+    if let (Some(mn), Some(mx)) = (min, max) {
+        if mn > mx {
+            return Err("minZoom must be less than or equal to maxZoom".to_string());
+        }
+    }
+    Ok(())
+}
+
 pub async fn health_check() -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({ "status": "ok" })))
 }
@@ -609,11 +646,11 @@ pub async fn publish_file(
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_error)?;
 
-    let (status, _name, tile_source): (String, String, String) = conn
+    let (status, _name, tile_source, tile_format): (String, String, String, Option<String>) = conn
         .query_row(
-            "SELECT status, name, COALESCE(tile_source, 'duckdb') FROM files WHERE id = ?",
+            "SELECT status, name, COALESCE(tile_source, 'duckdb'), tile_format FROM files WHERE id = ?",
             duckdb::params![&id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|_| {
             (
@@ -635,19 +672,56 @@ pub async fn publish_file(
         ));
     }
 
+    let is_dynamic_data = tile_format.is_none();
+    if !is_dynamic_data && (req.min_zoom.is_some() || req.max_zoom.is_some()) {
+        conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+        drop(conn);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error:
+                    "Zoom levels can only be set for dynamic vector data (GeoJSON, Shapefile, etc.)"
+                        .to_string(),
+            }),
+        ));
+    }
+
+    if is_dynamic_data {
+        if let Err(e) = validate_zoom_range(req.min_zoom, req.max_zoom) {
+            conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+            drop(conn);
+            return Err(bad_request(&e));
+        }
+    }
+
     let insert_result = conn.execute(
         "INSERT INTO published_files (file_id, slug, tile_source) VALUES (?, ?, ?)",
         duckdb::params![&id, &slug, &tile_source],
     );
 
     let publish_result: Result<(), String> = match insert_result {
-        Ok(_) => conn
-            .execute(
-                "UPDATE files SET is_public = TRUE WHERE id = ?",
-                duckdb::params![&id],
-            )
-            .map(|_| ())
-            .map_err(|e| e.to_string()),
+        Ok(_) => {
+            let mut update_sql = "UPDATE files SET is_public = TRUE".to_string();
+            let mut params: Vec<Box<dyn duckdb::ToSql>> = Vec::new();
+
+            if is_dynamic_data {
+                if let Some(min) = req.min_zoom {
+                    update_sql.push_str(", minzoom = ?");
+                    params.push(Box::new(min));
+                }
+                if let Some(max) = req.max_zoom {
+                    update_sql.push_str(", maxzoom = ?");
+                    params.push(Box::new(max));
+                }
+            }
+            update_sql.push_str(" WHERE id = ?");
+            params.push(Box::new(id.clone()));
+
+            let params_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            conn.execute(&update_sql, params_refs.as_slice())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
         Err(e) => {
             let err_msg = e.to_string();
             let is_file_already_published = err_msg.contains("PRIMARY KEY")
@@ -744,7 +818,7 @@ pub async fn unpublish_file(
 
     let update_result = conn
         .execute(
-            "UPDATE files SET is_public = FALSE WHERE id = ?",
+            "UPDATE files SET is_public = FALSE, minzoom = NULL, maxzoom = NULL WHERE id = ?",
             duckdb::params![&id],
         )
         .map_err(|e| e.to_string());
@@ -874,5 +948,110 @@ pub async fn update_crs(
         "id": id,
         "crs": normalized.crs,
         "crsType": normalized.crs_type
+    })))
+}
+
+pub async fn update_tile_zoom(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(req): Json<UpdateZoomRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    let (tile_format, is_public): (Option<String>, bool) = conn
+        .query_row(
+            "SELECT tile_format, COALESCE(is_public, FALSE) FROM files WHERE id = ?",
+            duckdb::params![&id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    let is_dynamic_data = tile_format.is_none();
+    if !is_dynamic_data {
+        drop(conn);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Zoom levels can only be updated for dynamic vector data (GeoJSON, Shapefile, etc.)".to_string(),
+            }),
+        ));
+    }
+
+    if !is_public {
+        drop(conn);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "File must be published before updating zoom levels".to_string(),
+            }),
+        ));
+    }
+
+    let (current_min, current_max): (Option<i32>, Option<i32>) = conn
+        .query_row(
+            "SELECT minzoom, maxzoom FROM files WHERE id = ?",
+            duckdb::params![&id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(internal_error)?;
+
+    let effective_min = req.min_zoom.or(current_min);
+    let effective_max = req.max_zoom.or(current_max);
+
+    if let Err(e) = validate_zoom_range(effective_min, effective_max) {
+        drop(conn);
+        return Err(bad_request(&e));
+    }
+
+    let mut update_sql = "UPDATE files SET ".to_string();
+    let mut params: Vec<Box<dyn duckdb::ToSql>> = Vec::new();
+    let mut has_update = false;
+
+    if let Some(min) = req.min_zoom {
+        if has_update {
+            update_sql.push_str(", ");
+        }
+        update_sql.push_str("minzoom = ?");
+        params.push(Box::new(min));
+        has_update = true;
+    }
+    if let Some(max) = req.max_zoom {
+        if has_update {
+            update_sql.push_str(", ");
+        }
+        update_sql.push_str("maxzoom = ?");
+        params.push(Box::new(max));
+        has_update = true;
+    }
+
+    if !has_update {
+        drop(conn);
+        return Ok(Json(serde_json::json!({
+            "id": id,
+            "minZoom": effective_min,
+            "maxZoom": effective_max
+        })));
+    }
+
+    update_sql.push_str(" WHERE id = ?");
+    params.push(Box::new(id.clone()));
+
+    let params_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    conn.execute(&update_sql, params_refs.as_slice())
+        .map_err(internal_error)?;
+
+    drop(conn);
+
+    Ok(Json(serde_json::json!({
+        "id": id,
+        "minZoom": effective_min,
+        "maxZoom": effective_max
     })))
 }

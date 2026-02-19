@@ -145,6 +145,9 @@ mod tests {
             error: None,
             is_public: Some(false),
             public_slug: None,
+            tile_format: None,
+            minzoom: None,
+            maxzoom: None,
         };
 
         let conn = state.db.lock().await;
