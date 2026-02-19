@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::crs::{normalize_crs, DataBounds};
+use crate::crs::{normalize_crs, DataBounds, CRS_TYPE_CUSTOM};
 
 pub async fn import_spatial_data(
     db: &Arc<Mutex<duckdb::Connection>>,
@@ -79,6 +79,20 @@ pub async fn import_spatial_data(
         })
         .ok()
         .flatten();
+
+    // If GDAL reports EPSG:4326 but coordinates are outside valid WGS84 range,
+    // override to custom CRS (GDAL defaults to EPSG:4326 for GeoJSON without CRS)
+    let normalized = if normalized.crs.as_deref() == Some("EPSG:4326") {
+        match &data_bounds {
+            Some(bounds) if !bounds.is_valid_wgs84() => crate::crs::NormalizedCrs {
+                crs: None,
+                crs_type: CRS_TYPE_CUSTOM.to_string(),
+            },
+            _ => normalized,
+        }
+    } else {
+        normalized
+    };
 
     // Update files table with CRS info and data_bounds
     let data_bounds_json = data_bounds.map(|b| b.to_json());

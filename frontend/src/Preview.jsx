@@ -367,7 +367,24 @@ export default function Preview() {
     // Insert vector layer at index 0, tile grid stays on top
     map.getLayers().insertAt(0, tileLayer);
 
-    // 2. Fit bounds
+    // 2. Update View projection for custom CRS
+    if (isCustomCRS && customProjection) {
+      const [minx, miny, maxx, maxy] = meta.dataBounds;
+      const centerX = (minx + maxx) / 2;
+      const centerY = (miny + maxy) / 2;
+
+      map.setView(
+        new View({
+          projection: customProjection,
+          center: [centerX, centerY],
+          zoom: 0,
+          minZoom: minZoom,
+          maxZoom: maxZoom,
+        }),
+      );
+    }
+
+    // 3. Fit bounds
     if (meta.bbox && meta.bbox.length === 4) {
       const [minx, miny, maxx, maxy] = meta.bbox;
 

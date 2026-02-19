@@ -115,6 +115,10 @@ impl DataBounds {
     pub fn is_valid(&self) -> bool {
         self.maxx > self.minx && self.maxy > self.miny
     }
+
+    pub fn is_valid_wgs84(&self) -> bool {
+        self.minx >= -180.0 && self.maxx <= 180.0 && self.miny >= -90.0 && self.maxy <= 90.0
+    }
 }
 
 pub fn calculate_custom_tile_bbox(
@@ -280,5 +284,48 @@ mod tests {
             maxy: 0.0,
         };
         assert!(!negative_extent.is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_wgs84() {
+        let wgs84_bounds = DataBounds {
+            minx: -74.1,
+            miny: 40.5,
+            maxx: -73.9,
+            maxy: 40.9,
+        };
+        assert!(wgs84_bounds.is_valid_wgs84());
+
+        let global_bounds = DataBounds {
+            minx: -180.0,
+            miny: -90.0,
+            maxx: 180.0,
+            maxy: 90.0,
+        };
+        assert!(global_bounds.is_valid_wgs84());
+
+        let out_of_range_x = DataBounds {
+            minx: 1000.0,
+            miny: 0.0,
+            maxx: 1500.0,
+            maxy: 100.0,
+        };
+        assert!(!out_of_range_x.is_valid_wgs84());
+
+        let out_of_range_y = DataBounds {
+            minx: 0.0,
+            miny: -300.0,
+            maxx: 100.0,
+            maxy: -200.0,
+        };
+        assert!(!out_of_range_y.is_valid_wgs84());
+
+        let negative_coords = DataBounds {
+            minx: -500.0,
+            miny: -300.0,
+            maxx: -400.0,
+            maxy: -200.0,
+        };
+        assert!(!negative_coords.is_valid_wgs84());
     }
 }
