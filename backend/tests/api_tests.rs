@@ -4189,3 +4189,162 @@ async fn test_public_tile_meta_includes_zoom() {
     assert_eq!(meta_json["minZoom"], 3);
     assert_eq!(meta_json["maxZoom"], 12);
 }
+
+#[tokio::test]
+async fn test_publish_zoom_below_range() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"slug": "zoom-below-range", "minZoom": -1, "maxZoom": 10}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("minZoom must be between 0 and 22"));
+}
+
+#[tokio::test]
+async fn test_publish_zoom_above_range() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"slug": "zoom-above-range", "minZoom": 0, "maxZoom": 23}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("maxZoom must be between 0 and 22"));
+}
+
+#[tokio::test]
+async fn test_update_tile_zoom_out_of_range() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "update-out-of-range"}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let update_zoom_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/zoom", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"minZoom": 25, "maxZoom": 30}"#))
+        .unwrap();
+
+    let response = app.oneshot(update_zoom_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("minZoom must be between 0 and 22"));
+}
+
+#[tokio::test]
+async fn test_unpublish_clears_zoom() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"slug": "unpublish-clears-zoom", "minZoom": 5, "maxZoom": 15}"#,
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .body(Body::empty())
+        .unwrap();
+
+    let list_response = app.clone().oneshot(list_request).await.unwrap();
+    let body_bytes = list_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+
+    let published_file = files.iter().find(|f| f.id == file_id).unwrap();
+    assert_eq!(published_file.minzoom, Some(5));
+    assert_eq!(published_file.maxzoom, Some(15));
+
+    let unpublish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/unpublish", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let unpublish_response = app.clone().oneshot(unpublish_request).await.unwrap();
+    assert_eq!(unpublish_response.status(), axum::http::StatusCode::OK);
+
+    let list_request2 = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .body(Body::empty())
+        .unwrap();
+
+    let list_response2 = app.oneshot(list_request2).await.unwrap();
+    let body_bytes2 = list_response2
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let files2: Vec<FileItem> = serde_json::from_slice(&body_bytes2).unwrap();
+
+    let unpublished_file = files2.iter().find(|f| f.id == file_id).unwrap();
+    assert_eq!(unpublished_file.minzoom, None);
+    assert_eq!(unpublished_file.maxzoom, None);
+}

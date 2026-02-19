@@ -560,6 +560,34 @@ pub fn validate_tile_coords(
     Ok(())
 }
 
+fn validate_zoom_range(min: Option<i32>, max: Option<i32>) -> Result<(), String> {
+    const MIN_ZOOM: i32 = 0;
+    const MAX_ZOOM: i32 = 22;
+
+    if let Some(z) = min {
+        if !(MIN_ZOOM..=MAX_ZOOM).contains(&z) {
+            return Err(format!(
+                "minZoom must be between {} and {}",
+                MIN_ZOOM, MAX_ZOOM
+            ));
+        }
+    }
+    if let Some(z) = max {
+        if !(MIN_ZOOM..=MAX_ZOOM).contains(&z) {
+            return Err(format!(
+                "maxZoom must be between {} and {}",
+                MIN_ZOOM, MAX_ZOOM
+            ));
+        }
+    }
+    if let (Some(mn), Some(mx)) = (min, max) {
+        if mn > mx {
+            return Err("minZoom must be less than or equal to maxZoom".to_string());
+        }
+    }
+    Ok(())
+}
+
 pub async fn health_check() -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({ "status": "ok" })))
 }
@@ -658,16 +686,11 @@ pub async fn publish_file(
         ));
     }
 
-    if let (Some(min), Some(max)) = (req.min_zoom, req.max_zoom) {
-        if min > max {
+    if is_dynamic_data {
+        if let Err(e) = validate_zoom_range(req.min_zoom, req.max_zoom) {
             conn.execute_batch("ROLLBACK").map_err(internal_error)?;
             drop(conn);
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "minZoom must be less than or equal to maxZoom".to_string(),
-                }),
-            ));
+            return Err(bad_request(&e));
         }
     }
 
@@ -795,7 +818,7 @@ pub async fn unpublish_file(
 
     let update_result = conn
         .execute(
-            "UPDATE files SET is_public = FALSE WHERE id = ?",
+            "UPDATE files SET is_public = FALSE, minzoom = NULL, maxzoom = NULL WHERE id = ?",
             duckdb::params![&id],
         )
         .map_err(|e| e.to_string());
@@ -982,16 +1005,9 @@ pub async fn update_tile_zoom(
     let effective_min = req.min_zoom.or(current_min);
     let effective_max = req.max_zoom.or(current_max);
 
-    if let (Some(min), Some(max)) = (effective_min, effective_max) {
-        if min > max {
-            drop(conn);
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "minZoom must be less than or equal to maxZoom".to_string(),
-                }),
-            ));
-        }
+    if let Err(e) = validate_zoom_range(effective_min, effective_max) {
+        drop(conn);
+        return Err(bad_request(&e));
     }
 
     let mut update_sql = "UPDATE files SET ".to_string();
