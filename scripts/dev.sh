@@ -211,7 +211,7 @@ fi
 log "Backend is ready on port $ACTUAL_PORT!"
 
 # Tail backend logs to console (skip the PORT= line we already processed)
-tail -f "$BACKEND_STDERR" &
+tail -f "$BACKEND_STDERR" 2>&1 | grep --line-buffered -v "^PORT=" &
 TAIL_PID=$!
 
 # -----------------------------------------------------------------------------
@@ -240,6 +240,7 @@ done
 
 if [ "$api_ready" -eq 0 ]; then
     err "Backend API failed to respond in 30s."
+    grep -v "^PORT=" "$BACKEND_STDERR" >&2 || true
     exit 1
 fi
 
