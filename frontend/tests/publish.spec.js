@@ -39,7 +39,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   await publishButton.click();
 
   // Fill in custom slug in the expanded publish form
-  const slugInput = sidebar.getByPlaceholder(/^.+$/).first();
+  const slugInput = sidebar.getByTestId('publish-slug-input');
   await slugInput.fill('my-custom-map');
 
   const confirmButton = sidebar.getByText('确认发布');
@@ -142,7 +142,7 @@ test('slug validation: invalid characters', async ({ page }) => {
   const publishButton = sidebar.getByText('发布', { exact: true });
   await publishButton.click();
 
-  const slugInput = sidebar.getByPlaceholder(/^.+$/).first();
+  const slugInput = sidebar.getByTestId('publish-slug-input');
   await slugInput.fill('invalid slug!');
 
   await expect(
@@ -169,7 +169,7 @@ test('slug validation: too long', async ({ page }) => {
   const publishButton = sidebar.getByText('发布', { exact: true });
   await publishButton.click();
 
-  const slugInput = sidebar.getByPlaceholder(/^.+$/).first();
+  const slugInput = sidebar.getByTestId('publish-slug-input');
   const longSlug = 'a'.repeat(101);
   await slugInput.fill(longSlug);
 
