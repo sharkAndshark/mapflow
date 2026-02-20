@@ -10,12 +10,14 @@
 |------|------|----------|----------|----------|
 | `sf_buildings_no_crs.geojson` | GeoJSON | Polygon | 无 CRS 声明 | `crs=null, crs_type=custom` |
 | `sf_buildings_custom_wkt.zip` | Shapefile | Polygon | WKT 无 EPSG AUTHORITY | `crs=null, crs_type=custom` |
+| `sf_parks_named_crs.geojson` | GeoJSON | Point, LineString, Polygon | 自定义 CRS 名称 | `crs=null, crs_type=custom` (GDAL 忽略 GeoJSON CRS 字段) |
 | `negative_coords_test.geojson` | GeoJSON | Point, Polygon | 无 CRS + 负坐标 | `crs=null, crs_type=custom`, 测试负坐标边界 |
 
 ## 数据说明
 
 - **GeoJSON 文件**：每个包含 ~50 个真实 OSM feature
 - **Shapefile**：包含自定义投影 WKT（Transverse Mercator，无 EPSG AUTHORITY）
+- **sf_parks_named_crs**：混合几何类型（Point, LineString, Polygon），测试自定义 CRS 名称场景
 - **negative_coords_test**：边界测试用例，验证负坐标 bbox 计算
 
 ## CRS 分类规则
@@ -27,4 +29,7 @@
 | WGS84 / CRS84 | EPSG:4326 | standard |
 | WKT + AUTHORITY["EPSG"] | EPSG:XXXX | standard |
 | WKT 无 EPSG AUTHORITY | NULL (GDAL 不返回 WKT) | custom |
+| GeoJSON crs 字段 | NULL (GDAL 忽略，RFC 7946) | custom |
 | 其他字符串 | 原值 | custom |
+
+**注意**：RFC 7946 (GeoJSON 2016) 废弃了 `crs` 字段，GDAL 自 2.0 版本起忽略此字段。

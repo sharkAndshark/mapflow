@@ -1,0 +1,3472 @@
+{
+  "type": "FeatureCollection",
+  "name": "sf_parks_named_crs",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "LOCAL_SF_GRID"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "26819236",
+        "name": "San Francisco",
+        "place": "city",
+        "other_tags": "\"alt_name\"=>\"San Fran\",\"alt_name:en\"=>\"San Fran;Frisco\",\"alt_name:vi\"=>\"San Francisco\",\"alt_name:zh\"=>\"聖弗朗西斯科;圣弗朗西斯科\",\"alt_name:zh-Hans\"=>\"圣弗朗西斯科\",\"alt_name:zh-Hant\"=>\"聖弗朗西斯科\",\"capital\"=>\"6\",\"gnis:feature_id\"=>\"277593\",\"loc_name:vi\"=>\"Xăng Phăng\",\"name:af\"=>\"San Francisco\",\"name:als\"=>\"San Francisco\",\"name:am\"=>\"ሳን ፍራንሲስኰ\",\"name:an\"=>\"San Francisco\",\"name:ar\"=>\"سان فرانسيسكو\",\"name:arz\"=>\"سان فرانسيسكو\",\"name:ast\"=>\"San Francisco\",\"name:az\"=>\"San-Fransisko\",\"name:azb\"=>\"سان فرانسیسکو\",\"name:ba\"=>\"Сан-Франциско\",\"name:bar\"=>\"San Francisco\",\"name:be\"=>\"Сан-Францыска\",\"name:bg\"=>\"Сан Франциско\",\"name:bm\"=>\"San Francisco\",\"name:bn\"=>\"সান ফ্রান্সিস্কো\",\"name:bo\"=>\"སན་ཧྥུ་རན་སིས་ཁོ\",\"name:bpy\"=>\"সান ফ্রান্সিসকো\",\"name:br\"=>\"San Francisco\",\"name:bs\"=>\"San Francisco\",\"name:ca\"=>\"San Francisco\",\"name:cbk-zam\"=>\"San Francisco\",\"name:cdo\"=>\"Gô-gĭng-săng\",\"name:ce\"=>\"Сан-Франциско\",\"name:ceb\"=>\"San Francisco\",\"name:chy\"=>\"San Francisco\",\"name:ckb\"=>\"سان فرانسیسکۆ\",\"name:co\"=>\"San Francisco\",\"name:cs\"=>\"San Francisco\",\"name:cv\"=>\"Сан-Франциско\",\"name:cy\"=>\"San Francisco\",\"name:da\"=>\"San Francisco\",\"name:de\"=>\"San Francisco\",\"name:diq\"=>\"San Francisco\",\"name:dty\"=>\"सान फ्रान्सिस्को\",\"name:el\"=>\"Σαν Φρανσίσκο\",\"name:eml\"=>\"San Francisco\",\"name:en\"=>\"San Francisco\",\"name:eo\"=>\"San-Francisko\",\"name:es\"=>\"San Francisco\",\"name:et\"=>\"San Francisco\",\"name:eu\"=>\"San Frantzisko\",\"name:ext\"=>\"San Franciscu\",\"name:fa\"=>\"سان فرانسیسکو\",\"name:fi\"=>\"San Francisco\",\"name:fj\"=>\"San Francisco\",\"name:fo\"=>\"San Francisco\",\"name:fr\"=>\"San Francisco\",\"name:fy\"=>\"San Francisco\",\"name:ga\"=>\"San Francisco\",\"name:gan\"=>\"舊金山\",\"name:gd\"=>\"San Francisco\",\"name:gl\"=>\"San Francisco\",\"name:gn\"=>\"San Francisco\",\"name:gu\"=>\"સાન ફ્રાન્સિસ્કો\",\"name:gv\"=>\"San Francisco\",\"name:ha\"=>\"San Francisco\",\"name:hak\"=>\"San Francisco\",\"name:haw\"=>\"Kapalakiko\",\"name:he\"=>\"סן פרנסיסקו\",\"name:hi\"=>\"सैन फ़्रांसिस्को\",\"name:hr\"=>\"San Francisco\",\"name:ht\"=>\"San Francisco\",\"name:hu\"=>\"San Francisco\",\"name:hy\"=>\"Սան Ֆրանցիսկո\",\"name:hyw\"=>\"Սան Ֆրանսիսքօ\",\"name:ia\"=>\"San Francisco\",\"name:id\"=>\"San Francisco\",\"name:ie\"=>\"San Francisco\",\"name:ilo\"=>\"San Francisco\",\"name:inh\"=>\"Сан-Франциско\",\"name:io\"=>\"San Francisco\",\"name:is\"=>\"San Francisco\",\"name:it\"=>\"San Francisco\",\"name:ja\"=>\"サンフランシスコ\",\"name:jv\"=>\"San Francisco\",\"name:ka\"=>\"სან-ფრანცისკო\",\"name:kab\"=>\"San Francisco\",\"name:kbp\"=>\"Sanfransiskoo\",\"name:ki\"=>\"San Francisco\",\"name:kk\"=>\"Сан-Франциско\",\"name:kn\"=>\"ಸಾನ್ ಫ್ರಾನ್ಸಿಸ್ಕೊ\",\"name:ko\"=>\"샌프란시스코\",\"name:krc\"=>\"Сан-Франциско\",\"name:ku\"=>\"San Francisco\",\"name:kw\"=>\"San Francisco\",\"name:ky\"=>\"Сан-Франциско\",\"name:la\"=>\"Franciscopolis\",\"name:lad\"=>\"San Francisco\",\"name:lb\"=>\"San Francisco\",\"name:li\"=>\"San Francisco\",\"name:lmo\"=>\"San Francisco\",\"name:ln\"=>\"San Francisco\",\"name:lo\"=>\"ຊານຟຣານຊິສໂກ\",\"name:lrc\"=>\"سان‌ فرانسیسکو\",\"name:lt\"=>\"San Fransiskas\",\"name:lv\"=>\"Sanfrancisko\",\"name:mg\"=>\"San Francisco\",\"name:mhr\"=>\"Сан-Франциско\",\"name:mi\"=>\"Hana Paraniko\",\"name:mk\"=>\"Сан Франциско\",\"name:ml\"=>\"സാൻ ഫ്രാൻസിസ്കോ\",\"name:mn\"=>\"Сан-Франциско\",\"name:mr\"=>\"सॅन फ्रान्सिस्को\",\"name:mrj\"=>\"Сан-Франциско\",\"name:ms\"=>\"San Francisco\",\"name:my\"=>\"ဆန်ဖရန်စစ္စကိုမြို့\",\"name:na\"=>\"San Francisco\",\"name:nah\"=>\"San Francisco\",\"name:nan\"=>\"San Francisco\",\"name:nds\"=>\"San Francisco\",\"name:ne\"=>\"सान फ्रान्सिस्को\",\"name:new\"=>\"स्यान फ्रान्सिस्को\",\"name:nl\"=>\"San Francisco\",\"name:nn\"=>\"San Francisco\",\"name:no\"=>\"San Francisco\",\"name:nv\"=>\"Naʼníʼá Hóneezí\",\"name:oc\"=>\"San Francisco\",\"name:os\"=>\"Сан-Франциско\",\"name:pa\"=>\"ਸਾਨ ਫ਼ਰਾਂਸਿਸਕੋ\",\"name:pam\"=>\"San Francisco\",\"name:pap\"=>\"San Francisco\",\"name:pdc\"=>\"San Francisco\",\"name:pl\"=>\"San Francisco\",\"name:pms\"=>\"San Francisco\",\"name:pnb\"=>\"سان فرانسسکو\",\"name:ps\"=>\"سان فرانسسکو\",\"name:pt\"=>\"São Francisco\",\"name:qu\"=>\"San Francisco\",\"name:rmy\"=>\"San Francisco\",\"name:ro\"=>\"San Francisco\",\"name:ru\"=>\"Сан-Франциско\",\"name:sah\"=>\"Сан Франсиско\",\"name:sc\"=>\"San Francisco\",\"name:scn\"=>\"San Franciscu\",\"name:sco\"=>\"San Francisco\",\"name:sd\"=>\"سان فرانسسڪو\",\"name:sh\"=>\"San Francisco\",\"name:si\"=>\"සැන් ෆ්‍රැන්සිස්කෝ\",\"name:sk\"=>\"San Francisco\",\"name:sl\"=>\"San Francisco\",\"name:so\"=>\"San Fransisko\",\"name:sq\"=>\"San Francisco\",\"name:sr\"=>\"Сан Франциско\",\"name:stq\"=>\"San Francisco\",\"name:sv\"=>\"San Francisco\",\"name:sw\"=>\"San Francisco\",\"name:szl\"=>\"San Francisco\",\"name:ta\"=>\"சான் பிரான்சிஸ்கோ\",\"name:te\"=>\"శాన్ ఫ్రాన్సిస్కో\",\"name:tg\"=>\"Сан-Франсиско\",\"name:th\"=>\"ซานฟรานซิสโก\",\"name:tl\"=>\"San Francisco\",\"name:tr\"=>\"San Francisco\",\"name:tt\"=>\"Сан-Франциско\",\"name:tw\"=>\"San Francisco\",\"name:ty\"=>\"San Francisco\",\"name:ug\"=>\"San Fransisko\",\"name:uk\"=>\"Сан-Франциско\",\"name:ur\"=>\"سان فرانسسکو\",\"name:uz\"=>\"San Fransisko\",\"name:vec\"=>\"San Francisco\",\"name:vep\"=>\"San Francisko\",\"name:vi\"=>\"Cựu Kim Sơn\",\"name:vo\"=>\"San Francisco\",\"name:war\"=>\"San Francisco\",\"name:wuu\"=>\"舊金山\",\"name:xmf\"=>\"სან-ფრანცისკო\",\"name:yi\"=>\"סאן פראנציסקא\",\"name:yo\"=>\"San Francisco\",\"name:yue\"=>\"三藩市\",\"name:zh\"=>\"旧金山;舊金山;三藩市\",\"name:zh-Hans\"=>\"旧金山\",\"name:zh-Hant\"=>\"舊金山;三藩市\",\"name:zh-Hant-CN\"=>\"舊金山\",\"name:zh-Hant-HK\"=>\"三藩市\",\"name:zh-Hant-TW\"=>\"舊金山\",\"not:name\"=>\"San Fran\",\"official_name\"=>\"City and County of San Francisco\",\"official_name:en\"=>\"City and County of San Francisco\",\"official_name:es\"=>\"Ciudad y Condado de San Francisco\",\"official_name:yue\"=>\"三藩市市縣\",\"official_name:zh\"=>\"旧金山市县;舊金山市郡;三藩市市縣\",\"official_name:zh-Hans\"=>\"旧金山市县\",\"official_name:zh-Hant\"=>\"舊金山市郡;三藩市市縣\",\"official_name:zh-Hant-HK\"=>\"三藩市市縣\",\"official_name:zh-Hant-TW\"=>\"舊金山市郡\",\"old_name\"=>\"Yerba Buena\",\"population\"=>\"873965\",\"population:date\"=>\"2020-04-01\",\"short_name\"=>\"SF\",\"short_name:en\"=>\"SF\",\"source:name:oc\"=>\"Lo Congrès\",\"source:population\"=>\"US Census https://www.census.gov/quickfacts/fact/table/sanfranciscocitycalifornia/POP010220\",\"website\"=>\"https://www.sf.gov/\",\"wikidata\"=>\"Q62\",\"wikipedia\"=>\"en:San Francisco\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5924799,
+          1037.7879363
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "54891208",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6088083,
+          1037.7705805
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "54891501",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6136689,
+          1037.7690188
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "54891569",
+        "highway": "stop",
+        "other_tags": "\"direction\"=>\"both\",\"stop\"=>\"all\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6123837,
+          1037.7689303
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61670779",
+        "name": "Woods Lowside",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"530\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Haight Street\",\"alt_name\"=>\"Woods Beer;Lowside\",\"amenity\"=>\"pub\",\"branch\"=>\"Lowside\",\"check_date\"=>\"2025-12-02\",\"contact:facebook\"=>\"woodsbeerco\",\"contact:instagram\"=>\"woodsbeer\",\"contact:twitter\"=>\"woodsbeer\",\"drink:beer\"=>\"yes\",\"drink:wine\"=>\"yes\",\"email\"=>\"info@woodsbeer.com\",\"indoor_seating\"=>\"yes\",\"note:name\"=>\"Part of Woods Beer, sign says both \\\"Woods\\\" and \\\"Lowside\\\", but their website makes Lowside sound like a branch\",\"old_name\"=>\"Mad Dog in the Fog\",\"opening_hours\"=>\"Su,Mo-We 13:00-22:00; Th 13:00-23:00; Fr-Sa 13:00-24:00\",\"opening_hours:url\"=>\"https://www.woodsbeer.com/lowside\",\"outdoor_seating\"=>\"patio\",\"phone\"=>\"+1 415 5485734\",\"website\"=>\"https://www.woodsbeer.com/lowside\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5689847,
+          1037.7721448
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61671096",
+        "name": "Toronado",
+        "other_tags": "\"addr:housenumber\"=>\"547\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"contact:email\"=>\"info@toronado.com\",\"contact:fax\"=>\"+1-415-621-0322\",\"contact:phone\"=>\"+1-415-863-2276\",\"contact:website\"=>\"http://www.toronado.com/\",\"opening_hours\"=>\"11:00-02:00\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5687781,
+          1037.77191
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61671382",
+        "name": "Molotov's",
+        "other_tags": "\"addr:housenumber\"=>\"582\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"level\"=>\"0\",\"opening_hours\"=>\"15:00-02:00\",\"sport\"=>\"billiards\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5682376,
+          1037.7720543
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61672275",
+        "name": "Noc Noc",
+        "other_tags": "\"addr:housenumber\"=>\"557\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"short_name\"=>\"NocNoc\",\"website\"=>\"https://www.nocnocs.com/\",\"wheelchair\"=>\"no\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5685808000001,
+          1037.7718891
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61673273",
+        "name": "Danny Coyles",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"668\",\"addr:postcode\"=>\"94117\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"contact:facebook\"=>\"dannycoyles\",\"contact:twitter\"=>\"dannycoylessf\",\"contact:yelp\"=>\"http://www.yelp.com/biz/danny-coyles-san-francisco\",\"opening_hours\"=>\"Mo 16:00-22:00; Tu 14:00-22:00; We-Fr 14:00-26:00; Sa 07:00-26:00; Su 07:00-22:00\",\"opening_hours:url\"=>\"http://www.dannycoyles.com/\",\"phone\"=>\"+1 415 5588375\",\"sport\"=>\"billiards\",\"website\"=>\"http://www.dannycoyles.com/\",\"website:calendar\"=>\"http://www.dannycoyles.com/sports-page.html\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5667364,
+          1037.7718647
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61674029",
+        "name": "The Page",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"298\",\"addr:street\"=>\"Divisadero Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-09-17\",\"opening_hours\"=>\"Mo-Su 16:00-26:00\",\"payment:cards\"=>\"no\",\"payment:credit_cards\"=>\"no\",\"payment:debit_cards\"=>\"no\",\"sport\"=>\"billiards\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5629423,
+          1037.7721197
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61675193",
+        "name": "Martuni's",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"4\",\"addr:postcode\"=>\"94103\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Valencia Street\",\"amenity\"=>\"bar\",\"check_date\"=>\"2025-12-02\",\"level\"=>\"0\",\"outdoor_seating\"=>\"no\",\"phone\"=>\"+1-415-241-0205\",\"smoking\"=>\"no\",\"wikidata\"=>\"Q108821598\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5772272,
+          1037.7721282
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61676294",
+        "name": "The Green Heron",
+        "other_tags": "\"addr:housenumber\"=>\"1601\",\"addr:postcode\"=>\"94117\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"bar\",\"check_date\"=>\"2026-01-03\",\"level\"=>\"0\",\"outdoor_seating\"=>\"no\",\"wheelchair\"=>\"limited\",\"wifi\"=>\"no\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5512884,
+          1037.7696815
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61677300",
+        "name": "Magnolia SF",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"1398\",\"addr:postcode\"=>\"94117\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-07-29\",\"level\"=>\"0\",\"opening_hours\"=>\"Mo-Th,Su 12:00-24:00; Fr 12:00-01:00; Sa 11:00-01:00; kitchen closes at 22\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5548056,
+          1037.7703394
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61677421",
+        "name": "The Gold Cane",
+        "other_tags": "\"addr:housenumber\"=>\"1569\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"level\"=>\"0\",\"website\"=>\"https://goldcanesf.com/\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5519888,
+          1037.7697699
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61678646",
+        "name": "Trax",
+        "other_tags": "\"addr:housenumber\"=>\"1437\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2024-10-17\",\"level\"=>\"0\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5539358,
+          1037.7700421
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "5004035",
+        "name": "Macondray Lane",
+        "highway": "residential",
+        "z_order": 3
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5835163,
+            1037.7990541
+          ],
+          [
+            877.582672,
+            1037.7989484
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "7373728",
+        "name": "6th Street",
+        "highway": "residential",
+        "z_order": 3,
+        "other_tags": "\"sidewalk:left\"=>\"separate\",\"surface\"=>\"asphalt\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5998356,
+            1037.7742945
+          ],
+          [
+            877.5998182,
+            1037.7742638
+          ],
+          [
+            877.5998242000001,
+            1037.7742339
+          ],
+          [
+            877.5998376,
+            1037.7742109
+          ],
+          [
+            877.5998627,
+            1037.7741835
+          ],
+          [
+            877.6004927,
+            1037.7736879
+          ],
+          [
+            877.6005206,
+            1037.773665
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "7373736",
+        "name": "Bluxome Street",
+        "highway": "residential",
+        "z_order": 3,
+        "other_tags": "\"name:etymology:wikidata\"=>\"Q107178240\",\"parking:both\"=>\"lane\",\"parking:both:orientation\"=>\"perpendicular\",\"sidewalk:both\"=>\"separate\",\"surface\"=>\"asphalt\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5998356,
+            1037.7742945
+          ],
+          [
+            877.6005446,
+            1037.7748361
+          ],
+          [
+            877.6009211,
+            1037.7751381
+          ],
+          [
+            877.6011379,
+            1037.775321
+          ],
+          [
+            877.601261,
+            1037.7754175
+          ],
+          [
+            877.6013845,
+            1037.7755143
+          ],
+          [
+            877.6018778,
+            1037.775893
+          ],
+          [
+            877.6019142,
+            1037.7759159
+          ],
+          [
+            877.6019959,
+            1037.7759674
+          ],
+          [
+            877.602085,
+            1037.7760233
+          ],
+          [
+            877.6038072,
+            1037.777384
+          ],
+          [
+            877.6039002,
+            1037.7774575
+          ],
+          [
+            877.603936,
+            1037.7774854
+          ],
+          [
+            877.6041312,
+            1037.7776412
+          ],
+          [
+            877.6041759,
+            1037.7776755
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "7448875",
+        "name": "Nelson Rising Lane",
+        "highway": "residential",
+        "z_order": 3,
+        "other_tags": "\"name:etymology:wikidata\"=>\"Q16105754\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.6088952,
+            1037.7696737
+          ],
+          [
+            877.608774,
+            1037.7696713
+          ],
+          [
+            877.6087418,
+            1037.7696694
+          ],
+          [
+            877.6082305,
+            1037.76964
+          ],
+          [
+            877.6073531,
+            1037.7695896
+          ],
+          [
+            877.6072341,
+            1037.7695721
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8914977",
+        "name": "Berwick Place",
+        "highway": "unclassified",
+        "z_order": 3,
+        "other_tags": "\"lane_markings\"=>\"no\",\"sidewalk\"=>\"both\",\"surface\"=>\"asphalt\",\"tiger:county\"=>\"San Francisco, CA\",\"tiger:name_base\"=>\"Berwick\",\"tiger:name_type\"=>\"Pl\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5915035,
+            1037.7749327
+          ],
+          [
+            877.5916707,
+            1037.7747987
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915009",
+        "name": "Dehon Street",
+        "highway": "residential",
+        "z_order": 3,
+        "other_tags": "\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\",\"tiger:name_base\"=>\"Dehon\",\"tiger:name_type\"=>\"St\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5698765,
+            1037.7644163
+          ],
+          [
+            877.569884,
+            1037.7643388
+          ],
+          [
+            877.569909,
+            1037.7640853
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915056",
+        "highway": "footway",
+        "z_order": 0,
+        "other_tags": "\"access\"=>\"private\",\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5842368,
+            1037.7892776
+          ],
+          [
+            877.5842508000001,
+            1037.7891991
+          ],
+          [
+            877.5842545,
+            1037.7891766
+          ],
+          [
+            877.5842934,
+            1037.7889961
+          ],
+          [
+            877.5843034,
+            1037.7889497
+          ],
+          [
+            877.5842303,
+            1037.7889396
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915057",
+        "highway": "service",
+        "z_order": 0,
+        "other_tags": "\"access\"=>\"private\",\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.583218,
+            1037.7878655
+          ],
+          [
+            877.5833121000001,
+            1037.7878772
+          ],
+          [
+            877.5833541,
+            1037.7878825
+          ],
+          [
+            877.5834557000001,
+            1037.7878951
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915058",
+        "highway": "service",
+        "z_order": 0,
+        "other_tags": "\"service\"=>\"alley\",\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.58208,
+            1037.7880481
+          ],
+          [
+            877.582164,
+            1037.7876363
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915059",
+        "highway": "service",
+        "z_order": 0,
+        "other_tags": "\"access\"=>\"private\",\"service\"=>\"driveway\",\"sidewalk\"=>\"no\",\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\",\"tiger:reviewed\"=>\"no\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5674676,
+            1037.7945858
+          ],
+          [
+            877.5675395,
+            1037.794224
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915062",
+        "highway": "motorway_link",
+        "z_order": 29,
+        "other_tags": "\"bicycle\"=>\"no\",\"bridge\"=>\"yes\",\"destination\"=>\"Fifth Street\",\"junction:ref\"=>\"2A\",\"lanes\"=>\"2\",\"layer\"=>\"1\",\"maxspeed\"=>\"50 mph\",\"oneway\"=>\"yes\",\"surface\"=>\"concrete\",\"tiger:cfcc\"=>\"A63\",\"tiger:county\"=>\"San Francisco, CA\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.6029142,
+            1037.7818136
+          ],
+          [
+            877.602693,
+            1037.7815672
+          ],
+          [
+            877.6022913,
+            1037.7812466
+          ],
+          [
+            877.6019684,
+            1037.7809828
+          ],
+          [
+            877.6016305,
+            1037.7807038
+          ],
+          [
+            877.6000542,
+            1037.7794152
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915063",
+        "highway": "service",
+        "z_order": 0,
+        "other_tags": "\"access\"=>\"private\",\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\",\"tiger:separated\"=>\"no\",\"tiger:source\"=>\"tiger_import_dch_v0.6_20070809\",\"tiger:tlid\"=>\"192292841\",\"tiger:upload_uuid\"=>\"bulk_upload.pl-4ddcfcfe-e298-4ca3-a789-35779f3bf445\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5840284,
+            1037.7902062
+          ],
+          [
+            877.5840088,
+            1037.7903024
+          ],
+          [
+            877.5839777,
+            1037.7904548
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915071",
+        "highway": "footway",
+        "z_order": 0,
+        "other_tags": "\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.56929,
+            1037.784323
+          ],
+          [
+            877.5693593999999,
+            1037.7839728
+          ],
+          [
+            877.5693765,
+            1037.7838871
+          ],
+          [
+            877.5694445,
+            1037.7835743
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915074",
+        "highway": "footway",
+        "z_order": 0,
+        "other_tags": "\"foot\"=>\"yes\",\"surface\"=>\"paved\",\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\",\"tiger:reviewed\"=>\"no\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5710988,
+            1037.7838262
+          ],
+          [
+            877.5711146,
+            1037.7837422
+          ],
+          [
+            877.5711667,
+            1037.7834661
+          ],
+          [
+            877.5711891,
+            1037.7833472
+          ],
+          [
+            877.571222,
+            1037.7831523
+          ],
+          [
+            877.5712603,
+            1037.7829251
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915075",
+        "highway": "footway",
+        "z_order": 0,
+        "other_tags": "\"foot\"=>\"yes\",\"tiger:cfcc\"=>\"A41\",\"tiger:county\"=>\"San Francisco, CA\",\"tiger:reviewed\"=>\"no\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5711667,
+            1037.7834661
+          ],
+          [
+            877.5719355,
+            1037.783562
+          ],
+          [
+            877.572185,
+            1037.7835944
+          ],
+          [
+            877.5722757999999,
+            1037.7836063
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915115",
+        "highway": "motorway_link",
+        "z_order": 9,
+        "other_tags": "\"bicycle\"=>\"no\",\"destination\"=>\"Bryant Street;Downtown\",\"lanes\"=>\"3\",\"maxspeed\"=>\"50 mph\",\"oneway\"=>\"yes\",\"surface\"=>\"asphalt\",\"tiger:cfcc\"=>\"A63\",\"tiger:county\"=>\"San Francisco, CA\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5939324999999,
+            1037.7739075
+          ],
+          [
+            877.594058,
+            1037.774001
+          ],
+          [
+            877.5942054,
+            1037.7740881
+          ],
+          [
+            877.5943479,
+            1037.7741614
+          ],
+          [
+            877.5945097,
+            1037.7742262
+          ],
+          [
+            877.5949579,
+            1037.7743556
+          ],
+          [
+            877.5950992,
+            1037.7743967
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915117",
+        "highway": "motorway_link",
+        "z_order": 29,
+        "other_tags": "\"bicycle\"=>\"no\",\"bridge\"=>\"yes\",\"destination\"=>\"7th Street\",\"destination:lanes\"=>\"Seventh Street|Bryant Street\",\"junction:ref\"=>\"1\",\"lanes\"=>\"2\",\"layer\"=>\"1\",\"maxspeed\"=>\"50 mph\",\"maxspeed:advisory\"=>\"35 mph\",\"oneway\"=>\"yes\",\"surface\"=>\"concrete\",\"tiger:cfcc\"=>\"A63\",\"tiger:county\"=>\"San Francisco, CA\",\"turn:lanes\"=>\"slight_left|slight_right\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5934244,
+            1037.7730919
+          ],
+          [
+            877.5935368,
+            1037.7732834
+          ],
+          [
+            877.5935981,
+            1037.7734291
+          ],
+          [
+            877.5936688,
+            1037.7735675
+          ],
+          [
+            877.5937497,
+            1037.7736926
+          ],
+          [
+            877.5938375000001,
+            1037.7738037
+          ],
+          [
+            877.5939324999999,
+            1037.7739075
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915123",
+        "highway": "motorway_link",
+        "z_order": 9,
+        "other_tags": "\"destination\"=>\"Oakland\",\"destination:ref\"=>\"I 80 East\",\"lanes\"=>\"2\",\"maxspeed\"=>\"50 mph\",\"oneway\"=>\"yes\",\"surface\"=>\"asphalt\",\"tiger:cfcc\"=>\"A63\",\"tiger:county\"=>\"San Francisco, CA\",\"tiger:reviewed\"=>\"no\",\"turn:lanes\"=>\"|merge_to_left\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.5933343,
+            1037.7727807
+          ],
+          [
+            877.5933564,
+            1037.7731052
+          ],
+          [
+            877.5933643,
+            1037.7733702
+          ],
+          [
+            877.5933726,
+            1037.7735635
+          ],
+          [
+            877.5933907,
+            1037.7737239
+          ],
+          [
+            877.5934173,
+            1037.7738393
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915151",
+        "highway": "motorway_link",
+        "z_order": 9,
+        "other_tags": "\"bicycle\"=>\"no\",\"destination\"=>\"San Jose\",\"destination:ref\"=>\"US 101 South;I 80 West\",\"lanes\"=>\"2\",\"maxspeed\"=>\"50 mph\",\"oneway\"=>\"yes\",\"surface\"=>\"asphalt\",\"tiger:cfcc\"=>\"A63\",\"tiger:county\"=>\"San Francisco, CA\",\"turn:lanes\"=>\"merge_to_right|\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.600365,
+            1037.7807911
+          ],
+          [
+            877.6003739,
+            1037.7806618
+          ],
+          [
+            877.6003653,
+            1037.7805819
+          ],
+          [
+            877.6003506,
+            1037.7804665
+          ],
+          [
+            877.6003194,
+            1037.780359
+          ],
+          [
+            877.6002739,
+            1037.7802492
+          ],
+          [
+            877.6002139,
+            1037.7801405
+          ],
+          [
+            877.6001304,
+            1037.7800291
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8915244",
+        "highway": "motorway_link",
+        "z_order": 39,
+        "other_tags": "\"bridge\"=>\"yes\",\"destination\"=>\"18th Street;Mariposa Street\",\"junction:ref\"=>\"56\",\"lanes\"=>\"1\",\"layer\"=>\"2\",\"maxspeed:advisory\"=>\"30 mph\",\"oneway\"=>\"yes\",\"tiger:cfcc\"=>\"A63\",\"tiger:county\"=>\"San Francisco, CA\""
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            877.605467,
+            1037.7663056
+          ],
+          [
+            877.6060235,
+            1037.7656133
+          ],
+          [
+            877.6061603,
+            1037.7654278
+          ],
+          [
+            877.6062703,
+            1037.765255
+          ],
+          [
+            877.6063763,
+            1037.7650705
+          ],
+          [
+            877.6064768,
+            1037.7648669
+          ],
+          [
+            877.6065922,
+            1037.7646167
+          ],
+          [
+            877.6066968,
+            1037.764339
+          ],
+          [
+            877.6067571,
+            1037.7641407
+          ],
+          [
+            877.6068416,
+            1037.7637124
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "3373330",
+        "type": "multipolygon",
+        "building": "yes"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5958226,
+              1037.7791658
+            ],
+            [
+              877.5957574,
+              1037.7791162
+            ],
+            [
+              877.595698,
+              1037.7790715
+            ],
+            [
+              877.5957684,
+              1037.7790147
+            ],
+            [
+              877.5958797,
+              1037.7789283
+            ],
+            [
+              877.5960004,
+              1037.7790222
+            ],
+            [
+              877.5958226,
+              1037.7791658
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "3462260",
+        "name": "The Inverness",
+        "type": "multipolygon",
+        "building": "yes",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housename\"=>\"The Inverness\",\"addr:housenumber\"=>\"1405\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Van Ness Avenue\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5777785,
+              1037.7887291
+            ],
+            [
+              877.5778173,
+              1037.7885503
+            ],
+            [
+              877.577655,
+              1037.7885302
+            ],
+            [
+              877.577648,
+              1037.7885646
+            ],
+            [
+              877.5776277,
+              1037.7885628
+            ],
+            [
+              877.5776344,
+              1037.7885269
+            ],
+            [
+              877.5774845,
+              1037.788508
+            ],
+            [
+              877.5774479,
+              1037.788681
+            ],
+            [
+              877.5775543,
+              1037.7886956
+            ],
+            [
+              877.5775594,
+              1037.7886677
+            ],
+            [
+              877.5776806,
+              1037.7886815
+            ],
+            [
+              877.5776743,
+              1037.7887141
+            ],
+            [
+              877.5777683,
+              1037.7887281
+            ],
+            [
+              877.5777785,
+              1037.7887291
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "3486961",
+        "type": "multipolygon",
+        "building": "yes",
+        "other_tags": "\"addr:housenumber\"=>\"1455;1461\",\"addr:street\"=>\"Sacramento Street\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.583166,
+              1037.7916831
+            ],
+            [
+              877.583054,
+              1037.7916678
+            ],
+            [
+              877.583046,
+              1037.7917041
+            ],
+            [
+              877.5830279,
+              1037.7917816
+            ],
+            [
+              877.5830387,
+              1037.7917828
+            ],
+            [
+              877.5830464000001,
+              1037.7917841
+            ],
+            [
+              877.5830828,
+              1037.7917897
+            ],
+            [
+              877.5830692,
+              1037.7918559
+            ],
+            [
+              877.5830131,
+              1037.7918516
+            ],
+            [
+              877.5830106,
+              1037.7918635
+            ],
+            [
+              877.5829944,
+              1037.7919401
+            ],
+            [
+              877.582995,
+              1037.7919474
+            ],
+            [
+              877.5831126,
+              1037.7919629
+            ],
+            [
+              877.5831309,
+              1037.7918754
+            ],
+            [
+              877.5831419,
+              1037.7918218
+            ],
+            [
+              877.5831642,
+              1037.7917178
+            ],
+            [
+              877.5831588,
+              1037.7917206
+            ],
+            [
+              877.583166,
+              1037.7916831
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "3830966",
+        "name": "Mission Creek Senior",
+        "type": "multipolygon",
+        "building": "apartments",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"225\",\"addr:postcode\"=>\"94158\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Berry Street\",\"building:flats\"=>\"140\",\"building:levels\"=>\"6\",\"phone\"=>\"+1-415-896-2025\",\"website\"=>\"https://www.mercyhousing.org/california/mission-creek-senior/\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.6065891,
+              1037.7756156
+            ],
+            [
+              877.6066571,
+              1037.7755774
+            ],
+            [
+              877.6066911,
+              1037.7755536
+            ],
+            [
+              877.6066921,
+              1037.7755539
+            ],
+            [
+              877.6066951,
+              1037.7755517
+            ],
+            [
+              877.6066991,
+              1037.7755495
+            ],
+            [
+              877.6066981,
+              1037.7755491
+            ],
+            [
+              877.6067391,
+              1037.7755197
+            ],
+            [
+              877.6067421,
+              1037.7755226
+            ],
+            [
+              877.6067501,
+              1037.7755262
+            ],
+            [
+              877.6067611,
+              1037.7755243
+            ],
+            [
+              877.6068281,
+              1037.7754857
+            ],
+            [
+              877.6068801,
+              1037.7754499
+            ],
+            [
+              877.6069151,
+              1037.7754191
+            ],
+            [
+              877.6069540999999,
+              1037.7753851
+            ],
+            [
+              877.6069471,
+              1037.7753798
+            ],
+            [
+              877.6070001,
+              1037.7753387
+            ],
+            [
+              877.6070541,
+              1037.7752953
+            ],
+            [
+              877.6069806,
+              1037.7752359
+            ],
+            [
+              877.6067721,
+              1037.7750703
+            ],
+            [
+              877.6067351,
+              1037.7750695
+            ],
+            [
+              877.6067051,
+              1037.7750765
+            ],
+            [
+              877.6066781,
+              1037.775091
+            ],
+            [
+              877.6066731,
+              1037.7750951
+            ],
+            [
+              877.6066571,
+              1037.7750828
+            ],
+            [
+              877.6067101,
+              1037.7750422
+            ],
+            [
+              877.6066991,
+              1037.7750136
+            ],
+            [
+              877.6066901,
+              1037.7750154
+            ],
+            [
+              877.6066801,
+              1037.7750176
+            ],
+            [
+              877.6066781,
+              1037.7750179
+            ],
+            [
+              877.6066881,
+              1037.7750384
+            ],
+            [
+              877.6066441,
+              1037.7750727
+            ],
+            [
+              877.6066431,
+              1037.7750713
+            ],
+            [
+              877.6065471,
+              1037.7749948
+            ],
+            [
+              877.6066051,
+              1037.7749486
+            ],
+            [
+              877.6065451,
+              1037.7749004
+            ],
+            [
+              877.6065551,
+              1037.774893
+            ],
+            [
+              877.6064781,
+              1037.7748305
+            ],
+            [
+              877.6064601,
+              1037.7748423
+            ],
+            [
+              877.6063801,
+              1037.7749071
+            ],
+            [
+              877.6063361,
+              1037.7749431
+            ],
+            [
+              877.6063101,
+              1037.7749375
+            ],
+            [
+              877.6062961,
+              1037.7749743
+            ],
+            [
+              877.6062811,
+              1037.7749857
+            ],
+            [
+              877.6062571,
+              1037.7749804
+            ],
+            [
+              877.6062411,
+              1037.7750182
+            ],
+            [
+              877.6062271,
+              1037.7750293
+            ],
+            [
+              877.6062021,
+              1037.7750233
+            ],
+            [
+              877.6061881,
+              1037.7750608
+            ],
+            [
+              877.6061731,
+              1037.7750737
+            ],
+            [
+              877.6061481,
+              1037.7750676
+            ],
+            [
+              877.6061341,
+              1037.7751037
+            ],
+            [
+              877.6061311,
+              1037.7751059
+            ],
+            [
+              877.6061301,
+              1037.7751059
+            ],
+            [
+              877.6061321,
+              1037.7751074
+            ],
+            [
+              877.6060591,
+              1037.7751627
+            ],
+            [
+              877.6060721,
+              1037.7751729
+            ],
+            [
+              877.6060691,
+              1037.7751846
+            ],
+            [
+              877.6060701,
+              1037.7751869
+            ],
+            [
+              877.6060651,
+              1037.7751906
+            ],
+            [
+              877.6060741,
+              1037.7751996
+            ],
+            [
+              877.6060741,
+              1037.7752006
+            ],
+            [
+              877.6060841,
+              1037.7752247
+            ],
+            [
+              877.6061021,
+              1037.7752463
+            ],
+            [
+              877.6061271,
+              1037.7752664
+            ],
+            [
+              877.6061561,
+              1037.7752836
+            ],
+            [
+              877.6061771,
+              1037.7752903
+            ],
+            [
+              877.6061861000001,
+              1037.7752975
+            ],
+            [
+              877.6061811,
+              1037.775301
+            ],
+            [
+              877.6062091,
+              1037.7753286
+            ],
+            [
+              877.6062391,
+              1037.7753473
+            ],
+            [
+              877.6062441,
+              1037.7753432
+            ],
+            [
+              877.6062801,
+              1037.7753713
+            ],
+            [
+              877.6062941,
+              1037.7753826
+            ],
+            [
+              877.6062901,
+              1037.7753854
+            ],
+            [
+              877.6063181,
+              1037.7754129
+            ],
+            [
+              877.6063481,
+              1037.7754316
+            ],
+            [
+              877.6063521,
+              1037.7754284
+            ],
+            [
+              877.6064021,
+              1037.7754677
+            ],
+            [
+              877.6063971,
+              1037.7754709
+            ],
+            [
+              877.6064251,
+              1037.7754984
+            ],
+            [
+              877.6064551,
+              1037.7755171
+            ],
+            [
+              877.6064601,
+              1037.7755135
+            ],
+            [
+              877.6065101,
+              1037.7755528
+            ],
+            [
+              877.6065051,
+              1037.7755562
+            ],
+            [
+              877.6065321,
+              1037.7755836
+            ],
+            [
+              877.6065631,
+              1037.7756023
+            ],
+            [
+              877.6065681,
+              1037.7755984
+            ],
+            [
+              877.6065891,
+              1037.7756156
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "3833412",
+        "name": "Cruise",
+        "type": "multipolygon",
+        "building": "industrial",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"1201\",\"addr:postcode\"=>\"94103\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Bryant Street\",\"building:levels\"=>\"3\",\"contact:website\"=>\"https://getcruise.com/\",\"description\"=>\"Engineering and development laboratory.\",\"height\"=>\"15\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5905267,
+              1037.7697039
+            ],
+            [
+              877.5904461,
+              1037.7696572
+            ],
+            [
+              877.5903639,
+              1037.769612
+            ],
+            [
+              877.5902805000001,
+              1037.7695747
+            ],
+            [
+              877.5901729,
+              1037.7695425
+            ],
+            [
+              877.5900867,
+              1037.769616
+            ],
+            [
+              877.5900451,
+              1037.7695818
+            ],
+            [
+              877.5897538,
+              1037.7698143
+            ],
+            [
+              877.5902443,
+              1037.770199
+            ],
+            [
+              877.5906947,
+              1037.7698397
+            ],
+            [
+              877.5905267,
+              1037.7697039
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "4154217",
+        "name": "FAIS / IHS Gym",
+        "type": "multipolygon",
+        "building": "yes",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"129;151\",\"addr:postcode\"=>\"94102\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Oak Street\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5783473,
+              1037.774953
+            ],
+            [
+              877.578309,
+              1037.7749484
+            ],
+            [
+              877.5783544,
+              1037.774714
+            ],
+            [
+              877.5780528,
+              1037.7746795
+            ],
+            [
+              877.5780191,
+              1037.7748341
+            ],
+            [
+              877.5779855,
+              1037.7750067
+            ],
+            [
+              877.5783288,
+              1037.7750486
+            ],
+            [
+              877.5783473,
+              1037.774953
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "4669301",
+        "type": "multipolygon",
+        "building": "commercial",
+        "other_tags": "\"addr:housenumber\"=>\"800;830\",\"addr:street\"=>\"Market Street\",\"building:levels\"=>\"9\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.593573,
+              1037.7855409
+            ],
+            [
+              877.5932599,
+              1037.7852816
+            ],
+            [
+              877.5932026,
+              1037.7855453
+            ],
+            [
+              877.5932395,
+              1037.7855504
+            ],
+            [
+              877.5932435,
+              1037.7855587
+            ],
+            [
+              877.5935225000001,
+              1037.7855938
+            ],
+            [
+              877.59353,
+              1037.7855871
+            ],
+            [
+              877.5935460000001,
+              1037.7855883
+            ],
+            [
+              877.593551,
+              1037.785595
+            ],
+            [
+              877.593557,
+              1037.7855985
+            ],
+            [
+              877.5935632000001,
+              1037.7856013
+            ],
+            [
+              877.5935711,
+              1037.785603
+            ],
+            [
+              877.5935804,
+              1037.7856033
+            ],
+            [
+              877.5935899,
+              1037.7856021
+            ],
+            [
+              877.5935989,
+              1037.7855985
+            ],
+            [
+              877.5936068999999,
+              1037.7855934
+            ],
+            [
+              877.5936129,
+              1037.7855867
+            ],
+            [
+              877.5936167,
+              1037.7855789
+            ],
+            [
+              877.5936184,
+              1037.7855705
+            ],
+            [
+              877.5936171,
+              1037.7855616
+            ],
+            [
+              877.5936124,
+              1037.7855551
+            ],
+            [
+              877.5936059000001,
+              1037.7855496
+            ],
+            [
+              877.5935979,
+              1037.7855453
+            ],
+            [
+              877.5935884,
+              1037.7855429
+            ],
+            [
+              877.5935799,
+              1037.7855413
+            ],
+            [
+              877.593573,
+              1037.7855409
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "6423961",
+        "type": "multipolygon",
+        "landuse": "residential"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.6073192,
+              1037.7577246
+            ],
+            [
+              877.6072818,
+              1037.7585489
+            ],
+            [
+              877.6068624,
+              1037.7626644
+            ],
+            [
+              877.6062015,
+              1037.7626086
+            ],
+            [
+              877.6061499,
+              1037.7633361
+            ],
+            [
+              877.6058307,
+              1037.7633037
+            ],
+            [
+              877.6057876,
+              1037.7635062
+            ],
+            [
+              877.6052,
+              1037.7634578
+            ],
+            [
+              877.6051855000001,
+              1037.7635952
+            ],
+            [
+              877.6047464,
+              1037.7635674
+            ],
+            [
+              877.6042135,
+              1037.7635352
+            ],
+            [
+              877.6041799,
+              1037.763823
+            ],
+            [
+              877.6040942,
+              1037.7648196
+            ],
+            [
+              877.6037556,
+              1037.7648001
+            ],
+            [
+              877.6033763,
+              1037.7647668
+            ],
+            [
+              877.6033828,
+              1037.7646961
+            ],
+            [
+              877.6024216,
+              1037.7646517
+            ],
+            [
+              877.6021619,
+              1037.7646266
+            ],
+            [
+              877.6021239,
+              1037.7649855
+            ],
+            [
+              877.601418,
+              1037.764942
+            ],
+            [
+              877.601662,
+              1037.7623958
+            ],
+            [
+              877.6004946,
+              1037.7623207
+            ],
+            [
+              877.6012742,
+              1037.7612525
+            ],
+            [
+              877.6012895,
+              1037.7610847
+            ],
+            [
+              877.5986972000001,
+              1037.7609389
+            ],
+            [
+              877.5985746,
+              1037.762204
+            ],
+            [
+              877.5985502999999,
+              1037.7623787
+            ],
+            [
+              877.5985195,
+              1037.7627962
+            ],
+            [
+              877.598496,
+              1037.7630652
+            ],
+            [
+              877.5981071,
+              1037.7630409
+            ],
+            [
+              877.5980203,
+              1037.7634489
+            ],
+            [
+              877.5965133,
+              1037.7633798
+            ],
+            [
+              877.5963978,
+              1037.7647049
+            ],
+            [
+              877.5955354,
+              1037.764655
+            ],
+            [
+              877.5955832,
+              1037.7641461
+            ],
+            [
+              877.5952076,
+              1037.7641627
+            ],
+            [
+              877.5951824,
+              1037.7639269000001
+            ],
+            [
+              877.5951526,
+              1037.7637518
+            ],
+            [
+              877.5950891,
+              1037.7634665
+            ],
+            [
+              877.5950149,
+              1037.7632749
+            ],
+            [
+              877.5950495,
+              1037.763115
+            ],
+            [
+              877.595105,
+              1037.7628587
+            ],
+            [
+              877.5951347,
+              1037.7625526
+            ],
+            [
+              877.5948515,
+              1037.7625019
+            ],
+            [
+              877.5948142,
+              1037.7624563
+            ],
+            [
+              877.5948635,
+              1037.761767
+            ],
+            [
+              877.594444,
+              1037.7617518
+            ],
+            [
+              877.5942441,
+              1037.7612018
+            ],
+            [
+              877.5940794,
+              1037.7607005
+            ],
+            [
+              877.5940779,
+              1037.760696
+            ],
+            [
+              877.5940748,
+              1037.7604961
+            ],
+            [
+              877.5941531999999,
+              1037.760302
+            ],
+            [
+              877.594436,
+              1037.7603223
+            ],
+            [
+              877.5944519,
+              1037.759976
+            ],
+            [
+              877.5945098,
+              1037.7599792
+            ],
+            [
+              877.595039,
+              1037.7600089
+            ],
+            [
+              877.5950856,
+              1037.7595465
+            ],
+            [
+              877.5958158,
+              1037.759615
+            ],
+            [
+              877.5960492,
+              1037.7596302
+            ],
+            [
+              877.5960633,
+              1037.7595179
+            ],
+            [
+              877.5961412,
+              1037.7589703
+            ],
+            [
+              877.5962009,
+              1037.7580462
+            ],
+            [
+              877.5962384,
+              1037.7579433
+            ],
+            [
+              877.5965659,
+              1037.7575029
+            ],
+            [
+              877.5966485,
+              1037.7567316
+            ],
+            [
+              877.5971308000001,
+              1037.7567639
+            ],
+            [
+              877.5972347,
+              1037.75677
+            ],
+            [
+              877.5974365,
+              1037.7546188000001
+            ],
+            [
+              877.597683,
+              1037.7519856
+            ],
+            [
+              877.5974381,
+              1037.751972
+            ],
+            [
+              877.5974311,
+              1037.751795
+            ],
+            [
+              877.5974127,
+              1037.7515901
+            ],
+            [
+              877.5973809,
+              1037.7514491
+            ],
+            [
+              877.597345,
+              1037.7513005
+            ],
+            [
+              877.5972778,
+              1037.7510332
+            ],
+            [
+              877.5977065,
+              1037.7510546
+            ],
+            [
+              877.5977289,
+              1037.750789
+            ],
+            [
+              877.5994819,
+              1037.7508916
+            ],
+            [
+              877.6000766,
+              1037.7509295
+            ],
+            [
+              877.6005898,
+              1037.7509665
+            ],
+            [
+              877.6035624,
+              1037.7511956
+            ],
+            [
+              877.6034194,
+              1037.752355
+            ],
+            [
+              877.6071594,
+              1037.7525783
+            ],
+            [
+              877.6071348,
+              1037.7537603
+            ],
+            [
+              877.606827,
+              1037.7537408
+            ],
+            [
+              877.6068252,
+              1037.7536413
+            ],
+            [
+              877.6064707,
+              1037.7536312
+            ],
+            [
+              877.6064964,
+              1037.7534282
+            ],
+            [
+              877.6052258,
+              1037.7533275
+            ],
+            [
+              877.6050204000001,
+              1037.7545577
+            ],
+            [
+              877.6056121,
+              1037.7554496
+            ],
+            [
+              877.6054637,
+              1037.7563043
+            ],
+            [
+              877.6043854,
+              1037.7574739
+            ],
+            [
+              877.6043804,
+              1037.7575883
+            ],
+            [
+              877.6051567,
+              1037.7576177
+            ],
+            [
+              877.6073192,
+              1037.7577246
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "7261820",
+        "name": "San Francisco City Hall",
+        "type": "multipolygon",
+        "amenity": "townhall",
+        "building": "public",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housename\"=>\"San Francisco City Hall\",\"addr:housenumber\"=>\"1\",\"addr:postcode\"=>\"94102\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Dr Carlton B Goodlett Place\",\"building:colour\"=>\"#e3e3de\",\"building:part\"=>\"yes\",\"check_date\"=>\"2025-04-10\",\"email\"=>\"City.Hall.Building.Management@sfgov.org\",\"gnis:feature_id\"=>\"1655544\",\"height\"=>\"30\",\"name:kn\"=>\"ಸ್ಯಾನ್ ಫ್ರಾನ್ಸಿಸ್ಕೊ ಸಿಟಿ ಹಾಲ್\",\"name:ko\"=>\"샌프란시스코 시청\",\"operator\"=>\"City and County of San Francisco\",\"phone\"=>\"+1 415 554 4000\",\"website\"=>\"https://sfgov.org/cityhall/\",\"wheelchair\"=>\"yes\",\"wikidata\"=>\"Q1093944\",\"wikipedia\"=>\"en:San Francisco City Hall\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5802007,
+              1037.7797591
+            ],
+            [
+              877.5802054,
+              1037.7797648
+            ],
+            [
+              877.5802071,
+              1037.7797722
+            ],
+            [
+              877.580209,
+              1037.7797864
+            ],
+            [
+              877.5804038,
+              1037.7798108
+            ],
+            [
+              877.5804065,
+              1037.7797997
+            ],
+            [
+              877.5804087,
+              1037.7797974
+            ],
+            [
+              877.5804116,
+              1037.7797958
+            ],
+            [
+              877.5804184,
+              1037.7797934
+            ],
+            [
+              877.5808842,
+              1037.7798517
+            ],
+            [
+              877.5808909,
+              1037.7798541
+            ],
+            [
+              877.5808967,
+              1037.7798584
+            ],
+            [
+              877.5808989,
+              1037.7798655
+            ],
+            [
+              877.5808996,
+              1037.7798724
+            ],
+            [
+              877.5810944,
+              1037.7798972
+            ],
+            [
+              877.5810992,
+              1037.7798857
+            ],
+            [
+              877.5811031000001,
+              1037.7798805
+            ],
+            [
+              877.5811086,
+              1037.7798767
+            ],
+            [
+              877.581116,
+              1037.7798742
+            ],
+            [
+              877.5811247,
+              1037.7798733
+            ],
+            [
+              877.5811416,
+              1037.7798729
+            ],
+            [
+              877.5811438000001,
+              1037.779862
+            ],
+            [
+              877.5811557,
+              1037.7798635
+            ],
+            [
+              877.5811752,
+              1037.7797668
+            ],
+            [
+              877.5811633,
+              1037.7797653
+            ],
+            [
+              877.5812218,
+              1037.7794754
+            ],
+            [
+              877.5812353,
+              1037.7794771
+            ],
+            [
+              877.5812379,
+              1037.7794634
+            ],
+            [
+              877.5812412,
+              1037.7794475
+            ],
+            [
+              877.5812703,
+              1037.7794512
+            ],
+            [
+              877.5812773,
+              1037.7794152
+            ],
+            [
+              877.5812927,
+              1037.7793438
+            ],
+            [
+              877.5813151,
+              1037.7792303
+            ],
+            [
+              877.5812858,
+              1037.7792267
+            ],
+            [
+              877.581291,
+              1037.7792007
+            ],
+            [
+              877.5812776,
+              1037.779199
+            ],
+            [
+              877.5813346,
+              1037.7789165
+            ],
+            [
+              877.5813494,
+              1037.7789184
+            ],
+            [
+              877.58137,
+              1037.7788163
+            ],
+            [
+              877.5813634,
+              1037.7788155
+            ],
+            [
+              877.5813659,
+              1037.7788027
+            ],
+            [
+              877.5813577,
+              1037.7788017
+            ],
+            [
+              877.581339,
+              1037.7787982
+            ],
+            [
+              877.5813333,
+              1037.7787957
+            ],
+            [
+              877.5813301000001,
+              1037.7787918
+            ],
+            [
+              877.5813276,
+              1037.7787866
+            ],
+            [
+              877.5813272,
+              1037.7787804
+            ],
+            [
+              877.5813301000001,
+              1037.7787682
+            ],
+            [
+              877.581128,
+              1037.7787427
+            ],
+            [
+              877.581124,
+              1037.7787628
+            ],
+            [
+              877.5806214,
+              1037.7786994
+            ],
+            [
+              877.5806254,
+              1037.7786794
+            ],
+            [
+              877.5804352,
+              1037.7786554
+            ],
+            [
+              877.5804277,
+              1037.778665
+            ],
+            [
+              877.5804175,
+              1037.7786744
+            ],
+            [
+              877.5804086,
+              1037.7786772
+            ],
+            [
+              877.5803995,
+              1037.7786782
+            ],
+            [
+              877.5803788000001,
+              1037.7786773
+            ],
+            [
+              877.5803568,
+              1037.7787864
+            ],
+            [
+              877.5803688999999,
+              1037.7787881
+            ],
+            [
+              877.5803107,
+              1037.7790765
+            ],
+            [
+              877.5802872,
+              1037.7790736
+            ],
+            [
+              877.5802852,
+              1037.7790837
+            ],
+            [
+              877.5802727,
+              1037.7790921
+            ],
+            [
+              877.5802585,
+              1037.7790992
+            ],
+            [
+              877.5802172,
+              1037.779094
+            ],
+            [
+              877.5802105,
+              1037.7791273
+            ],
+            [
+              877.5802033,
+              1037.7791617
+            ],
+            [
+              877.5801992,
+              1037.7791813
+            ],
+            [
+              877.580196,
+              1037.7791996
+            ],
+            [
+              877.5801953,
+              1037.7792035
+            ],
+            [
+              877.5801926,
+              1037.7792164
+            ],
+            [
+              877.5801892,
+              1037.779233
+            ],
+            [
+              877.5801869,
+              1037.7792447
+            ],
+            [
+              877.5801809,
+              1037.7792734
+            ],
+            [
+              877.5801732,
+              1037.7793124
+            ],
+            [
+              877.5802082,
+              1037.7793171
+            ],
+            [
+              877.5802346,
+              1037.7793341
+            ],
+            [
+              877.5802317,
+              1037.7793484
+            ],
+            [
+              877.5802553,
+              1037.7793514
+            ],
+            [
+              877.5801969,
+              1037.7796407
+            ],
+            [
+              877.5801861,
+              1037.7796393
+            ],
+            [
+              877.580167,
+              1037.7797342
+            ],
+            [
+              877.5801778,
+              1037.7797355
+            ],
+            [
+              877.5801752,
+              1037.7797483
+            ],
+            [
+              877.5801883,
+              1037.7797526
+            ],
+            [
+              877.5802007,
+              1037.7797591
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "7532709",
+        "type": "multipolygon",
+        "amenity": "parking",
+        "other_tags": "\"access\"=>\"private\",\"operator\"=>\"San Francisco Giants\",\"surface\"=>\"paved\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.6116613,
+              1037.7799592
+            ],
+            [
+              877.6114053,
+              1037.7797515
+            ],
+            [
+              877.6112373999999,
+              1037.779908
+            ],
+            [
+              877.611467,
+              1037.7800511
+            ],
+            [
+              877.6114414,
+              1037.780111
+            ],
+            [
+              877.6115252,
+              1037.7801825
+            ],
+            [
+              877.6114286,
+              1037.7802534
+            ],
+            [
+              877.6109935,
+              1037.7799068
+            ],
+            [
+              877.6113573,
+              1037.7796474
+            ],
+            [
+              877.6116993,
+              1037.7799302
+            ],
+            [
+              877.6116613,
+              1037.7799592
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8713570",
+        "name": "Graduate Center",
+        "type": "multipolygon",
+        "building": "university",
+        "other_tags": "\"addr:housenumber\"=>\"184\",\"addr:street\"=>\"Hooper Street\",\"operator\"=>\"California College of the Arts\""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5996954,
+              1037.7680575
+            ],
+            [
+              877.5994675,
+              1037.7682403
+            ],
+            [
+              877.5994498,
+              1037.7682545
+            ],
+            [
+              877.5995802,
+              1037.7683539
+            ],
+            [
+              877.6001646,
+              1037.7678867
+            ],
+            [
+              877.6000356,
+              1037.7677856
+            ],
+            [
+              877.6000067,
+              1037.7677624
+            ],
+            [
+              877.5999746,
+              1037.7677366
+            ],
+            [
+              877.599973,
+              1037.767736
+            ],
+            [
+              877.5998131,
+              1037.767611
+            ],
+            [
+              877.5997879,
+              1037.7676311
+            ],
+            [
+              877.5992633,
+              1037.768049
+            ],
+            [
+              877.5992146,
+              1037.7680878
+            ],
+            [
+              877.599365,
+              1037.7682063
+            ],
+            [
+              877.5993965,
+              1037.768182
+            ],
+            [
+              877.5996296,
+              1037.7680023
+            ],
+            [
+              877.5999397,
+              1037.7677637
+            ],
+            [
+              877.599972,
+              1037.7677898
+            ],
+            [
+              877.6000007,
+              1037.7678127
+            ],
+            [
+              877.5996954,
+              1037.7680575
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8911853",
+        "type": "multipolygon",
+        "landuse": "grass"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5735491,
+              1037.7648157
+            ],
+            [
+              877.5735499,
+              1037.7648116
+            ],
+            [
+              877.5735514,
+              1037.7648076
+            ],
+            [
+              877.5735537,
+              1037.7648039
+            ],
+            [
+              877.5735566,
+              1037.7648005
+            ],
+            [
+              877.5735602,
+              1037.7647975
+            ],
+            [
+              877.5735642,
+              1037.7647949
+            ],
+            [
+              877.5735687,
+              1037.7647928
+            ],
+            [
+              877.5735736,
+              1037.7647913
+            ],
+            [
+              877.5735787,
+              1037.7647904
+            ],
+            [
+              877.5735839,
+              1037.76479
+            ],
+            [
+              877.5735891,
+              1037.7647903
+            ],
+            [
+              877.5735942,
+              1037.7647912
+            ],
+            [
+              877.5735991,
+              1037.7647927
+            ],
+            [
+              877.5736036,
+              1037.7647948
+            ],
+            [
+              877.5736077,
+              1037.7647974
+            ],
+            [
+              877.5736113,
+              1037.7648004
+            ],
+            [
+              877.5736142,
+              1037.7648038
+            ],
+            [
+              877.5736165,
+              1037.7648075
+            ],
+            [
+              877.5736181,
+              1037.7648114
+            ],
+            [
+              877.5736189,
+              1037.7648155
+            ],
+            [
+              877.5736189,
+              1037.7648196
+            ],
+            [
+              877.5735795,
+              1037.7652376
+            ],
+            [
+              877.5735787,
+              1037.7652417
+            ],
+            [
+              877.5735772,
+              1037.7652457
+            ],
+            [
+              877.573575,
+              1037.7652494
+            ],
+            [
+              877.573572,
+              1037.7652528
+            ],
+            [
+              877.5735685,
+              1037.7652559
+            ],
+            [
+              877.5735644,
+              1037.7652585
+            ],
+            [
+              877.5735599,
+              1037.7652605
+            ],
+            [
+              877.5735549999999,
+              1037.7652621
+            ],
+            [
+              877.5735499,
+              1037.765263
+            ],
+            [
+              877.5735447,
+              1037.7652633
+            ],
+            [
+              877.5735395,
+              1037.765263
+            ],
+            [
+              877.5735344,
+              1037.7652621
+            ],
+            [
+              877.5735295,
+              1037.7652606
+            ],
+            [
+              877.573525,
+              1037.7652586
+            ],
+            [
+              877.5735209,
+              1037.765256
+            ],
+            [
+              877.5735173,
+              1037.765253
+            ],
+            [
+              877.5735142999999,
+              1037.7652495
+            ],
+            [
+              877.5735121,
+              1037.7652458
+            ],
+            [
+              877.5735105,
+              1037.7652419
+            ],
+            [
+              877.5735097,
+              1037.7652378
+            ],
+            [
+              877.5735097,
+              1037.7652336
+            ],
+            [
+              877.5735491,
+              1037.7648157
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8911854",
+        "type": "multipolygon",
+        "landuse": "grass"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5734903,
+              1037.7654149
+            ],
+            [
+              877.5734911,
+              1037.7654109
+            ],
+            [
+              877.5734926,
+              1037.7654069
+            ],
+            [
+              877.5734949,
+              1037.7654032
+            ],
+            [
+              877.5734978,
+              1037.7653998
+            ],
+            [
+              877.5735013999999,
+              1037.7653967
+            ],
+            [
+              877.5735054,
+              1037.7653942
+            ],
+            [
+              877.5735099,
+              1037.7653921
+            ],
+            [
+              877.5735148,
+              1037.7653906
+            ],
+            [
+              877.5735199,
+              1037.7653896
+            ],
+            [
+              877.5735251,
+              1037.7653893
+            ],
+            [
+              877.5735303,
+              1037.7653896
+            ],
+            [
+              877.5735354,
+              1037.7653905
+            ],
+            [
+              877.5735403,
+              1037.765392
+            ],
+            [
+              877.5735448,
+              1037.7653941
+            ],
+            [
+              877.5735489,
+              1037.7653966
+            ],
+            [
+              877.5735525,
+              1037.7653996
+            ],
+            [
+              877.5735554,
+              1037.765403
+            ],
+            [
+              877.5735577,
+              1037.7654068
+            ],
+            [
+              877.5735592999999,
+              1037.7654107
+            ],
+            [
+              877.5735601,
+              1037.7654148
+            ],
+            [
+              877.5735601,
+              1037.7654189
+            ],
+            [
+              877.5735341,
+              1037.7656959
+            ],
+            [
+              877.5735334,
+              1037.7657
+            ],
+            [
+              877.5735318,
+              1037.7657039
+            ],
+            [
+              877.5735296,
+              1037.7657077
+            ],
+            [
+              877.5735267,
+              1037.7657111
+            ],
+            [
+              877.5735231,
+              1037.7657142
+            ],
+            [
+              877.573519,
+              1037.7657167
+            ],
+            [
+              877.5735145,
+              1037.7657188
+            ],
+            [
+              877.5735096,
+              1037.7657202999999
+            ],
+            [
+              877.5735045,
+              1037.7657213
+            ],
+            [
+              877.5734993,
+              1037.7657216
+            ],
+            [
+              877.5734941000001,
+              1037.7657213
+            ],
+            [
+              877.573489,
+              1037.7657204
+            ],
+            [
+              877.5734841,
+              1037.7657189
+            ],
+            [
+              877.5734796,
+              1037.7657168
+            ],
+            [
+              877.5734755,
+              1037.7657143
+            ],
+            [
+              877.5734719,
+              1037.7657112
+            ],
+            [
+              877.573469,
+              1037.7657078
+            ],
+            [
+              877.5734667,
+              1037.7657041
+            ],
+            [
+              877.5734651,
+              1037.7657001
+            ],
+            [
+              877.5734643,
+              1037.765696
+            ],
+            [
+              877.5734643,
+              1037.7656919
+            ],
+            [
+              877.5734903,
+              1037.7654149
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8911855",
+        "type": "multipolygon",
+        "landuse": "grass"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5733885,
+              1037.7664204
+            ],
+            [
+              877.5733893,
+              1037.7664163
+            ],
+            [
+              877.5733908,
+              1037.7664123
+            ],
+            [
+              877.5733931,
+              1037.7664086
+            ],
+            [
+              877.573396,
+              1037.7664052
+            ],
+            [
+              877.5733996,
+              1037.7664022
+            ],
+            [
+              877.5734036,
+              1037.7663996
+            ],
+            [
+              877.5734081,
+              1037.7663975
+            ],
+            [
+              877.573413,
+              1037.766396
+            ],
+            [
+              877.5734181,
+              1037.7663951
+            ],
+            [
+              877.5734233000001,
+              1037.7663947
+            ],
+            [
+              877.5734285,
+              1037.766395
+            ],
+            [
+              877.5734336,
+              1037.7663959
+            ],
+            [
+              877.5734385,
+              1037.7663974
+            ],
+            [
+              877.573443,
+              1037.7663995
+            ],
+            [
+              877.5734471,
+              1037.7664021
+            ],
+            [
+              877.5734507,
+              1037.7664051
+            ],
+            [
+              877.5734536,
+              1037.7664085
+            ],
+            [
+              877.5734559,
+              1037.7664122
+            ],
+            [
+              877.5734575,
+              1037.7664161
+            ],
+            [
+              877.5734583,
+              1037.7664202
+            ],
+            [
+              877.5734583,
+              1037.7664243
+            ],
+            [
+              877.5733967,
+              1037.7669972
+            ],
+            [
+              877.5733967,
+              1037.7670013
+            ],
+            [
+              877.5733947,
+              1037.7670053
+            ],
+            [
+              877.5733927,
+              1037.767009
+            ],
+            [
+              877.5733897,
+              1037.7670124
+            ],
+            [
+              877.5733857,
+              1037.7670155
+            ],
+            [
+              877.5733817,
+              1037.7670181
+            ],
+            [
+              877.5733777,
+              1037.7670201
+            ],
+            [
+              877.5733726999999,
+              1037.7670217
+            ],
+            [
+              877.5733677000001,
+              1037.7670226
+            ],
+            [
+              877.5733627,
+              1037.7670229
+            ],
+            [
+              877.5733567,
+              1037.7670226
+            ],
+            [
+              877.5733517,
+              1037.7670217
+            ],
+            [
+              877.5733467,
+              1037.7670202
+            ],
+            [
+              877.5733427,
+              1037.7670182
+            ],
+            [
+              877.5733387,
+              1037.7670156
+            ],
+            [
+              877.5733347,
+              1037.7670126
+            ],
+            [
+              877.5733317,
+              1037.7670091
+            ],
+            [
+              877.5733297,
+              1037.7670054
+            ],
+            [
+              877.5733276999999,
+              1037.7670015
+            ],
+            [
+              877.5733276999999,
+              1037.7669974
+            ],
+            [
+              877.5733276999999,
+              1037.7669932
+            ],
+            [
+              877.5733885,
+              1037.7664204
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "8911856",
+        "type": "multipolygon",
+        "landuse": "grass"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              877.5731823,
+              1037.768522
+            ],
+            [
+              877.5731833,
+              1037.7685179
+            ],
+            [
+              877.5731843,
+              1037.7685139
+            ],
+            [
+              877.5731873,
+              1037.7685102
+            ],
+            [
+              877.5731903,
+              1037.7685068
+            ],
+            [
+              877.5731933,
+              1037.7685038
+            ],
+            [
+              877.5731973,
+              1037.7685012
+            ],
+            [
+              877.5732023,
+              1037.7684991
+            ],
+            [
+              877.5732073,
+              1037.7684976
+            ],
+            [
+              877.5732123,
+              1037.7684967
+            ],
+            [
+              877.5732173,
+              1037.7684963
+            ],
+            [
+              877.5732223,
+              1037.7684966
+            ],
+            [
+              877.5732273,
+              1037.7684975
+            ],
+            [
+              877.5732323,
+              1037.768499
+            ],
+            [
+              877.5732373,
+              1037.7685011
+            ],
+            [
+              877.5732413000001,
+              1037.7685037
+            ],
+            [
+              877.5732442999999,
+              1037.7685067
+            ],
+            [
+              877.5732473,
+              1037.7685101
+            ],
+            [
+              877.5732503,
+              1037.7685138
+            ],
+            [
+              877.5732513,
+              1037.7685177
+            ],
+            [
+              877.5732523,
+              1037.7685218
+            ],
+            [
+              877.5732523,
+              1037.7685259
+            ],
+            [
+              877.5732133,
+              1037.7689439
+            ],
+            [
+              877.5732123,
+              1037.768948
+            ],
+            [
+              877.5732103,
+              1037.768952
+            ],
+            [
+              877.5732083,
+              1037.7689557
+            ],
+            [
+              877.5732053,
+              1037.7689591
+            ],
+            [
+              877.5732023,
+              1037.7689622
+            ],
+            [
+              877.5731973,
+              1037.7689648
+            ],
+            [
+              877.5731933,
+              1037.7689668
+            ],
+            [
+              877.5731883,
+              1037.7689684
+            ],
+            [
+              877.5731833,
+              1037.7689693
+            ],
+            [
+              877.5731783,
+              1037.7689696
+            ],
+            [
+              877.5731733,
+              1037.7689693
+            ],
+            [
+              877.5731673,
+              1037.7689684
+            ],
+            [
+              877.5731633,
+              1037.7689669
+            ],
+            [
+              877.5731583,
+              1037.7689649
+            ],
+            [
+              877.5731542999999,
+              1037.7689623
+            ],
+            [
+              877.5731503,
+              1037.7689593
+            ],
+            [
+              877.5731473,
+              1037.7689558
+            ],
+            [
+              877.5731453,
+              1037.7689521
+            ],
+            [
+              877.5731443,
+              1037.7689482
+            ],
+            [
+              877.5731433,
+              1037.7689441
+            ],
+            [
+              877.5731433,
+              1037.7689399
+            ],
+            [
+              877.5731823,
+              1037.768522
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

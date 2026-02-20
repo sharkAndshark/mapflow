@@ -106,6 +106,48 @@ test.describe('Custom CRS', () => {
     expect(previewData.bbox).toBeDefined();
   });
 
+  test('custom CRS with named CRS definition', async ({ page, request }) => {
+    test.setTimeout(120000);
+
+    const testFile = path.join(customCrsDir, 'sf_parks_named_crs.geojson');
+
+    await page.goto('/');
+
+    const input = page.getByTestId('file-input');
+    await input.setInputFiles(testFile);
+
+    await expect(
+      page.locator('.row', { hasText: 'sf_parks_named_crs' }).getByText(/已就绪|等待处理/),
+    ).toBeVisible();
+
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get('/api/files');
+          if (!response.ok()) return null;
+          const files = await response.json();
+          const file = files.find((f) => f.name === 'sf_parks_named_crs');
+          return file?.status;
+        },
+        { message: 'wait for file to be ready', timeout: 60000 },
+      )
+      .toBe('ready');
+
+    const filesResponse = await request.get('/api/files');
+    const files = await filesResponse.json();
+    const fileData = files.find((f) => f.name === 'sf_parks_named_crs');
+    expect(fileData).toBeDefined();
+    expect(fileData.crsType).toBe('custom');
+    expect(fileData.crs).toBeNull();
+
+    const previewResponse = await request.get(`/api/files/${fileData.id}/preview`);
+    expect(previewResponse.ok()).toBeTruthy();
+    const previewData = await previewResponse.json();
+
+    expect(previewData.crsType).toBe('custom');
+    expect(previewData.bbox).toBeDefined();
+  });
+
   test('custom CRS with negative coordinates', async ({ page, request }) => {
     test.setTimeout(120000);
 
