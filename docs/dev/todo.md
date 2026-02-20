@@ -1,6 +1,6 @@
 # Known Issues & TODOs
 
-**Last Updated**: 2026-02-16
+**Last Updated**: 2026-02-20
 
 ## Known Issues
 
@@ -177,10 +177,8 @@ function calculateResolutions(bounds, maxZoom = 20) {
 
 ### Debug Logging Cleanup
 
-- **Issue**: handlers.rs contains debug `println!` statements (lines 179-182, 287, 304-307)
-- **Impact**: Verbose output in production logs
-- **Solution**: Remove or replace with proper logging framework (tracing/log crate)
-- **Priority**: Low
+- **Status**: ✅ Done (2026-02-20)
+- **Solution**: 已使用 tracing 框架，无 println!/eprintln! 残留
 
 ### MBTiles Connection Pool
 
