@@ -11,7 +11,7 @@
 | `sf_buildings_no_crs.geojson` | GeoJSON | Polygon | 无 CRS 声明 | `crs=null, crs_type=custom` |
 | `sf_roads_local_grid.geojson` | GeoJSON | LineString | 自定义 CRS 名称 | `crs="LOCAL_SF_GRID", crs_type=custom` |
 | `sf_pois_no_crs.geojson` | GeoJSON | Point | 无 CRS 声明 | `crs=null, crs_type=custom` |
-| `sf_buildings_custom_wkt.zip` | Shapefile | Polygon | WKT 无 EPSG AUTHORITY | `crs=<完整WKT>, crs_type=custom` |
+| `sf_buildings_custom_wkt.zip` | Shapefile | Polygon | WKT 无 EPSG AUTHORITY | `crs=null, crs_type=custom` |
 | `negative_coords_test.geojson` | GeoJSON | Point, Polygon | 无 CRS + 负坐标 | `crs=null, crs_type=custom`, 测试负坐标边界 |
 
 ## 数据说明
@@ -28,5 +28,5 @@
 | EPSG:XXXX | EPSG:XXXX | standard |
 | WGS84 / CRS84 | EPSG:4326 | standard |
 | WKT + AUTHORITY["EPSG"] | EPSG:XXXX | standard |
-| WKT 无 EPSG AUTHORITY | 完整 WKT | custom |
+| WKT 无 EPSG AUTHORITY | NULL (GDAL 不返回 WKT) | custom |
 | 其他字符串 | 原值 | custom |
