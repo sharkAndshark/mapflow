@@ -195,6 +195,8 @@ pub fn extract_mbtiles_layers(file_path: &Path) -> Result<Vec<crate::models::Lay
             fields.push(FieldInfo {
                 name: field_name.clone(),
                 r#type: type_str,
+                alias: None,
+                normalized: None,
             });
         }
 

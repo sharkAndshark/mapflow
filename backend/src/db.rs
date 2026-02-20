@@ -132,6 +132,9 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     )
     .expect("Failed to create dataset metadata tables");
 
+    // Add alias column to dataset_columns (if it doesn't exist)
+    let _ = conn.execute("ALTER TABLE dataset_columns ADD COLUMN alias VARCHAR", []);
+
     conn.execute_batch(
         r"
         CREATE TABLE IF NOT EXISTS users (

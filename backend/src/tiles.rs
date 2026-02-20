@@ -52,7 +52,7 @@ pub fn build_mvt_select_sql(
 
     let mut props_stmt = conn
         .prepare(
-            "SELECT normalized_name, original_name\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
+            "SELECT normalized_name, original_name, alias\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
         )
         .map_err(|e| TileError(format!("Failed to prepare column query: {}", e)))?;
 
@@ -60,7 +60,8 @@ pub fn build_mvt_select_sql(
         .query_map(duckdb::params![source_id], |row| {
             let normalized: String = row.get(0)?;
             let original: String = row.get(1)?;
-            Ok((normalized, original))
+            let alias: Option<String> = row.get(2)?;
+            Ok((normalized, original, alias))
         })
         .map_err(|e| TileError(format!("Failed to query columns: {}", e)))?;
 
@@ -82,8 +83,9 @@ pub fn build_mvt_select_sql(
     struct_fields.push("fid := fid".to_string());
 
     for entry in props_iter {
-        let (normalized, original) = entry?;
-        let key = original.replace('"', "\"\"");
+        let (normalized, original, alias) = entry?;
+        let display_name = alias.unwrap_or(original);
+        let key = display_name.replace('"', "\"\"");
         struct_fields.push(format!("\"{key}\" := \"{normalized}\""));
     }
 

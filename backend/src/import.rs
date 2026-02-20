@@ -263,7 +263,7 @@ pub async fn import_spatial_data(
         if lower != "geom" && lower != "fid" {
             // Record property columns (exclude geom + fid).
             let _ = conn.execute(
-                "INSERT INTO dataset_columns (source_id, normalized_name, original_name, ordinal, mvt_type)\n                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO dataset_columns (source_id, normalized_name, original_name, alias, ordinal, mvt_type)\n                 VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
                 duckdb::params![
                     source_id,
                     normalized.as_str(),
