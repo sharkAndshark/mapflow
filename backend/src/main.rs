@@ -70,5 +70,44 @@ async fn main() {
         .await
         .expect("failed to bind");
 
-    axum::serve(listener, app).await.expect("server failed");
+    let db_for_shutdown = db.clone();
+    let shutdown = async move {
+        shutdown_signal().await;
+        tracing::info!("Shutdown signal received, checkpointing database...");
+        let conn = db_for_shutdown.lock().await;
+        if let Err(e) = conn.execute("CHECKPOINT", []) {
+            tracing::error!(error = %e, "Failed to checkpoint database during shutdown");
+        } else {
+            tracing::info!("Database checkpoint completed");
+        }
+    };
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await
+        .expect("server failed");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }

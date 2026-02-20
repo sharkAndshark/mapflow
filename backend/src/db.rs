@@ -18,6 +18,34 @@ const DEV_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "backend/extensions/spatial.du
 
 static SPATIAL_INSTALL_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 
+fn open_with_wal_recovery(db_path: &Path) -> duckdb::Connection {
+    match duckdb::Connection::open(db_path) {
+        Ok(conn) => conn,
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("replaying WAL") || err_str.contains("WAL file") {
+                let wal_path = db_path.with_extension("duckdb.wal");
+                tracing::warn!(
+                    wal_path = %wal_path.display(),
+                    error = %err_str,
+                    "Corrupt WAL detected, removing and retrying"
+                );
+                if let Err(remove_err) = std::fs::remove_file(&wal_path) {
+                    tracing::error!(
+                        wal_path = %wal_path.display(),
+                        error = %remove_err,
+                        "Failed to remove corrupt WAL file"
+                    );
+                }
+                duckdb::Connection::open(db_path)
+                    .expect("Failed to open database after WAL cleanup")
+            } else {
+                panic!("Failed to open database: {}", e);
+            }
+        }
+    }
+}
+
 pub async fn reconcile_processing_files(
     db: &Arc<Mutex<duckdb::Connection>>,
 ) -> Result<usize, duckdb::Error> {
@@ -33,7 +61,7 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         std::fs::create_dir_all(parent).expect("Failed to create database directory");
     }
 
-    let conn = duckdb::Connection::open(db_path).expect("Failed to open database");
+    let conn = open_with_wal_recovery(db_path);
 
     ensure_spatial_extension(&conn).expect("Failed to install and load spatial extension");
 
@@ -366,5 +394,27 @@ mod tests {
         let path = Path::new("/tmp/mapflow's/spatial.duckdb_extension");
         let sql = build_load_extension_sql(path).expect("sql");
         assert_eq!(sql, "LOAD '/tmp/mapflow''s/spatial.duckdb_extension';");
+    }
+
+    #[test]
+    fn open_with_wal_recovery_removes_corrupt_wal_and_succeeds() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("test.duckdb");
+
+        let conn = duckdb::Connection::open(&db_path).expect("open");
+        conn.execute("CREATE TABLE test (id INTEGER)", [])
+            .expect("create table");
+        conn.execute("INSERT INTO test VALUES (1)", [])
+            .expect("insert");
+        drop(conn);
+
+        let wal_path = db_path.with_extension("duckdb.wal");
+        std::fs::write(&wal_path, b"corrupted wal data").expect("write corrupt wal");
+
+        let conn = open_with_wal_recovery(&db_path);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM test", [], |r| r.get(0))
+            .expect("query");
+        assert_eq!(count, 1);
     }
 }

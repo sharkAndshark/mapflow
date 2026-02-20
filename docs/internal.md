@@ -17,6 +17,11 @@ React → HTTP → Axum → DuckDB
 - 本地加载失败时回退到 DuckDB 默认 `LOAD/INSTALL spatial` 流程
 - `backend/extensions/spatial-extension-manifest.json` 与 `Cargo.lock` 版本必须同步（CI 强校验）
 
+## 系统韧性
+
+- **启动恢复**：WAL 损坏时自动删除并重试（`db::open_with_wal_recovery`）
+- **优雅关闭**：SIGINT/SIGTERM 时执行 CHECKPOINT 刷入数据
+
 ## 认证
 
 Session Cookie → axum-login → tower-sessions → DuckDB
