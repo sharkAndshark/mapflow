@@ -1,0 +1,758 @@
+{
+  "type": "FeatureCollection",
+  "name": "sf_pois_no_crs",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "26819236",
+        "name": "San Francisco",
+        "place": "city",
+        "other_tags": "\"alt_name\"=>\"San Fran\",\"alt_name:en\"=>\"San Fran;Frisco\",\"alt_name:vi\"=>\"San Francisco\",\"alt_name:zh\"=>\"\u8056\u5f17\u6717\u897f\u65af\u79d1;\u5723\u5f17\u6717\u897f\u65af\u79d1\",\"alt_name:zh-Hans\"=>\"\u5723\u5f17\u6717\u897f\u65af\u79d1\",\"alt_name:zh-Hant\"=>\"\u8056\u5f17\u6717\u897f\u65af\u79d1\",\"capital\"=>\"6\",\"gnis:feature_id\"=>\"277593\",\"loc_name:vi\"=>\"X\u0103ng Ph\u0103ng\",\"name:af\"=>\"San Francisco\",\"name:als\"=>\"San Francisco\",\"name:am\"=>\"\u1233\u1295 \u134d\u122b\u1295\u1232\u1235\u12b0\",\"name:an\"=>\"San Francisco\",\"name:ar\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u064a\u0633\u0643\u0648\",\"name:arz\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u064a\u0633\u0643\u0648\",\"name:ast\"=>\"San Francisco\",\"name:az\"=>\"San-Fransisko\",\"name:azb\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u06cc\u0633\u06a9\u0648\",\"name:ba\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:bar\"=>\"San Francisco\",\"name:be\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u044b\u0441\u043a\u0430\",\"name:bg\"=>\"\u0421\u0430\u043d \u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:bm\"=>\"San Francisco\",\"name:bn\"=>\"\u09b8\u09be\u09a8 \u09ab\u09cd\u09b0\u09be\u09a8\u09cd\u09b8\u09bf\u09b8\u09cd\u0995\u09cb\",\"name:bo\"=>\"\u0f66\u0f53\u0f0b\u0f67\u0fa5\u0f74\u0f0b\u0f62\u0f53\u0f0b\u0f66\u0f72\u0f66\u0f0b\u0f41\u0f7c\",\"name:bpy\"=>\"\u09b8\u09be\u09a8 \u09ab\u09cd\u09b0\u09be\u09a8\u09cd\u09b8\u09bf\u09b8\u0995\u09cb\",\"name:br\"=>\"San Francisco\",\"name:bs\"=>\"San Francisco\",\"name:ca\"=>\"San Francisco\",\"name:cbk-zam\"=>\"San Francisco\",\"name:cdo\"=>\"G\u00f4-g\u012dng-s\u0103ng\",\"name:ce\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:ceb\"=>\"San Francisco\",\"name:chy\"=>\"San Francisco\",\"name:ckb\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u06cc\u0633\u06a9\u06c6\",\"name:co\"=>\"San Francisco\",\"name:cs\"=>\"San Francisco\",\"name:cv\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:cy\"=>\"San Francisco\",\"name:da\"=>\"San Francisco\",\"name:de\"=>\"San Francisco\",\"name:diq\"=>\"San Francisco\",\"name:dty\"=>\"\u0938\u093e\u0928 \u092b\u094d\u0930\u093e\u0928\u094d\u0938\u093f\u0938\u094d\u0915\u094b\",\"name:el\"=>\"\u03a3\u03b1\u03bd \u03a6\u03c1\u03b1\u03bd\u03c3\u03af\u03c3\u03ba\u03bf\",\"name:eml\"=>\"San Francisco\",\"name:en\"=>\"San Francisco\",\"name:eo\"=>\"San-Francisko\",\"name:es\"=>\"San Francisco\",\"name:et\"=>\"San Francisco\",\"name:eu\"=>\"San Frantzisko\",\"name:ext\"=>\"San Franciscu\",\"name:fa\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u06cc\u0633\u06a9\u0648\",\"name:fi\"=>\"San Francisco\",\"name:fj\"=>\"San Francisco\",\"name:fo\"=>\"San Francisco\",\"name:fr\"=>\"San Francisco\",\"name:fy\"=>\"San Francisco\",\"name:ga\"=>\"San Francisco\",\"name:gan\"=>\"\u820a\u91d1\u5c71\",\"name:gd\"=>\"San Francisco\",\"name:gl\"=>\"San Francisco\",\"name:gn\"=>\"San Francisco\",\"name:gu\"=>\"\u0ab8\u0abe\u0aa8 \u0aab\u0acd\u0ab0\u0abe\u0aa8\u0acd\u0ab8\u0abf\u0ab8\u0acd\u0a95\u0acb\",\"name:gv\"=>\"San Francisco\",\"name:ha\"=>\"San Francisco\",\"name:hak\"=>\"San Francisco\",\"name:haw\"=>\"Kapalakiko\",\"name:he\"=>\"\u05e1\u05df \u05e4\u05e8\u05e0\u05e1\u05d9\u05e1\u05e7\u05d5\",\"name:hi\"=>\"\u0938\u0948\u0928 \u092b\u093c\u094d\u0930\u093e\u0902\u0938\u093f\u0938\u094d\u0915\u094b\",\"name:hr\"=>\"San Francisco\",\"name:ht\"=>\"San Francisco\",\"name:hu\"=>\"San Francisco\",\"name:hy\"=>\"\u054d\u0561\u0576 \u0556\u0580\u0561\u0576\u0581\u056b\u057d\u056f\u0578\",\"name:hyw\"=>\"\u054d\u0561\u0576 \u0556\u0580\u0561\u0576\u057d\u056b\u057d\u0584\u0585\",\"name:ia\"=>\"San Francisco\",\"name:id\"=>\"San Francisco\",\"name:ie\"=>\"San Francisco\",\"name:ilo\"=>\"San Francisco\",\"name:inh\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:io\"=>\"San Francisco\",\"name:is\"=>\"San Francisco\",\"name:it\"=>\"San Francisco\",\"name:ja\"=>\"\u30b5\u30f3\u30d5\u30e9\u30f3\u30b7\u30b9\u30b3\",\"name:jv\"=>\"San Francisco\",\"name:ka\"=>\"\u10e1\u10d0\u10dc-\u10e4\u10e0\u10d0\u10dc\u10ea\u10d8\u10e1\u10d9\u10dd\",\"name:kab\"=>\"San Francisco\",\"name:kbp\"=>\"Sanfransiskoo\",\"name:ki\"=>\"San Francisco\",\"name:kk\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:kn\"=>\"\u0cb8\u0cbe\u0ca8\u0ccd \u0cab\u0ccd\u0cb0\u0cbe\u0ca8\u0ccd\u0cb8\u0cbf\u0cb8\u0ccd\u0c95\u0cca\",\"name:ko\"=>\"\uc0cc\ud504\ub780\uc2dc\uc2a4\ucf54\",\"name:krc\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:ku\"=>\"San Francisco\",\"name:kw\"=>\"San Francisco\",\"name:ky\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:la\"=>\"Franciscopolis\",\"name:lad\"=>\"San Francisco\",\"name:lb\"=>\"San Francisco\",\"name:li\"=>\"San Francisco\",\"name:lmo\"=>\"San Francisco\",\"name:ln\"=>\"San Francisco\",\"name:lo\"=>\"\u0e8a\u0eb2\u0e99\u0e9f\u0ea3\u0eb2\u0e99\u0e8a\u0eb4\u0eaa\u0ec2\u0e81\",\"name:lrc\"=>\"\u0633\u0627\u0646\u200c \u0641\u0631\u0627\u0646\u0633\u06cc\u0633\u06a9\u0648\",\"name:lt\"=>\"San Fransiskas\",\"name:lv\"=>\"Sanfrancisko\",\"name:mg\"=>\"San Francisco\",\"name:mhr\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:mi\"=>\"Hana Paraniko\",\"name:mk\"=>\"\u0421\u0430\u043d \u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:ml\"=>\"\u0d38\u0d3e\u0d7b \u0d2b\u0d4d\u0d30\u0d3e\u0d7b\u0d38\u0d3f\u0d38\u0d4d\u0d15\u0d4b\",\"name:mn\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:mr\"=>\"\u0938\u0945\u0928 \u092b\u094d\u0930\u093e\u0928\u094d\u0938\u093f\u0938\u094d\u0915\u094b\",\"name:mrj\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:ms\"=>\"San Francisco\",\"name:my\"=>\"\u1006\u1014\u103a\u1016\u101b\u1014\u103a\u1005\u1005\u1039\u1005\u1000\u102d\u102f\u1019\u103c\u102d\u102f\u1037\",\"name:na\"=>\"San Francisco\",\"name:nah\"=>\"San Francisco\",\"name:nan\"=>\"San Francisco\",\"name:nds\"=>\"San Francisco\",\"name:ne\"=>\"\u0938\u093e\u0928 \u092b\u094d\u0930\u093e\u0928\u094d\u0938\u093f\u0938\u094d\u0915\u094b\",\"name:new\"=>\"\u0938\u094d\u092f\u093e\u0928 \u092b\u094d\u0930\u093e\u0928\u094d\u0938\u093f\u0938\u094d\u0915\u094b\",\"name:nl\"=>\"San Francisco\",\"name:nn\"=>\"San Francisco\",\"name:no\"=>\"San Francisco\",\"name:nv\"=>\"Na\u02bcn\u00ed\u02bc\u00e1 H\u00f3neez\u00ed\",\"name:oc\"=>\"San Francisco\",\"name:os\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:pa\"=>\"\u0a38\u0a3e\u0a28 \u0a2b\u0a3c\u0a30\u0a3e\u0a02\u0a38\u0a3f\u0a38\u0a15\u0a4b\",\"name:pam\"=>\"San Francisco\",\"name:pap\"=>\"San Francisco\",\"name:pdc\"=>\"San Francisco\",\"name:pl\"=>\"San Francisco\",\"name:pms\"=>\"San Francisco\",\"name:pnb\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u0633\u06a9\u0648\",\"name:ps\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u0633\u06a9\u0648\",\"name:pt\"=>\"S\u00e3o Francisco\",\"name:qu\"=>\"San Francisco\",\"name:rmy\"=>\"San Francisco\",\"name:ro\"=>\"San Francisco\",\"name:ru\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:sah\"=>\"\u0421\u0430\u043d \u0424\u0440\u0430\u043d\u0441\u0438\u0441\u043a\u043e\",\"name:sc\"=>\"San Francisco\",\"name:scn\"=>\"San Franciscu\",\"name:sco\"=>\"San Francisco\",\"name:sd\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u0633\u06aa\u0648\",\"name:sh\"=>\"San Francisco\",\"name:si\"=>\"\u0dc3\u0dd0\u0db1\u0dca \u0dc6\u0dca\u200d\u0dbb\u0dd0\u0db1\u0dca\u0dc3\u0dd2\u0dc3\u0dca\u0d9a\u0ddd\",\"name:sk\"=>\"San Francisco\",\"name:sl\"=>\"San Francisco\",\"name:so\"=>\"San Fransisko\",\"name:sq\"=>\"San Francisco\",\"name:sr\"=>\"\u0421\u0430\u043d \u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:stq\"=>\"San Francisco\",\"name:sv\"=>\"San Francisco\",\"name:sw\"=>\"San Francisco\",\"name:szl\"=>\"San Francisco\",\"name:ta\"=>\"\u0b9a\u0bbe\u0ba9\u0bcd \u0baa\u0bbf\u0bb0\u0bbe\u0ba9\u0bcd\u0b9a\u0bbf\u0bb8\u0bcd\u0b95\u0bcb\",\"name:te\"=>\"\u0c36\u0c3e\u0c28\u0c4d \u0c2b\u0c4d\u0c30\u0c3e\u0c28\u0c4d\u0c38\u0c3f\u0c38\u0c4d\u0c15\u0c4b\",\"name:tg\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0441\u0438\u0441\u043a\u043e\",\"name:th\"=>\"\u0e0b\u0e32\u0e19\u0e1f\u0e23\u0e32\u0e19\u0e0b\u0e34\u0e2a\u0e42\u0e01\",\"name:tl\"=>\"San Francisco\",\"name:tr\"=>\"San Francisco\",\"name:tt\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:tw\"=>\"San Francisco\",\"name:ty\"=>\"San Francisco\",\"name:ug\"=>\"San Fransisko\",\"name:uk\"=>\"\u0421\u0430\u043d-\u0424\u0440\u0430\u043d\u0446\u0438\u0441\u043a\u043e\",\"name:ur\"=>\"\u0633\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u0633\u06a9\u0648\",\"name:uz\"=>\"San Fransisko\",\"name:vec\"=>\"San Francisco\",\"name:vep\"=>\"San Francisko\",\"name:vi\"=>\"C\u1ef1u Kim S\u01a1n\",\"name:vo\"=>\"San Francisco\",\"name:war\"=>\"San Francisco\",\"name:wuu\"=>\"\u820a\u91d1\u5c71\",\"name:xmf\"=>\"\u10e1\u10d0\u10dc-\u10e4\u10e0\u10d0\u10dc\u10ea\u10d8\u10e1\u10d9\u10dd\",\"name:yi\"=>\"\u05e1\u05d0\u05df \u05e4\u05e8\u05d0\u05e0\u05e6\u05d9\u05e1\u05e7\u05d0\",\"name:yo\"=>\"San Francisco\",\"name:yue\"=>\"\u4e09\u85e9\u5e02\",\"name:zh\"=>\"\u65e7\u91d1\u5c71;\u820a\u91d1\u5c71;\u4e09\u85e9\u5e02\",\"name:zh-Hans\"=>\"\u65e7\u91d1\u5c71\",\"name:zh-Hant\"=>\"\u820a\u91d1\u5c71;\u4e09\u85e9\u5e02\",\"name:zh-Hant-CN\"=>\"\u820a\u91d1\u5c71\",\"name:zh-Hant-HK\"=>\"\u4e09\u85e9\u5e02\",\"name:zh-Hant-TW\"=>\"\u820a\u91d1\u5c71\",\"not:name\"=>\"San Fran\",\"official_name\"=>\"City and County of San Francisco\",\"official_name:en\"=>\"City and County of San Francisco\",\"official_name:es\"=>\"Ciudad y Condado de San Francisco\",\"official_name:yue\"=>\"\u4e09\u85e9\u5e02\u5e02\u7e23\",\"official_name:zh\"=>\"\u65e7\u91d1\u5c71\u5e02\u53bf;\u820a\u91d1\u5c71\u5e02\u90e1;\u4e09\u85e9\u5e02\u5e02\u7e23\",\"official_name:zh-Hans\"=>\"\u65e7\u91d1\u5c71\u5e02\u53bf\",\"official_name:zh-Hant\"=>\"\u820a\u91d1\u5c71\u5e02\u90e1;\u4e09\u85e9\u5e02\u5e02\u7e23\",\"official_name:zh-Hant-HK\"=>\"\u4e09\u85e9\u5e02\u5e02\u7e23\",\"official_name:zh-Hant-TW\"=>\"\u820a\u91d1\u5c71\u5e02\u90e1\",\"old_name\"=>\"Yerba Buena\",\"population\"=>\"873965\",\"population:date\"=>\"2020-04-01\",\"short_name\"=>\"SF\",\"short_name:en\"=>\"SF\",\"source:name:oc\"=>\"Lo Congr\u00e8s\",\"source:population\"=>\"US Census https://www.census.gov/quickfacts/fact/table/sanfranciscocitycalifornia/POP010220\",\"website\"=>\"https://www.sf.gov/\",\"wikidata\"=>\"Q62\",\"wikipedia\"=>\"en:San Francisco\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5924799,
+          1037.7879363
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "54891208",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6088083,
+          1037.7705805
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "54891501",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6136689,
+          1037.7690188
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "54891569",
+        "highway": "stop",
+        "other_tags": "\"direction\"=>\"both\",\"stop\"=>\"all\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6123837,
+          1037.7689303
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61670779",
+        "name": "Woods Lowside",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"530\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Haight Street\",\"alt_name\"=>\"Woods Beer;Lowside\",\"amenity\"=>\"pub\",\"branch\"=>\"Lowside\",\"check_date\"=>\"2025-12-02\",\"contact:facebook\"=>\"woodsbeerco\",\"contact:instagram\"=>\"woodsbeer\",\"contact:twitter\"=>\"woodsbeer\",\"drink:beer\"=>\"yes\",\"drink:wine\"=>\"yes\",\"email\"=>\"info@woodsbeer.com\",\"indoor_seating\"=>\"yes\",\"note:name\"=>\"Part of Woods Beer, sign says both \\\"Woods\\\" and \\\"Lowside\\\", but their website makes Lowside sound like a branch\",\"old_name\"=>\"Mad Dog in the Fog\",\"opening_hours\"=>\"Su,Mo-We 13:00-22:00; Th 13:00-23:00; Fr-Sa 13:00-24:00\",\"opening_hours:url\"=>\"https://www.woodsbeer.com/lowside\",\"outdoor_seating\"=>\"patio\",\"phone\"=>\"+1 415 5485734\",\"website\"=>\"https://www.woodsbeer.com/lowside\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5689847,
+          1037.7721448
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61671096",
+        "name": "Toronado",
+        "other_tags": "\"addr:housenumber\"=>\"547\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"contact:email\"=>\"info@toronado.com\",\"contact:fax\"=>\"+1-415-621-0322\",\"contact:phone\"=>\"+1-415-863-2276\",\"contact:website\"=>\"http://www.toronado.com/\",\"opening_hours\"=>\"11:00-02:00\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5687781,
+          1037.77191
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61671382",
+        "name": "Molotov's",
+        "other_tags": "\"addr:housenumber\"=>\"582\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"level\"=>\"0\",\"opening_hours\"=>\"15:00-02:00\",\"sport\"=>\"billiards\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5682376,
+          1037.7720543
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61672275",
+        "name": "Noc Noc",
+        "other_tags": "\"addr:housenumber\"=>\"557\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"short_name\"=>\"NocNoc\",\"website\"=>\"https://www.nocnocs.com/\",\"wheelchair\"=>\"no\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5685808000001,
+          1037.7718891
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61673273",
+        "name": "Danny Coyles",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"668\",\"addr:postcode\"=>\"94117\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"contact:facebook\"=>\"dannycoyles\",\"contact:twitter\"=>\"dannycoylessf\",\"contact:yelp\"=>\"http://www.yelp.com/biz/danny-coyles-san-francisco\",\"opening_hours\"=>\"Mo 16:00-22:00; Tu 14:00-22:00; We-Fr 14:00-26:00; Sa 07:00-26:00; Su 07:00-22:00\",\"opening_hours:url\"=>\"http://www.dannycoyles.com/\",\"phone\"=>\"+1 415 5588375\",\"sport\"=>\"billiards\",\"website\"=>\"http://www.dannycoyles.com/\",\"website:calendar\"=>\"http://www.dannycoyles.com/sports-page.html\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5667364,
+          1037.7718647
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61674029",
+        "name": "The Page",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"298\",\"addr:street\"=>\"Divisadero Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-09-17\",\"opening_hours\"=>\"Mo-Su 16:00-26:00\",\"payment:cards\"=>\"no\",\"payment:credit_cards\"=>\"no\",\"payment:debit_cards\"=>\"no\",\"sport\"=>\"billiards\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5629423,
+          1037.7721197
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61675193",
+        "name": "Martuni's",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"4\",\"addr:postcode\"=>\"94103\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Valencia Street\",\"amenity\"=>\"bar\",\"check_date\"=>\"2025-12-02\",\"level\"=>\"0\",\"outdoor_seating\"=>\"no\",\"phone\"=>\"+1-415-241-0205\",\"smoking\"=>\"no\",\"wikidata\"=>\"Q108821598\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5772272,
+          1037.7721282
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61676294",
+        "name": "The Green Heron",
+        "other_tags": "\"addr:housenumber\"=>\"1601\",\"addr:postcode\"=>\"94117\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"bar\",\"check_date\"=>\"2026-01-03\",\"level\"=>\"0\",\"outdoor_seating\"=>\"no\",\"wheelchair\"=>\"limited\",\"wifi\"=>\"no\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5512884,
+          1037.7696815
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61677300",
+        "name": "Magnolia SF",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"1398\",\"addr:postcode\"=>\"94117\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-07-29\",\"level\"=>\"0\",\"opening_hours\"=>\"Mo-Th,Su 12:00-24:00; Fr 12:00-01:00; Sa 11:00-01:00; kitchen closes at 22\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5548056,
+          1037.7703394
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61677421",
+        "name": "The Gold Cane",
+        "other_tags": "\"addr:housenumber\"=>\"1569\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-26\",\"level\"=>\"0\",\"website\"=>\"https://goldcanesf.com/\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5519888,
+          1037.7697699
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61678646",
+        "name": "Trax",
+        "other_tags": "\"addr:housenumber\"=>\"1437\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2024-10-17\",\"level\"=>\"0\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5539358,
+          1037.7700421
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61678786",
+        "name": "Aub Zam Zam",
+        "other_tags": "\"addr:housenumber\"=>\"1633\",\"addr:street\"=>\"Haight Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2025-11-25\",\"level\"=>\"0\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5506977,
+          1037.7696002
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61680526",
+        "ref": "9411700027",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"554\",\"addr:postcode\"=>\"94117\",\"addr:state\"=>\"CA\",\"addr:street\"=>\"Clayton Street\",\"amenity\"=>\"post_box\",\"collection_times\"=>\"Mo-Fr 9,12,13:15,17,17:30;Sa 9,13:30,14:45,16\",\"drive_through\"=>\"no\",\"operator\"=>\"United States Postal Service\",\"operator:short\"=>\"USPS\",\"operator:type\"=>\"public\",\"operator:website\"=>\"https://www.usps.com\",\"operator:wikidata\"=>\"Q668687\",\"operator:wikipedia\"=>\"en:United States Postal Service\",\"short_name\"=>\"USPS\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.551466,
+          1037.7700458
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61690511",
+        "name": "United States Post Office - Gateway Station",
+        "other_tags": "\"addr:postcode\"=>\"94111\",\"amenity\"=>\"post_office\",\"operator\"=>\"United States Postal Service\",\"operator:short\"=>\"USPS\",\"operator:type\"=>\"public\",\"operator:website\"=>\"https://www.usps.com\",\"operator:wikidata\"=>\"Q668687\",\"operator:wikipedia\"=>\"en:United States Postal Service\",\"short_name\"=>\"USPS\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.600562,
+          1037.7949406
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61690921",
+        "name": "Comstock Saloon",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"155\",\"addr:street\"=>\"Columbus Avenue\",\"amenity\"=>\"bar\",\"indoor_seating\"=>\"yes\",\"outdoor_seating\"=>\"no\",\"wheelchair\"=>\"yes\",\"wikidata\"=>\"Q5157702\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5943574,
+          1037.7969638
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61692662",
+        "name": "Mr. Bing's",
+        "other_tags": "\"addr:city\"=>\"San Francisco\",\"addr:housenumber\"=>\"201\",\"addr:street\"=>\"Columbus Avenue\",\"amenity\"=>\"pub\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5941449,
+          1037.7971431
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61692712",
+        "name": "Irish Times",
+        "other_tags": "\"addr:housenumber\"=>\"500\",\"addr:street\"=>\"Sacramento Street\",\"amenity\"=>\"pub\",\"check_date\"=>\"2024-12-17\",\"indoor_seating\"=>\"yes\",\"level\"=>\"0\",\"old_name\"=>\"Norton's Vault\",\"outdoor_seating\"=>\"yes\",\"phone\"=>\"+1 800 800 8008\",\"wheelchair\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5984473999999,
+          1037.7940403
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "61692857",
+        "name": "Old Ship Saloon",
+        "other_tags": "\"amenity\"=>\"pub\",\"wikidata\"=>\"Q106610881\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5992861,
+          1037.7977871
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65281061",
+        "highway": "motorway_junction",
+        "ref": "2"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5983867,
+          1037.7778393
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65281097",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.599681,
+          1037.7778095
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65281164",
+        "highway": "traffic_signals",
+        "other_tags": "\"turn_restrictions\"=>\"no\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5740898,
+          1037.7746045
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65281218",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.576675,
+          1037.7718656
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65281429",
+        "highway": "traffic_signals"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6059532,
+          1037.7852059
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65281916",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5981429999999,
+          1037.7790353
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65281944",
+        "highway": "motorway_junction",
+        "ref": "2A"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6029142,
+          1037.7818136
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65282185",
+        "highway": "stop",
+        "other_tags": "\"stop\"=>\"all\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5951193,
+          1037.768536
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65282474",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5950992,
+          1037.7743967
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65282779",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.600365,
+          1037.7807911
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65283592",
+        "highway": "motorway_junction",
+        "ref": "56"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.605467,
+          1037.7663056
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65283619",
+        "highway": "motorway_junction",
+        "other_tags": "\"noref\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6069194,
+          1037.7633265
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65283717",
+        "highway": "motorway_junction",
+        "ref": "433C",
+        "other_tags": "\"noref:left\"=>\"yes\",\"ref:right\"=>\"433C\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.593109,
+          1037.7690186
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65283737",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.591464,
+          1037.7713009
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65283764",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5902557,
+          1037.7703545
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65284015",
+        "highway": "motorway_junction",
+        "ref": "434",
+        "other_tags": "\"ref:left\"=>\"434B\",\"ref:right\"=>\"434A\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.584275,
+          1037.7696352
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65284554",
+        "highway": "crossing",
+        "other_tags": "\"crossing\"=>\"uncontrolled\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6144055,
+          1037.761208
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65284563",
+        "highway": "stop",
+        "other_tags": "\"stop\"=>\"all\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6143898,
+          1037.7606795
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65284948",
+        "highway": "crossing",
+        "other_tags": "\"crossing\"=>\"traffic_signals\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6016042,
+          1037.7795426
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65284950",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\",\"traffic_signals:sound\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.601812,
+          1037.7795605000001
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65284974",
+        "highway": "traffic_signals",
+        "other_tags": "\"turn_restrictions\"=>\"no\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5739017,
+          1037.7755395
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65285239",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\",\"traffic_signals:sound\"=>\"yes\",\"turn_restrictions\"=>\"no\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.607923,
+          1037.7867713
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65285688",
+        "highway": "traffic_signals"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5510962,
+          1037.7783974
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65285808",
+        "highway": "motorway_junction",
+        "ref": "1C"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5941758,
+          1037.7755953
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65286148",
+        "highway": "motorway_junction",
+        "other_tags": "\"noref\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.5924974,
+          1037.7738722
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65286228",
+        "highway": "motorway_junction",
+        "ref": "2C",
+        "other_tags": "\"source:imagery\"=>\"Bing\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6081702,
+          1037.7854734
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65286236",
+        "highway": "motorway_junction",
+        "other_tags": "\"noref\"=>\"yes\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6070383,
+          1037.7851156
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_id": "65286336",
+        "highway": "traffic_signals",
+        "other_tags": "\"traffic_signals\"=>\"traffic_lights\""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          877.6042206,
+          1037.7862969
+        ]
+      }
+    }
+  ]
+}
