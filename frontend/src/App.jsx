@@ -708,11 +708,19 @@ export default function App() {
                   <div></div>
                 </div>
                 {orderedFiles.map((item) => (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
                     className={`row ${selectedId === item.id ? 'selected' : ''}`}
                     onClick={() => setSelectedId(item.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedId(item.id);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-pressed={selectedId === item.id}
                     data-testid={`file-row-${item.id}`}
                   >
                     <div>{item.name}</div>
@@ -768,7 +776,7 @@ export default function App() {
                         )
                       ) : null}
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
