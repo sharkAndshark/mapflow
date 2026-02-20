@@ -62,16 +62,11 @@ test('mbtiles file has zoom limits', async ({ page, workerServer, request }) => 
   expect(previewData.maxZoom).not.toBeNull();
   expect(previewData.maxZoom).toBeDefined();
 
-  // Click row to select it (to open sidebar)
+  // Click "查看" link in file row action area
   const row = page.locator('.row', { hasText: /sample/ });
   await expect(row).toBeVisible();
-  await row.click();
 
-  // Find Preview button in Detail Sidebar
-  const sidebar = page.getByTestId('detail-sidebar');
-  await expect(sidebar).toBeVisible();
-
-  const previewLink = sidebar.getByTestId('open-preview');
+  const previewLink = row.getByRole('link', { name: '查看' });
   await expect(previewLink).toBeVisible();
 
   // Click preview link and wait for new page
@@ -153,16 +148,11 @@ test('dynamic table has no zoom limits', async ({ page, workerServer, request })
   expect(previewData.minZoom == null).toBeTruthy();
   expect(previewData.maxZoom == null).toBeTruthy();
 
-  // Click row to select it (to open sidebar)
+  // Click "查看" link in file row action area
   const row = page.locator('.row', { hasText: 'sample' });
   await expect(row).toBeVisible();
-  await row.click();
 
-  // Find Preview button in Detail Sidebar
-  const sidebar = page.getByTestId('detail-sidebar');
-  await expect(sidebar).toBeVisible();
-
-  const previewLink = sidebar.getByTestId('open-preview');
+  const previewLink = row.getByRole('link', { name: '查看' });
   await expect(previewLink).toBeVisible();
 
   // Click preview link and wait for new page

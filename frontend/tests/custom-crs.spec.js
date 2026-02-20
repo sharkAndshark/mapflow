@@ -168,12 +168,9 @@ test.describe('Custom CRS', () => {
       .toBe('ready');
 
     const row = page.locator('.row', { hasText: 'simple_custom_crs' });
-    await row.click();
+    await expect(row).toBeVisible();
 
-    const sidebar = page.getByTestId('detail-sidebar');
-    await expect(sidebar.getByText('simple_custom_crs')).toBeVisible();
-
-    const previewLink = sidebar.getByTestId('open-preview');
+    const previewLink = row.getByRole('link', { name: '查看' });
     await expect(previewLink).toBeVisible();
 
     const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);

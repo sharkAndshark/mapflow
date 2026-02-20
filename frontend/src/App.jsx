@@ -241,7 +241,6 @@ function DetailSidebar({ file, onZoomUpdate }) {
 
   const isReady = file.status === 'ready';
   const isFailed = file.status === 'failed';
-  const canPreview = isReady;
 
   return (
     <div className="detail-sidebar" data-testid="detail-sidebar">
@@ -473,24 +472,6 @@ function DetailSidebar({ file, onZoomUpdate }) {
           <div className="detail-error">
             <strong>Error:</strong> {file.error}
           </div>
-        )}
-      </div>
-
-      <div className="detail-actions">
-        {canPreview ? (
-          <a
-            href={`/preview/${file.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary"
-            data-testid="open-preview"
-          >
-            Open Preview
-          </a>
-        ) : (
-          <span className="btn-primary disabled" aria-disabled="true">
-            Open Preview
-          </span>
         )}
       </div>
     </div>
@@ -727,11 +708,19 @@ export default function App() {
                   <div></div>
                 </div>
                 {orderedFiles.map((item) => (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
                     className={`row ${selectedId === item.id ? 'selected' : ''}`}
                     onClick={() => setSelectedId(item.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedId(item.id);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-pressed={selectedId === item.id}
                     data-testid={`file-row-${item.id}`}
                   >
                     <div>{item.name}</div>
@@ -744,6 +733,17 @@ export default function App() {
                       {STATUS_LABELS[item.status] || item.status}
                     </div>
                     <div onClick={(e) => e.stopPropagation()}>
+                      {item.status === 'ready' && (
+                        <a
+                          href={`/preview/${item.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-text"
+                          title="在新窗口查看地图"
+                        >
+                          查看
+                        </a>
+                      )}
                       {item.status === 'ready' ? (
                         item.isPublic ? (
                           <>
@@ -776,7 +776,7 @@ export default function App() {
                         )
                       ) : null}
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
