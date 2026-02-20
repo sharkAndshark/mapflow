@@ -31,12 +31,7 @@ test('upload file and verify status auto-updates from processing to ready', asyn
   // We strictly wait for '已就绪'.
   await expect(row.getByText('已就绪')).toBeVisible({ timeout: 10000 });
 
-  // 4. Verify Detail Sidebar also updates if selected
-  await row.click();
-  const sidebar = page.getByTestId('detail-sidebar');
-  await expect(sidebar.getByTestId('file-status')).toHaveText('已就绪');
-
-  // 5. Preview button should be enabled
-  const previewLink = sidebar.getByTestId('open-preview');
-  await expect(previewLink).not.toHaveClass(/disabled/);
+  // 4. Verify "查看" link appears in file row when ready
+  const previewLink = row.getByRole('link', { name: '查看' });
+  await expect(previewLink).toBeVisible();
 });

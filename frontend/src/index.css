@@ -112,6 +112,8 @@ h1 {
   background: #fcfcfc;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .detail-sidebar {
@@ -247,15 +249,6 @@ h1 {
   color: #cc0000;
   font-size: 13px;
   word-break: break-word;
-}
-
-.detail-actions {
-  flex-shrink: 0;
-  display: flex;
-  gap: 12px;
-  padding: 16px 24px;
-  border-top: 1px solid #eee;
-  background: #fcfcfc;
 }
 
 .btn-primary {
