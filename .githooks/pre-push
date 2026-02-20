@@ -3,11 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 
-if [ "${MAPFLOW_SKIP_HOOK_TESTS:-}" = "1" ]; then
-  echo "[pre-push] skipping tests (MAPFLOW_SKIP_HOOK_TESTS=1)"
-  exit 0
-fi
-
 echo "[pre-push] running full test suite"
 
 echo "[pre-push] spatial extension version sync check"
