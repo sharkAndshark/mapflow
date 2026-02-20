@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::crs::{normalize_crs, DataBounds, CRS_TYPE_CUSTOM};
+use crate::db::escape_sql_string;
 
 pub async fn import_spatial_data(
     db: &Arc<Mutex<duckdb::Connection>>,
@@ -17,11 +18,11 @@ pub async fn import_spatial_data(
         .to_string();
 
     let abs_path = if file_path.extension().and_then(|e| e.to_str()) == Some("zip") {
-        // Use /vsizip/ prefix for GDAL to read directly from zip
         format!("/vsizip/{}", abs_path)
     } else {
         abs_path
     };
+    let escaped_path = escape_sql_string(&abs_path);
 
     let conn = db.lock().await;
 
@@ -33,7 +34,7 @@ pub async fn import_spatial_data(
     let crs_query = format!(
         "SELECT 
             layers[1].geometry_fields[1].crs.auth_name || ':' || layers[1].geometry_fields[1].crs.auth_code 
-         FROM ST_Read_Meta('{abs_path}')"
+         FROM ST_Read_Meta('{escaped_path}')"
     );
 
     let detected_crs: Option<String> = conn.query_row(&crs_query, [], |row| row.get(0)).ok();
@@ -51,7 +52,7 @@ pub async fn import_spatial_data(
     let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{safe_table_name}\""), []);
 
     let create_sql = format!(
-        "CREATE TABLE \"{safe_table_name}\" AS\n         SELECT row_number() OVER ()::BIGINT AS fid, *\n         FROM ST_Read('{abs_path}')"
+        "CREATE TABLE \"{safe_table_name}\" AS\n         SELECT row_number() OVER ()::BIGINT AS fid, *\n         FROM ST_Read('{escaped_path}')"
     );
 
     conn.execute(&create_sql, [])
