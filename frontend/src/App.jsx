@@ -7,160 +7,6 @@ import {
 import { publishFile, unpublishFile, updateTileZoom } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 
-function PublishModal({ file, onClose, onSuccess }) {
-  const [slug, setSlug] = useState(file?.id || '');
-  const [minZoom, setMinZoom] = useState(file?.minZoom ?? 0);
-  const [maxZoom, setMaxZoom] = useState(file?.maxZoom ?? 22);
-  const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [onClose]);
-
-  if (!file) return null;
-
-  const isTileFile = file.tileFormat != null;
-  const displayMinZoom = isTileFile ? (file.minZoom ?? '-') : minZoom;
-  const displayMaxZoom = isTileFile ? (file.maxZoom ?? '-') : maxZoom;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setIsSubmitting(true);
-
-    try {
-      const options = {
-        slug: slug.trim() || undefined,
-      };
-      if (!isTileFile) {
-        options.minZoom = minZoom;
-        options.maxZoom = maxZoom;
-      }
-      const result = await publishFile(file.id, options);
-      onSuccess(file.id, result);
-    } catch (err) {
-      setError(err.message || '发布失败');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const trimmedSlug = slug.trim();
-  const previewUrl = trimmedSlug
-    ? `/tiles/${trimmedSlug}/{z}/{x}/{y}`
-    : `/tiles/${file.id}/{z}/{x}/{y}`;
-  const { error: slugError } = validateSlug(trimmedSlug);
-  const zoomError = !isTileFile && minZoom > maxZoom ? '最小层级不能大于最大层级' : null;
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>发布文件</h3>
-          <button className="modal-close" onClick={onClose} aria-label="关闭">
-            ×
-          </button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="modal-body">
-            <div className="form-group">
-              <label>文件名</label>
-              <div className="form-value">{file.name}</div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="slug">URL 标识（可选）</label>
-              <input
-                id="slug"
-                type="text"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                placeholder={file.id}
-                className="form-input"
-              />
-              {slugError && (
-                <div className="alert" style={{ marginTop: '8px' }}>
-                  {slugError}
-                </div>
-              )}
-              <small className="form-hint">
-                留空则使用文件 ID。仅支持字母、数字、连字符和下划线
-              </small>
-            </div>
-            <div className="form-group">
-              <label>
-                缩放层级{' '}
-                {isTileFile && <span style={{ color: '#888', fontWeight: 'normal' }}>(只读)</span>}
-              </label>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
-                  <small className="form-hint">最小</small>
-                  {isTileFile ? (
-                    <div className="form-value">{displayMinZoom}</div>
-                  ) : (
-                    <input
-                      type="number"
-                      min="0"
-                      max="22"
-                      value={minZoom}
-                      onChange={(e) => setMinZoom(parseInt(e.target.value) || 0)}
-                      className="form-input"
-                    />
-                  )}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <small className="form-hint">最大</small>
-                  {isTileFile ? (
-                    <div className="form-value">{displayMaxZoom}</div>
-                  ) : (
-                    <input
-                      type="number"
-                      min="0"
-                      max="22"
-                      value={maxZoom}
-                      onChange={(e) => setMaxZoom(parseInt(e.target.value) || 22)}
-                      className="form-input"
-                    />
-                  )}
-                </div>
-              </div>
-              {zoomError && (
-                <div className="alert" style={{ marginTop: '8px' }}>
-                  {zoomError}
-                </div>
-              )}
-              {!isTileFile && <small className="form-hint">动态矢量数据可设置 0-22 层级范围</small>}
-            </div>
-            {previewUrl && (
-              <div className="form-group">
-                <label>公开地址</label>
-                <div className="form-value code">{previewUrl}</div>
-              </div>
-            )}
-            {error && <div className="alert">{error}</div>}
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose}>
-              取消
-            </button>
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={isSubmitting || !!slugError || !!zoomError}
-            >
-              {isSubmitting ? '发布中...' : '确认发布'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 const STATUS_LABELS = {
   uploading: '上传中',
   uploaded: '等待处理',
@@ -169,7 +15,7 @@ const STATUS_LABELS = {
   failed: '失败',
 };
 
-function DetailSidebar({ file, onZoomUpdate }) {
+function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   const [schema, setSchema] = useState(null);
   const [schemaError, setSchemaError] = useState(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
@@ -178,6 +24,15 @@ function DetailSidebar({ file, onZoomUpdate }) {
   const [maxZoom, setMaxZoom] = useState(22);
   const [zoomError, setZoomError] = useState('');
   const [isSavingZoom, setIsSavingZoom] = useState(false);
+
+  // Publish-related state
+  const [editPublish, setEditPublish] = useState(false);
+  const [publishSlug, setPublishSlug] = useState('');
+  const [publishMinZoom, setPublishMinZoom] = useState(0);
+  const [publishMaxZoom, setPublishMaxZoom] = useState(22);
+  const [publishError, setPublishError] = useState('');
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   useEffect(() => {
     const fileId = file?.id;
@@ -228,8 +83,65 @@ function DetailSidebar({ file, onZoomUpdate }) {
       setMaxZoom(file.maxZoom ?? 22);
       setEditZoom(false);
       setZoomError('');
+      // Reset publish-related state when file changes
+      setEditPublish(false);
+      setPublishSlug('');
+      setPublishMinZoom(file.minZoom ?? 0);
+      setPublishMaxZoom(file.maxZoom ?? 22);
+      setPublishError('');
+      setCopySuccess(false);
     }
   }, [file]);
+
+  function copyPublicUrl(slug) {
+    if (!slug) {
+      return;
+    }
+    const url = `${window.location.origin}/tiles/${slug}/{z}/{x}/{y}`;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      })
+      .catch(() => {
+        alert('复制失败，请手动复制地址');
+      });
+  }
+
+  async function handlePublishSubmit() {
+    if (!file) return;
+
+    setPublishError('');
+    setIsPublishing(true);
+
+    try {
+      const isTileFile = file.tileFormat != null;
+      const options = {
+        slug: publishSlug.trim() || undefined,
+      };
+      if (!isTileFile) {
+        options.minZoom = publishMinZoom;
+        options.maxZoom = publishMaxZoom;
+      }
+      await onPublish(file.id, options);
+      setEditPublish(false);
+    } catch (err) {
+      setPublishError(err.message || '发布失败');
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
+  async function handleUnpublishClick() {
+    if (!file) return;
+    if (!confirm(`确定取消发布 "${file.name}" 吗？`)) return;
+    try {
+      await onUnpublish(file.id);
+    } catch (err) {
+      setPublishError(err.message || '取消发布失败');
+    }
+  }
 
   if (!file) {
     return (
@@ -279,6 +191,209 @@ function DetailSidebar({ file, onZoomUpdate }) {
             <div className="detail-label">CRS</div>
             <div className="detail-value">{file.crs}</div>
           </div>
+        )}
+
+        {/* Publish status section */}
+        {isReady && (
+          <>
+            {!file.isPublic && !editPublish && (
+              <div className="detail-group">
+                <div className="detail-label">发布状态</div>
+                <div className="detail-value">
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span style={{ color: '#888' }}>未发布</span>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ fontSize: '12px', padding: '4px 12px' }}
+                      onClick={() => setEditPublish(true)}
+                    >
+                      发布
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!file.isPublic && editPublish && (
+              <div className="detail-group">
+                <div className="detail-label">发布设置</div>
+                <div className="detail-value">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {/* URL Slug */}
+                    <div>
+                      <label
+                        style={{
+                          fontSize: '12px',
+                          color: '#666',
+                          marginBottom: '4px',
+                          display: 'block',
+                        }}
+                      >
+                        URL 标识（可选）
+                      </label>
+                      <input
+                        type="text"
+                        value={publishSlug}
+                        onChange={(e) => setPublishSlug(e.target.value)}
+                        placeholder={file.id}
+                        className="form-input"
+                        style={{ width: '100%' }}
+                      />
+                      {validateSlug(publishSlug.trim()).error && (
+                        <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
+                          {validateSlug(publishSlug.trim()).error}
+                        </div>
+                      )}
+                      <small className="form-hint">
+                        留空则使用文件 ID。仅支持字母、数字、连字符和下划线
+                      </small>
+                    </div>
+
+                    {/* Zoom levels */}
+                    <div>
+                      <label
+                        style={{
+                          fontSize: '12px',
+                          color: '#666',
+                          marginBottom: '4px',
+                          display: 'block',
+                        }}
+                      >
+                        缩放层级
+                        {file.tileFormat != null && (
+                          <span style={{ color: '#888', fontWeight: 'normal' }}> (只读)</span>
+                        )}
+                      </label>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <div style={{ flex: 1 }}>
+                          <small className="form-hint">最小</small>
+                          {file.tileFormat != null ? (
+                            <div className="form-value">{file.minZoom ?? '-'}</div>
+                          ) : (
+                            <input
+                              type="number"
+                              min="0"
+                              max="22"
+                              value={publishMinZoom}
+                              onChange={(e) => setPublishMinZoom(parseInt(e.target.value) || 0)}
+                              className="form-input"
+                              style={{ width: '100%' }}
+                            />
+                          )}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <small className="form-hint">最大</small>
+                          {file.tileFormat != null ? (
+                            <div className="form-value">{file.maxZoom ?? '-'}</div>
+                          ) : (
+                            <input
+                              type="number"
+                              min="0"
+                              max="22"
+                              value={publishMaxZoom}
+                              onChange={(e) => setPublishMaxZoom(parseInt(e.target.value) || 22)}
+                              className="form-input"
+                              style={{ width: '100%' }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                      {file.tileFormat == null && (
+                        <small className="form-hint">动态矢量数据可设置 0-22 层级范围</small>
+                      )}
+                    </div>
+
+                    {/* Public URL preview */}
+                    <div>
+                      <label
+                        style={{
+                          fontSize: '12px',
+                          color: '#666',
+                          marginBottom: '4px',
+                          display: 'block',
+                        }}
+                      >
+                        公开地址
+                      </label>
+                      <div className="form-value code" style={{ fontSize: '12px' }}>
+                        /tiles/{publishSlug.trim() || file.id}/{'{z}/{x}/{y}'}
+                      </div>
+                    </div>
+
+                    {publishError && (
+                      <div className="alert" style={{ margin: 0 }}>
+                        {publishError}
+                      </div>
+                    )}
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ fontSize: '12px', padding: '4px 12px' }}
+                        disabled={isPublishing || !!validateSlug(publishSlug.trim()).error}
+                        onClick={handlePublishSubmit}
+                      >
+                        {isPublishing ? '发布中...' : '确认发布'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: '12px', padding: '4px 12px' }}
+                        onClick={() => {
+                          setEditPublish(false);
+                          setPublishSlug('');
+                          setPublishMinZoom(file.minZoom ?? 0);
+                          setPublishMaxZoom(file.maxZoom ?? 22);
+                          setPublishError('');
+                        }}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {file.isPublic && (
+              <>
+                <div className="detail-group">
+                  <div className="detail-label">发布状态</div>
+                  <div className="detail-value">
+                    <span style={{ color: '#4caf50' }}>已发布</span>
+                  </div>
+                </div>
+
+                <div className="detail-group">
+                  <div className="detail-label">公开地址</div>
+                  <div className="detail-value">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div className="form-value code" style={{ fontSize: '12px' }}>
+                        /tiles/{file.publicSlug}/{'{z}/{x}/{y}'}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-text"
+                        style={{ fontSize: '12px', padding: 0, textAlign: 'left' }}
+                        onClick={() => copyPublicUrl(file.publicSlug)}
+                      >
+                        {copySuccess ? '已复制' : '复制地址'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </>
         )}
 
         {isReady && file.isPublic && (
@@ -389,6 +504,20 @@ function DetailSidebar({ file, onZoomUpdate }) {
           </div>
         )}
 
+        {/* Unpublish button */}
+        {isReady && file.isPublic && (
+          <div className="detail-group">
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ width: '100%', fontSize: '12px' }}
+              onClick={handleUnpublishClick}
+            >
+              取消发布
+            </button>
+          </div>
+        )}
+
         {isReady && (
           <div className="detail-group">
             <div className="detail-label">字段信息</div>
@@ -484,7 +613,6 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [publishModalFile, setPublishModalFile] = useState(null);
 
   async function handleLogout() {
     try {
@@ -495,48 +623,22 @@ export default function App() {
     }
   }
 
-  async function handlePublish(file) {
-    setPublishModalFile(file);
-  }
-
-  async function handlePublishSuccess(fileId, result) {
-    setPublishModalFile(null);
+  async function handlePublish(fileId, options) {
+    const result = await publishFile(fileId, options);
     setFiles((prev) =>
       prev.map((f) => (f.id === fileId ? { ...f, isPublic: true, publicSlug: result.slug } : f)),
     );
   }
 
-  async function handleUnpublish(file) {
-    if (!confirm(`确定取消发布 "${file.name}" 吗？`)) return;
-
-    try {
-      await unpublishFile(file.id);
-      setFiles((prev) =>
-        prev.map((f) => (f.id === file.id ? { ...f, isPublic: false, publicSlug: null } : f)),
-      );
-    } catch (err) {
-      setErrorMessage(err.message || '取消发布失败');
-    }
+  async function handleUnpublish(fileId) {
+    await unpublishFile(fileId);
+    setFiles((prev) =>
+      prev.map((f) => (f.id === fileId ? { ...f, isPublic: false, publicSlug: null } : f)),
+    );
   }
 
   function handleZoomUpdate(fileId, minZoom, maxZoom) {
     setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, minZoom, maxZoom } : f)));
-  }
-
-  function copyPublicUrl(slug) {
-    if (!slug) {
-      alert('无效的公开地址');
-      return;
-    }
-    const url = `${window.location.origin}/tiles/${slug}/{z}/{x}/{y}`;
-    navigator.clipboard
-      .writeText(url)
-      .then(() => {
-        alert('已复制到剪贴板');
-      })
-      .catch(() => {
-        alert('复制失败，请手动复制地址');
-      });
   }
 
   // Derive selected file object
@@ -744,37 +846,6 @@ export default function App() {
                           查看
                         </a>
                       )}
-                      {item.status === 'ready' ? (
-                        item.isPublic ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btn-text"
-                              onClick={() => copyPublicUrl(item.publicSlug)}
-                              title="复制地址"
-                            >
-                              复制
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-text"
-                              onClick={() => handleUnpublish(item)}
-                              title="取消发布"
-                            >
-                              取消发布
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn-text"
-                            onClick={() => handlePublish(item)}
-                            title="发布"
-                          >
-                            发布
-                          </button>
-                        )
-                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -783,18 +854,15 @@ export default function App() {
           </div>
 
           <div className="detail-area">
-            <DetailSidebar file={selectedFile} onZoomUpdate={handleZoomUpdate} />
+            <DetailSidebar
+              file={selectedFile}
+              onZoomUpdate={handleZoomUpdate}
+              onPublish={handlePublish}
+              onUnpublish={handleUnpublish}
+            />
           </div>
         </div>
       </section>
-
-      {publishModalFile && (
-        <PublishModal
-          file={publishModalFile}
-          onClose={() => setPublishModalFile(null)}
-          onSuccess={handlePublishSuccess}
-        />
-      )}
     </div>
   );
 }
