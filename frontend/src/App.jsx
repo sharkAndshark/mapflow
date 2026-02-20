@@ -34,6 +34,11 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   const [isPublishing, setIsPublishing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // Cache slug validation result to avoid duplicate calls
+  const slugValidationError = useMemo(() => {
+    return validateSlug(publishSlug.trim()).error;
+  }, [publishSlug]);
+
   useEffect(() => {
     const fileId = file?.id;
     const fileStatus = file?.status;
@@ -112,11 +117,18 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   async function handlePublishSubmit() {
     if (!file) return;
 
+    const isTileFile = file.tileFormat != null;
+
+    // Validate zoom levels for non-tile files
+    if (!isTileFile && publishMinZoom > publishMaxZoom) {
+      setPublishError('最小层级不能大于最大层级');
+      return;
+    }
+
     setPublishError('');
     setIsPublishing(true);
 
     try {
-      const isTileFile = file.tileFormat != null;
       const options = {
         slug: publishSlug.trim() || undefined,
       };
@@ -246,9 +258,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                         className="form-input"
                         style={{ width: '100%' }}
                       />
-                      {validateSlug(publishSlug.trim()).error && (
+                      {slugValidationError && (
                         <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
-                          {validateSlug(publishSlug.trim()).error}
+                          {slugValidationError}
                         </div>
                       )}
                       <small className="form-hint">
@@ -339,7 +351,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                         type="button"
                         className="btn-primary"
                         style={{ fontSize: '12px', padding: '4px 12px' }}
-                        disabled={isPublishing || !!validateSlug(publishSlug.trim()).error}
+                        disabled={isPublishing || !!slugValidationError}
                         onClick={handlePublishSubmit}
                       >
                         {isPublishing ? '发布中...' : '确认发布'}
