@@ -138,6 +138,7 @@ test.describe('Custom CRS', () => {
     const negativeData = files.find((f) => f.name === 'negative_coords_test');
     expect(negativeData).toBeDefined();
     expect(negativeData.crsType).toBe('custom');
+    expect(negativeData.crs).toBeNull();
 
     const previewResponse = await request.get(`/api/files/${negativeData.id}/preview`);
     expect(previewResponse.ok()).toBeTruthy();
