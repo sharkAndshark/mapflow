@@ -88,6 +88,8 @@ pub async fn upload_file(
         file.write_all(&chunk).await.map_err(internal_error)?;
     }
     file.flush().await.map_err(internal_error)?;
+    // Force sync to disk before background import to prevent GDAL race condition
+    file.get_ref().sync_all().await.map_err(internal_error)?;
     drop(file);
 
     let base_name = Path::new(&safe_name)
