@@ -112,6 +112,8 @@ h1 {
   background: #fcfcfc;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .detail-sidebar {
