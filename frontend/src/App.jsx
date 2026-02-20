@@ -672,7 +672,7 @@ export default function App() {
       <header className="header">
         <div>
           <h1>MapFlow</h1>
-          <p className="subtitle">探索版 · 文件上传与列表</p>
+          <p className="subtitle">文件上传与列表</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {user && (
