@@ -47,20 +47,14 @@ test('click preview opens new tab with map', async ({ page, workerServer, reques
     )
     .toBe('ready');
 
-  // 2. Click row to select it (to open sidebar)
+  // 2. Find and click "查看" link in file row action area
   const row = page.locator('.row', { hasText: 'sample' });
   await expect(row).toBeVisible();
-  await row.click();
 
-  // 3. Find Preview button in Detail Sidebar
-  // The sidebar should now be populated
-  const sidebar = page.getByTestId('detail-sidebar');
-  await expect(sidebar.getByText('sample')).toBeVisible(); // Check title in sidebar
-
-  const previewLink = sidebar.getByTestId('open-preview');
+  const previewLink = row.getByRole('link', { name: '查看' });
   await expect(previewLink).toBeVisible();
 
-  // 4. Click preview link and wait for new page
+  // 3. Click preview link and wait for new page
   const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
 
   await newPage.waitForLoadState('networkidle');
