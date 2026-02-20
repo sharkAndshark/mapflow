@@ -27,29 +27,32 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
   await expect(row).toBeVisible();
 
-  const publishButton = row.getByText('发布');
+  // Click the row to select it and show detail sidebar
+  await row.click();
+
+  const sidebar = page.locator('.detail-sidebar');
+  await expect(sidebar).toBeVisible();
+
+  // Click publish button in sidebar
+  const publishButton = sidebar.getByText('发布', { exact: true });
   await expect(publishButton).toBeVisible();
   await publishButton.click();
 
-  const modal = page.locator('.modal-content');
-  await expect(modal).toBeVisible();
-  await expect(modal.getByText('发布文件')).toBeVisible();
-  await expect(modal.getByText('sample')).toBeVisible();
-
-  const slugInput = modal.getByLabel('URL 标识（可选）');
+  // Fill in custom slug in the expanded publish form
+  const slugInput = sidebar.getByPlaceholder(/^.+$/).first();
   await slugInput.fill('my-custom-map');
 
-  const confirmButton = modal.getByText('确认发布');
+  const confirmButton = sidebar.getByText('确认发布');
   await expect(confirmButton).toBeEnabled();
   await confirmButton.click();
 
-  await expect(modal).toBeHidden();
+  // Wait for publish to complete - should show "已发布" status
+  await expect(sidebar.getByText('已发布')).toBeVisible();
+  await expect(sidebar.getByText('复制地址')).toBeVisible();
+  await expect(sidebar.getByText('取消发布')).toBeVisible();
 
-  await expect(row.getByText('复制')).toBeVisible();
-  await expect(row.getByText('取消发布')).toBeVisible();
-  await expect(row.getByRole('button', { name: /^发布$/ })).toHaveCount(0);
-
-  const copyButton = row.getByText('复制');
+  // Copy public URL (click the button, but don't verify clipboard in test environment)
+  const copyButton = sidebar.getByText('复制地址');
   await copyButton.click();
 
   // Wait for public tile endpoint to be accessible and verify response
@@ -70,6 +73,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   expect(response.headers()['cache-control']).toContain('public, max-age=300');
   await publicContext.close();
 
+  // Test unpublish
   await page.goto('/');
   await expect(page.locator('.page')).toBeVisible();
 
@@ -78,14 +82,18 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
     .filter({ hasText: '已就绪' })
     .first();
   await expect(readyRow).toBeVisible();
+  await readyRow.click();
+
+  const readySidebar = page.locator('.detail-sidebar');
+  await expect(readySidebar.getByText('已发布')).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
-  const unpublishButton = readyRow.getByText('取消发布');
-  await expect(unpublishButton).toBeVisible();
+  const unpublishButton = readySidebar.getByText('取消发布');
   await unpublishButton.click();
 
-  await expect(readyRow.getByText('发布')).toBeVisible();
-  await expect(readyRow.getByText('取消发布')).not.toBeVisible();
+  // Should show publish button again
+  await expect(readySidebar.getByText('发布', { exact: true })).toBeVisible();
+  await expect(readySidebar.getByText('取消发布')).not.toBeVisible();
 
   const anonContext = await context.browser().newContext();
   const errorResponse = await anonContext.request.get(
@@ -103,18 +111,19 @@ test('publish with default slug (empty input)', async ({ page }) => {
 
   const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
   await expect(row).toBeVisible();
+  await row.click();
 
-  const publishButton = row.getByText('发布');
+  const sidebar = page.locator('.detail-sidebar');
+  await expect(sidebar).toBeVisible();
+
+  const publishButton = sidebar.getByText('发布', { exact: true });
   await publishButton.click();
 
-  const modal = page.locator('.modal-content');
-  await expect(modal).toBeVisible();
-
-  const confirmButton = modal.getByText('确认发布');
+  const confirmButton = sidebar.getByText('确认发布');
   await confirmButton.click();
 
-  await expect(modal).toBeHidden();
-  await expect(row.getByText('复制')).toBeVisible();
+  await expect(sidebar.getByText('已发布')).toBeVisible();
+  await expect(sidebar.getByText('复制地址')).toBeVisible();
 });
 
 test('slug validation: invalid characters', async ({ page }) => {
@@ -125,21 +134,22 @@ test('slug validation: invalid characters', async ({ page }) => {
 
   const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
   await expect(row).toBeVisible();
+  await row.click();
 
-  const publishButton = row.getByText('发布');
+  const sidebar = page.locator('.detail-sidebar');
+  await expect(sidebar).toBeVisible();
+
+  const publishButton = sidebar.getByText('发布', { exact: true });
   await publishButton.click();
 
-  const modal = page.locator('.modal-content');
-  await expect(modal).toBeVisible();
-
-  const slugInput = modal.getByLabel('URL 标识（可选）');
+  const slugInput = sidebar.getByPlaceholder(/^.+$/).first();
   await slugInput.fill('invalid slug!');
 
   await expect(
-    modal.locator('.alert', { hasText: '仅支持字母、数字、连字符和下划线' }),
+    sidebar.locator('.alert', { hasText: '仅支持字母、数字、连字符和下划线' }),
   ).toBeVisible();
 
-  const confirmButton = modal.getByText('确认发布');
+  const confirmButton = sidebar.getByText('确认发布');
   await expect(confirmButton).toBeDisabled();
 });
 
@@ -151,19 +161,20 @@ test('slug validation: too long', async ({ page }) => {
 
   const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
   await expect(row).toBeVisible();
+  await row.click();
 
-  const publishButton = row.getByText('发布');
+  const sidebar = page.locator('.detail-sidebar');
+  await expect(sidebar).toBeVisible();
+
+  const publishButton = sidebar.getByText('发布', { exact: true });
   await publishButton.click();
 
-  const modal = page.locator('.modal-content');
-  await expect(modal).toBeVisible();
-
-  const slugInput = modal.getByLabel('URL 标识（可选）');
+  const slugInput = sidebar.getByPlaceholder(/^.+$/).first();
   const longSlug = 'a'.repeat(101);
   await slugInput.fill(longSlug);
 
-  await expect(modal.getByText('URL 标识不能超过 100 个字符')).toBeVisible();
+  await expect(sidebar.getByText('URL 标识不能超过 100 个字符')).toBeVisible();
 
-  const confirmButton = modal.getByText('确认发布');
+  const confirmButton = sidebar.getByText('确认发布');
   await expect(confirmButton).toBeDisabled();
 });
