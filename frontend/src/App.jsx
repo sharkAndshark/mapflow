@@ -121,6 +121,8 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   }, [file]);
 
   // Reset to basic tab only when file ID changes (different file selected)
+  // Using file?.id instead of [file] prevents tab reset when file properties change
+  // (e.g., when isPublic changes after publishing)
   useEffect(() => {
     setActiveTab('basic');
   }, [file?.id]);
@@ -194,13 +196,16 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
         </div>
 
         {/* Tab navigation */}
-        <div className="tab-nav">
+        <div className="tab-nav" role="tablist">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`tabpanel-${tab.id}`}
             >
               {tab.label}
             </button>
@@ -209,7 +214,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
 
         {/* Basic Info Tab */}
         {activeTab === 'basic' && (
-          <div className="tab-content">
+          <div className="tab-content" role="tabpanel" id="tabpanel-basic">
             <div className="detail-group">
               <div className="detail-label">Type</div>
               <div className="detail-value">{file.type}</div>
@@ -252,7 +257,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
         {/* Fields Tab */}
         {activeTab === 'fields' &&
           (isReady ? (
-            <div className="tab-content fields-section">
+            <div className="tab-content fields-section" role="tabpanel" id="tabpanel-fields">
               {isLoadingSchema ? (
                 <span style={{ color: '#888', fontSize: '12px' }}>加载中...</span>
               ) : schemaError ? (
@@ -480,13 +485,15 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
               ) : null}
             </div>
           ) : (
-            <div className="tab-empty">文件处理完成后可查看字段信息</div>
+            <div className="tab-empty" role="tabpanel" id="tabpanel-fields">
+              文件处理完成后可查看字段信息
+            </div>
           ))}
 
         {/* Publish Tab */}
         {activeTab === 'publish' &&
           (isReady ? (
-            <div className="tab-content">
+            <div className="tab-content" role="tabpanel" id="tabpanel-publish">
               {/* Publish status section */}
               {!file.isPublic && !editPublish && (
                 <div className="detail-group">
@@ -819,7 +826,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
               )}
             </div>
           ) : (
-            <div className="tab-empty">文件处理完成后可进行发布操作</div>
+            <div className="tab-empty" role="tabpanel" id="tabpanel-publish">
+              文件处理完成后可进行发布操作
+            </div>
           ))}
       </div>
     </div>
