@@ -19,7 +19,9 @@ mod validation;
 
 pub use auth::{AuthBackend, User};
 pub use auth_routes::build_auth_router;
-pub use config::{format_bytes, read_cookie_secure, read_max_size_config};
+pub use config::{
+    format_bytes, read_cookie_secure, read_max_size_config, read_preview_zoom_config,
+};
 pub use db::{
     init_database, is_initialized, reconcile_processing_files, set_initialized, DEFAULT_DB_PATH,
     PROCESSING_RECONCILIATION_ERROR,
@@ -85,6 +87,8 @@ mod tests {
             file_id VARCHAR PRIMARY KEY,
             slug VARCHAR UNIQUE NOT NULL,
             published_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            minzoom INTEGER,
+            maxzoom INTEGER,
             FOREIGN KEY (file_id) REFERENCES files(id)
         );
 
@@ -242,5 +246,51 @@ mod tests {
         assert_eq!(bytes, default_mb * bytes_per_mb);
         assert_eq!(label, "200MB");
         std::env::remove_var("UPLOAD_MAX_SIZE_MB");
+    }
+
+    #[test]
+    fn read_preview_zoom_config_default_and_custom() {
+        let _guard = ENV_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .expect("env lock");
+
+        // Test defaults
+        std::env::remove_var("PREVIEW_MIN_ZOOM");
+        std::env::remove_var("PREVIEW_MAX_ZOOM");
+        let (min, max) = read_preview_zoom_config();
+        assert_eq!(min, 0);
+        assert_eq!(max, 22);
+
+        // Test custom values
+        std::env::set_var("PREVIEW_MIN_ZOOM", "5");
+        std::env::set_var("PREVIEW_MAX_ZOOM", "18");
+        let (min, max) = read_preview_zoom_config();
+        assert_eq!(min, 5);
+        assert_eq!(max, 18);
+
+        // Test invalid values fall back to defaults
+        std::env::set_var("PREVIEW_MIN_ZOOM", "invalid");
+        std::env::set_var("PREVIEW_MAX_ZOOM", "invalid");
+        let (min, max) = read_preview_zoom_config();
+        assert_eq!(min, 0);
+        assert_eq!(max, 22);
+
+        // Test out-of-range values are clamped
+        std::env::set_var("PREVIEW_MIN_ZOOM", "-5");
+        std::env::set_var("PREVIEW_MAX_ZOOM", "30");
+        let (min, max) = read_preview_zoom_config();
+        assert_eq!(min, 0); // clamped to 0
+        assert_eq!(max, 22); // clamped to 22
+
+        // Test min > max is corrected (max clamped to min)
+        std::env::set_var("PREVIEW_MIN_ZOOM", "15");
+        std::env::set_var("PREVIEW_MAX_ZOOM", "5");
+        let (min, max) = read_preview_zoom_config();
+        assert_eq!(min, 15);
+        assert_eq!(max, 15); // clamped to min_zoom
+
+        std::env::remove_var("PREVIEW_MIN_ZOOM");
+        std::env::remove_var("PREVIEW_MAX_ZOOM");
     }
 }

@@ -89,6 +89,8 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             file_id VARCHAR PRIMARY KEY,
             slug VARCHAR UNIQUE NOT NULL,
             published_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            minzoom INTEGER,
+            maxzoom INTEGER,
             FOREIGN KEY (file_id) REFERENCES files(id)
         );
         ",
@@ -114,6 +116,8 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         [],
     );
     let _ = conn.execute("ALTER TABLE files ADD COLUMN data_bounds VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN minzoom INTEGER", []);
+    let _ = conn.execute("ALTER TABLE published_files ADD COLUMN maxzoom INTEGER", []);
 
     conn.execute_batch(
         r"

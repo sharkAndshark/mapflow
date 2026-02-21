@@ -139,14 +139,14 @@ test('dynamic table has no zoom limits', async ({ page, workerServer, request })
   expect(geojsonFile).toBeDefined();
   const fileId = geojsonFile.id;
 
-  // Check preview metadata does NOT have zoom limits
+  // Check preview metadata - dynamic data uses fixed zoom range (0, 22)
   const previewResponse = await request.get(`/api/files/${fileId}/preview`);
   expect(previewResponse.ok()).toBeTruthy();
   const previewData = await previewResponse.json();
 
-  // Verify zoom limits are not present for dynamic tables (undefined or null)
-  expect(previewData.minZoom == null).toBeTruthy();
-  expect(previewData.maxZoom == null).toBeTruthy();
+  // Verify dynamic data uses fixed preview zoom range (0, 22)
+  expect(previewData.minZoom).toBe(0);
+  expect(previewData.maxZoom).toBe(22);
 
   // Click "查看" link in file row action area
   const row = page.locator('.row', { hasText: 'sample' });

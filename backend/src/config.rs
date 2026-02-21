@@ -55,3 +55,27 @@ pub fn format_bytes(bytes: u64) -> String {
         format!("{}B", bytes)
     }
 }
+
+const DEFAULT_PREVIEW_MIN_ZOOM: i32 = 0;
+const DEFAULT_PREVIEW_MAX_ZOOM: i32 = 22;
+const MAX_TILE_ZOOM: i32 = 22;
+
+/// Read preview zoom range from environment variables.
+/// Returns (min_zoom, max_zoom) with defaults (0, 22) if not set.
+/// Values are clamped to valid tile zoom range (0-22) and ensured min <= max.
+pub fn read_preview_zoom_config() -> (i32, i32) {
+    let min_zoom = std::env::var("PREVIEW_MIN_ZOOM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_PREVIEW_MIN_ZOOM);
+    let max_zoom = std::env::var("PREVIEW_MAX_ZOOM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_PREVIEW_MAX_ZOOM);
+
+    // Clamp to valid tile zoom range and ensure min <= max
+    let min_zoom = min_zoom.clamp(0, MAX_TILE_ZOOM);
+    let max_zoom = max_zoom.clamp(min_zoom, MAX_TILE_ZOOM);
+
+    (min_zoom, max_zoom)
+}
