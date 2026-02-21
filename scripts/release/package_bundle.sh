@@ -28,12 +28,24 @@ if [ ! -f "$extension_path" ]; then
   exit 1
 fi
 
+# Detect if this is a Windows platform based on artifact_id
+is_windows=false
+if [[ "$artifact_id" == *"windows"* ]] || [[ "$artifact_id" == *"win"* ]]; then
+  is_windows=true
+fi
+
 bundle_name="mapflow-${version}-${artifact_id}"
 bundle_dir="$(mktemp -d)/${bundle_name}"
 mkdir -p "${bundle_dir}/extensions"
 
-cp "$binary_path" "${bundle_dir}/mapflow"
-chmod +x "${bundle_dir}/mapflow"
+# Copy binary with appropriate name and extension
+if [ "$is_windows" = true ]; then
+  cp "$binary_path" "${bundle_dir}/mapflow.exe"
+else
+  cp "$binary_path" "${bundle_dir}/mapflow"
+  chmod +x "${bundle_dir}/mapflow"
+fi
+
 cp -R frontend/dist "${bundle_dir}/dist"
 cp "$extension_path" "${bundle_dir}/extensions/spatial.duckdb_extension"
 cp backend/extensions/spatial-extension-manifest.json "${bundle_dir}/spatial-extension-manifest.json"
@@ -42,7 +54,15 @@ cp LICENSE "${bundle_dir}/LICENSE"
 cp NOTICE "${bundle_dir}/NOTICE"
 
 mkdir -p "$output_dir"
-archive_path="${output_dir}/${bundle_name}.tar.gz"
-tar -C "$(dirname "${bundle_dir}")" -czf "${archive_path}" "${bundle_name}"
+
+# Create archive with appropriate format
+if [ "$is_windows" = true ]; then
+  archive_path="${output_dir}/${bundle_name}.zip"
+  # Use zip for Windows; -r for recursive, -q for quiet
+  (cd "$(dirname "${bundle_dir}")" && zip -r -q "${archive_path}" "${bundle_name}")
+else
+  archive_path="${output_dir}/${bundle_name}.tar.gz"
+  tar -C "$(dirname "${bundle_dir}")" -czf "${archive_path}" "${bundle_name}"
+fi
 
 echo "archive_path=${archive_path}"

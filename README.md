@@ -13,8 +13,8 @@ License: Apache-2.0
 
 | Channel | Trigger | GitHub Release | GHCR Tags | Assets |
 |---|---|---|---|---|
-| Stable | `v*` tag push | Full release | `latest`, `vX.Y.Z` | Linux + macOS bundles |
-| Nightly | Daily schedule (`02:00 UTC`) + manual dispatch | Pre-release | `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Linux + macOS bundles |
+| Stable | `v*` tag push | Full release | `latest`, `vX.Y.Z` | Linux + macOS + Windows bundles |
+| Nightly | Daily schedule (`02:00 UTC`) + manual dispatch | Pre-release | `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Linux + macOS + Windows bundles |
 
 Each binary bundle contains:
 - `mapflow` backend executable
@@ -48,11 +48,21 @@ docker compose -f docker-compose.ghcr.yml down
 
 ## Quickstart (Binary Bundle)
 
-1. Download an asset from [GitHub Releases](https://github.com/sharkAndshark/mapflow/releases).
+1. Download an asset from [GitHub Releases](https://github.com/sharkAndshark/mapflow/releases):
+   - Linux: `mapflow-*-linux-amd64.tar.gz`
+   - macOS (Apple Silicon): `mapflow-*-darwin-arm64.tar.gz`
+   - Windows: `mapflow-*-windows-amd64.zip`
 2. Extract it, then run:
 
 ```bash
+# Linux/macOS
 ./mapflow
+
+# Windows (Command Prompt)
+mapflow.exe
+
+# Windows (PowerShell)
+.\mapflow.exe
 ```
 
 Binary bundles include `extensions/spatial.duckdb_extension` and load it automatically by default.
@@ -60,11 +70,21 @@ Binary bundles include `extensions/spatial.duckdb_extension` and load it automat
 Optional runtime config:
 
 ```bash
+# Linux/macOS
 export WEB_DIST=./dist
 export DB_PATH=./data/mapflow.duckdb
 export UPLOAD_DIR=./uploads
 export PORT=3000
 ./mapflow
+```
+
+```cmd
+:: Windows (Command Prompt)
+set WEB_DIST=.\dist
+set DB_PATH=.\data\mapflow.duckdb
+set UPLOAD_DIR=.\uploads
+set PORT=3000
+mapflow.exe
 ```
 
 ## Supported Upload Formats
