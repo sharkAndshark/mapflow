@@ -2,11 +2,10 @@
 name = "backend"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
 
 [features]
 default = []
-embed-web-dist = []
+embed-web-dist = ["dep:include_dir"]
 
 [features]
 default = []

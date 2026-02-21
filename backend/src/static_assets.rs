@@ -5,7 +5,10 @@ use axum::{
 };
 
 #[cfg(feature = "embed-web-dist")]
-include!(concat!(env!("OUT_DIR"), "/embedded_web_dist.rs"));
+use include_dir::{include_dir, Dir};
+
+#[cfg(feature = "embed-web-dist")]
+static EMBEDDED_WEB_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../frontend/dist");
 
 #[cfg(feature = "embed-web-dist")]
 pub async fn serve_embedded_spa(uri: Uri) -> Response {
@@ -38,9 +41,7 @@ fn normalize_request_path(raw_path: &str) -> String {
 
 #[cfg(feature = "embed-web-dist")]
 fn embedded_file_response(path: &str) -> Option<Response> {
-    let file = EMBEDDED_WEB_ASSETS
-        .iter()
-        .find_map(|(asset_path, contents)| (*asset_path == path).then_some(*contents))?;
+    let file = EMBEDDED_WEB_DIST.get_file(path)?;
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CONTENT_TYPE,
@@ -51,7 +52,7 @@ fn embedded_file_response(path: &str) -> Option<Response> {
         HeaderValue::from_static("public, max-age=300"),
     );
 
-    Some((headers, file.to_vec()).into_response())
+    Some((headers, file.contents().to_vec()).into_response())
 }
 
 #[cfg(feature = "embed-web-dist")]
