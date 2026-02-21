@@ -18,11 +18,6 @@ if [ ! -f "$binary_path" ]; then
   exit 1
 fi
 
-if [ ! -d "frontend/dist" ]; then
-  echo "frontend bundle missing: frontend/dist" >&2
-  exit 1
-fi
-
 if [ ! -f "$extension_path" ]; then
   echo "spatial extension not found: $extension_path" >&2
   exit 1
@@ -45,8 +40,6 @@ else
   cp "$binary_path" "${bundle_dir}/mapflow"
   chmod +x "${bundle_dir}/mapflow"
 fi
-
-cp -R frontend/dist "${bundle_dir}/dist"
 cp "$extension_path" "${bundle_dir}/extensions/spatial.duckdb_extension"
 cp backend/extensions/spatial-extension-manifest.json "${bundle_dir}/spatial-extension-manifest.json"
 cp README.md "${bundle_dir}/README.md"
