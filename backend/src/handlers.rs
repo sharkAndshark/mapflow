@@ -511,7 +511,7 @@ pub async fn get_file_schema(
 
     let mut cols_stmt = conn
         .prepare(
-            "SELECT original_name, mvt_type\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
+            "SELECT original_name, mvt_type, alias, normalized_name\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
         )
         .map_err(internal_error)?;
 
@@ -519,14 +519,21 @@ pub async fn get_file_schema(
         .query_map(duckdb::params![&id], |row| {
             let original_name: String = row.get(0)?;
             let mvt_type: String = row.get(1)?;
-            Ok((original_name, mvt_type))
+            let alias: Option<String> = row.get(2)?;
+            let normalized_name: Option<String> = row.get(3)?;
+            Ok((original_name, mvt_type, alias, normalized_name))
         })
         .map_err(internal_error)?;
 
     let mut fields = Vec::new();
     for c in cols_iter {
-        let (name, r#type) = c.map_err(internal_error)?;
-        fields.push(crate::models::FieldInfo { name, r#type });
+        let (name, r#type, alias, normalized) = c.map_err(internal_error)?;
+        fields.push(crate::models::FieldInfo {
+            name,
+            r#type,
+            alias,
+            normalized,
+        });
     }
 
     drop(conn);
@@ -1054,4 +1061,87 @@ pub async fn update_tile_zoom(
         "minZoom": effective_min,
         "maxZoom": effective_max
     })))
+}
+
+pub async fn update_field_aliases(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(req): Json<crate::models::UpdateFieldAliasesRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    let status: String = conn
+        .query_row(
+            "SELECT status FROM files WHERE id = ?",
+            duckdb::params![&id],
+            |row| row.get(0),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    if status != "ready" {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "File is not ready".to_string(),
+            }),
+        ));
+    }
+
+    conn.execute_batch("BEGIN TRANSACTION")
+        .map_err(internal_error)?;
+
+    for field in &req.fields {
+        if let Some(ref alias) = field.alias {
+            if alias.trim().is_empty() {
+                conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+                drop(conn);
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "Alias cannot be empty string".to_string(),
+                    }),
+                ));
+            }
+            if alias.len() > 255 {
+                conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+                drop(conn);
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "Alias must be 255 characters or less".to_string(),
+                    }),
+                ));
+            }
+        }
+
+        let rows_affected = conn
+            .execute(
+                "UPDATE dataset_columns SET alias = ? WHERE source_id = ? AND normalized_name = ?",
+                duckdb::params![&field.alias, &id, &field.normalized_name],
+            )
+            .map_err(internal_error)?;
+
+        if rows_affected == 0 {
+            conn.execute_batch("ROLLBACK").map_err(internal_error)?;
+            drop(conn);
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Field '{}' not found", field.normalized_name),
+                }),
+            ));
+        }
+    }
+
+    conn.execute_batch("COMMIT").map_err(internal_error)?;
+    drop(conn);
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }

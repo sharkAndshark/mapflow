@@ -89,6 +89,10 @@ pub struct FeaturePropertiesResponse {
 pub struct FieldInfo {
     pub name: String,
     pub r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub normalized: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -153,4 +157,15 @@ pub struct UpdateZoomRequest {
     pub min_zoom: Option<i32>,
     #[serde(rename = "maxZoom")]
     pub max_zoom: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FieldAliasUpdate {
+    pub normalized_name: String,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateFieldAliasesRequest {
+    pub fields: Vec<FieldAliasUpdate>,
 }

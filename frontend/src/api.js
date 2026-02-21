@@ -70,3 +70,16 @@ export async function updateTileZoom(fileId, minZoom, maxZoom) {
   }
   return res.json();
 }
+
+export async function updateFieldAliases(fileId, fields) {
+  const res = await fetchWithAuth(`/api/files/${fileId}/field-aliases`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '更新字段别名失败');
+  }
+  return res.json();
+}

@@ -4561,3 +4561,358 @@ async fn test_update_crs_not_ready_returns_409() {
     let response = app.oneshot(update_crs_request).await.unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
 }
+
+// ============================================================================
+// Field Aliases Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_update_field_aliases_success() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    // First, get the schema to find a field's normalized name
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    let first_field = &schema["layers"][0]["fields"][0];
+    let normalized_name = first_field["normalized"]
+        .as_str()
+        .unwrap_or_else(|| first_field["name"].as_str().unwrap());
+
+    // Update field alias
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"fields": [{{"normalized_name": "{}", "alias": "显示名称"}}]}}"#,
+            normalized_name
+        )))
+        .unwrap();
+
+    let response = app.oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body_json["success"], true);
+}
+
+#[tokio::test]
+async fn test_update_field_aliases_schema_returns_alias() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    // Get initial schema
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    let body_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    let first_field = &schema["layers"][0]["fields"][0];
+    let normalized_name = first_field["normalized"]
+        .as_str()
+        .unwrap_or_else(|| first_field["name"].as_str().unwrap());
+
+    // Verify alias is null initially
+    assert!(first_field["alias"].is_null() || first_field.get("alias").is_none());
+
+    // Update field alias
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"fields": [{{"normalized_name": "{}", "alias": "MyAlias"}}]}}"#,
+            normalized_name
+        )))
+        .unwrap();
+
+    let response = app.clone().oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    // Get schema again and verify alias is set
+    let schema_request2 = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response2 = app.oneshot(schema_request2).await.unwrap();
+    let body_bytes2 = schema_response2
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema2: serde_json::Value = serde_json::from_slice(&body_bytes2).unwrap();
+
+    let updated_field = schema2["layers"][0]["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| {
+            f["normalized"]
+                .as_str()
+                .unwrap_or_else(|| f["name"].as_str().unwrap())
+                == normalized_name
+        })
+        .unwrap();
+
+    assert_eq!(updated_field["alias"], "MyAlias");
+}
+
+#[tokio::test]
+async fn test_update_field_aliases_empty_rejected() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"fields": [{"normalized_name": "name", "alias": "   "}]}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"]
+        .as_str()
+        .unwrap()
+        .contains("empty string"));
+}
+
+#[tokio::test]
+async fn test_update_field_aliases_too_long() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let long_alias = "x".repeat(256);
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"fields": [{{"normalized_name": "name", "alias": "{}"}}]}}"#,
+            long_alias
+        )))
+        .unwrap();
+
+    let response = app.oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"].as_str().unwrap().contains("255"));
+}
+
+#[tokio::test]
+async fn test_update_field_aliases_field_not_found() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"fields": [{"normalized_name": "nonexistent_field", "alias": "test"}]}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(body_json["error"].as_str().unwrap().contains("not found"));
+}
+
+#[tokio::test]
+async fn test_update_field_aliases_file_not_ready() {
+    let (app, _temp) = setup_app().await;
+
+    // Upload but don't wait for ready
+    let boundary = "------------------------boundaryNotReady";
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [{"type": "Feature", "properties": {"name": "test"}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]
+    }"#;
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    // Try to update aliases before ready
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_item.id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"fields": [{"normalized_name": "name", "alias": "test"}]}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn test_update_field_aliases_file_not_found() {
+    let (app, _temp) = setup_app().await;
+
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri("/api/files/nonexistent-file-id/field-aliases")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"fields": [{"normalized_name": "name", "alias": "test"}]}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_update_field_aliases_clear_alias() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    // Get schema to find field
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    let body_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    let first_field = &schema["layers"][0]["fields"][0];
+    let normalized_name = first_field["normalized"]
+        .as_str()
+        .unwrap_or_else(|| first_field["name"].as_str().unwrap());
+
+    // Set alias
+    let set_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"fields": [{{"normalized_name": "{}", "alias": "TestAlias"}}]}}"#,
+            normalized_name
+        )))
+        .unwrap();
+
+    let response = app.clone().oneshot(set_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    // Clear alias by setting to null
+    let clear_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"fields": [{{"normalized_name": "{}", "alias": null}}]}}"#,
+            normalized_name
+        )))
+        .unwrap();
+
+    let response = app.clone().oneshot(clear_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    // Verify alias is cleared
+    let schema_request2 = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response2 = app.oneshot(schema_request2).await.unwrap();
+    let body_bytes2 = schema_response2
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema2: serde_json::Value = serde_json::from_slice(&body_bytes2).unwrap();
+
+    let updated_field = schema2["layers"][0]["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| {
+            f["normalized"]
+                .as_str()
+                .unwrap_or_else(|| f["name"].as_str().unwrap())
+                == normalized_name
+        })
+        .unwrap();
+
+    assert!(updated_field["alias"].is_null() || updated_field.get("alias").is_none());
+}

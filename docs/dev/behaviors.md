@@ -38,7 +38,7 @@
 | API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | lifecycle tests + `test_preview_not_ready_returns_409` | Integration | P0 |
 | API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证。动态生成返回 MVT（Web Mercator 投影）；MBTiles 返回 MVT 或 PNG。空瓦片（无几何数据）返回 204 No Content | 200 + MVT/PNG / 204（空瓦片） / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
 | API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序。MBTiles 文件不支持特征属性，返回 400 | 200 / 400（MBTiles） / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
-| API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{layers:[{id,description?,fields:[{name,type}]}]}`，type 为 MVT 兼容类型，按 ordinal 排序，仅 ready 状态可访问。MBTiles 文件从 metadata.json 提取图层信息，栅格瓦片返回空数组，普通数据集返回默认图层 | 200 + layers[] / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
+| API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{layers:[{id,description?,fields:[{name,type,alias?,normalized?}]}]}`，type 为 MVT 兼容类型，alias 为字段别名（可选），normalized 为标准化字段名（可选），按 ordinal 排序，仅 ready 状态可访问。MBTiles 文件从 metadata.json 提取图层信息，栅格瓦片返回空数组，普通数据集返回默认图层 | 200 + layers[] / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
 | API-007 | 发布文件 | POST /api/files/:id/publish 需要认证，设置 `is_public=TRUE` 并分配 `public_slug`，可选自定义 slug（默认文件 ID），返回公开 URL 模板。注意：由于 DuckDB 不支持部分索引，slug 唯一性在 INSERT 前手动检查，存在小概率竞态条件（Phase 1 可接受） | 200 + `{url,slug,isPublic}` / 400（slug 无效/冲突） / 401 / 404 / 409 | `cargo test test_publish_*` | Integration | P0 |
 | API-008 | 取消发布 | POST /api/files/:id/unpublish 需要认证，设置 `is_public=FALSE` 并清空 `public_slug` | 200 / 401 / 404 | `cargo test test_unpublish_*` | Integration | P0 |
 | API-009 | 公开地址 | GET /api/files/:id/public-url 需要认证，返回当前文件的公开 URL 模板 | 200 + `{slug,url}` / 401 / 404 | `cargo test test_public_url_*` | Integration | P1 |
@@ -47,6 +47,7 @@
 | API-012 | 公开PMTiles | GET /tiles/:slug **无需认证**，PMTiles HTTP Range 代理。处理 Range 请求头，返回对应字节范围。支持 `HEAD` 检测文件大小。PMTiles 格式单文件包含所有瓦片和元数据 | 206（Partial Content）/ 200（HEAD）/ 404 / 416（Range Invalid） | `cargo test test_pmtiles_*` | Integration | P0 |
 | API-013 | 公开瓦片元数据 | GET /tiles/:slug/meta **无需认证**，返回公开瓦片的元数据（name, tile_source, tile_url, viewer_url）用于前端判断使用哪种瓦片源 | 200 + `{slug,name,tile_source,tile_url,viewer_url}` / 404 | `cargo test test_pmtiles_meta_*` | Integration | P0 |
 | API-014 | 健康检查 | GET /health **无需认证**，返回服务状态 | 200 + `{status:"ok"}` | `cargo test test_health_check` | Integration | P2 |
+| API-015 | 字段别名更新 | PATCH /api/files/:id/field-aliases 需要认证，更新数据集字段的显示别名。别名用于 MVT 瓦片属性键，发布后可在地图上显示自定义字段名。验证：别名不能为空字符串，最大 255 字符。仅 ready 状态可修改 | 200 + `{success:true}` / 400（空别名/超长/字段不存在） / 401 / 404 / 409 | `cargo test test_update_field_aliases_*` | Integration | P1 |
 | AUTH-001 | 首次设置 | POST /api/auth/init 创建初始管理员 | 200 / 400 / 409 / 500 | `npm run test:e2e` | E2E | P0 |
 | AUTH-002 | 登录 | POST /api/auth/login 验证凭证，设置会话 | 200 / 401 / 500 | `npm run test:e2e` | E2E | P0 |
 | AUTH-003 | 登出 | POST /api/auth/logout 清除会话 | 204 / 500 | `npm run test:e2e` | E2E | P0 |

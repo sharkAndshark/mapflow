@@ -4,7 +4,7 @@ import {
   hasActiveJobs as computeHasActiveJobs,
   mergeServerFilesWithOptimistic,
 } from './polling.js';
-import { publishFile, unpublishFile, updateTileZoom } from './api.js';
+import { publishFile, unpublishFile, updateTileZoom, updateFieldAliases } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 
 const STATUS_LABELS = {
@@ -24,6 +24,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   const [maxZoom, setMaxZoom] = useState(22);
   const [zoomError, setZoomError] = useState('');
   const [isSavingZoom, setIsSavingZoom] = useState(false);
+  const [editingAlias, setEditingAlias] = useState(null);
+  const [aliasValue, setAliasValue] = useState('');
+  const [aliasError, setAliasError] = useState('');
+  const [isSavingAlias, setIsSavingAlias] = useState(false);
 
   // Publish-related state
   const [editPublish, setEditPublish] = useState(false);
@@ -95,6 +99,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
       setMaxZoom(file.maxZoom ?? 22);
       setEditZoom(false);
       setZoomError('');
+      setEditingAlias(null);
+      setAliasValue('');
+      setAliasError('');
       // Reset publish-related state when file changes
       setEditPublish(false);
       setPublishSlug('');
@@ -580,26 +587,149 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                             ) : (
                               layer.fields.map((field) => (
                                 <div
-                                  key={field.name}
+                                  key={field.normalized || field.name}
                                   style={{
                                     display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    padding: '2px 0',
+                                    flexDirection: 'column',
+                                    gap: '2px',
+                                    padding: '4px 0',
                                   }}
                                 >
-                                  <span style={{ fontWeight: 500 }}>{field.name}</span>
-                                  <span
+                                  <div
                                     style={{
-                                      fontSize: '11px',
-                                      color: '#666',
-                                      background: '#f5f5f5',
-                                      padding: '1px 6px',
-                                      borderRadius: '3px',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
                                     }}
                                   >
-                                    {field.type}
-                                  </span>
+                                    <div
+                                      style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      {field.alias ? (
+                                        <>
+                                          <span style={{ fontWeight: 500 }}>{field.alias}</span>
+                                          <span
+                                            style={{
+                                              fontSize: '10px',
+                                              color: '#999',
+                                              textDecoration: 'line-through',
+                                            }}
+                                          >
+                                            {field.name}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span style={{ fontWeight: 500 }}>{field.name}</span>
+                                      )}
+                                    </div>
+                                    <span
+                                      style={{
+                                        fontSize: '11px',
+                                        color: '#666',
+                                        background: '#f5f5f5',
+                                        padding: '1px 6px',
+                                        borderRadius: '3px',
+                                      }}
+                                    >
+                                      {field.type}
+                                    </span>
+                                  </div>
+                                  {editingAlias === (field.normalized || field.name) ? (
+                                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                                      <input
+                                        type="text"
+                                        value={aliasValue}
+                                        onChange={(e) => setAliasValue(e.target.value)}
+                                        placeholder="输入别名"
+                                        className="form-input"
+                                        style={{ fontSize: '12px', padding: '2px 6px', flex: 1 }}
+                                        disabled={isSavingAlias}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="btn-primary"
+                                        style={{ fontSize: '11px', padding: '2px 8px' }}
+                                        disabled={isSavingAlias}
+                                        onClick={async () => {
+                                          const trimmedValue = aliasValue.trim();
+                                          if (trimmedValue.length > 255) {
+                                            setAliasError('别名不能超过 255 个字符');
+                                            return;
+                                          }
+                                          setAliasError('');
+                                          setIsSavingAlias(true);
+                                          try {
+                                            await updateFieldAliases(file.id, [
+                                              {
+                                                normalized_name: field.normalized || field.name,
+                                                alias: trimmedValue || null,
+                                              },
+                                            ]);
+                                            setSchema((prev) => {
+                                              if (!prev) return prev;
+                                              return {
+                                                ...prev,
+                                                layers: prev.layers.map((l) => ({
+                                                  ...l,
+                                                  fields: l.fields.map((f) =>
+                                                    (f.normalized || f.name) ===
+                                                    (field.normalized || field.name)
+                                                      ? { ...f, alias: trimmedValue || null }
+                                                      : f,
+                                                  ),
+                                                })),
+                                              };
+                                            });
+                                            setEditingAlias(null);
+                                            setAliasValue('');
+                                          } catch (err) {
+                                            setAliasError(err.message || '保存失败');
+                                          } finally {
+                                            setIsSavingAlias(false);
+                                          }
+                                        }}
+                                      >
+                                        {isSavingAlias ? '...' : '保存'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        style={{ fontSize: '11px', padding: '2px 8px' }}
+                                        onClick={() => {
+                                          setEditingAlias(null);
+                                          setAliasValue('');
+                                          setAliasError('');
+                                        }}
+                                      >
+                                        取消
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="btn-text"
+                                      style={{ fontSize: '11px', padding: '0' }}
+                                      onClick={() => {
+                                        setEditingAlias(field.normalized || field.name);
+                                        setAliasValue(field.alias || '');
+                                        setAliasError('');
+                                      }}
+                                    >
+                                      {field.alias ? '修改别名' : '设置别名'}
+                                    </button>
+                                  )}
+                                  {aliasError &&
+                                    editingAlias === (field.normalized || field.name) && (
+                                      <div
+                                        style={{
+                                          fontSize: '11px',
+                                          color: '#d32f2f',
+                                          marginTop: '2px',
+                                        }}
+                                      >
+                                        {aliasError}
+                                      </div>
+                                    )}
                                 </div>
                               ))
                             )}
