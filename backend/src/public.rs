@@ -57,7 +57,12 @@ pub async fn get_public_tile(
 
     let meta: PublicTileFileMeta = conn
         .query_row(
-            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path, minzoom, maxzoom FROM files WHERE id = ? AND is_public = TRUE",
+            "SELECT f.crs, f.crs_type, f.data_bounds, f.status, f.table_name, f.tile_format, f.path,
+                    COALESCE(pf.minzoom, f.minzoom) as minzoom,
+                    COALESCE(pf.maxzoom, f.maxzoom) as maxzoom
+             FROM files f
+             LEFT JOIN published_files pf ON f.id = pf.file_id
+             WHERE f.id = ? AND f.is_public = TRUE",
             duckdb::params![&file_id],
             |row| Ok(PublicTileFileMeta {
                 crs: row.get(0)?,
@@ -467,7 +472,9 @@ pub async fn get_public_tile_meta(
 
     let (name, tile_source, minzoom, maxzoom): (String, String, Option<i32>, Option<i32>) = conn
         .query_row(
-            "SELECT f.name, COALESCE(pf.tile_source, f.tile_source, 'duckdb'), f.minzoom, f.maxzoom
+            "SELECT f.name, COALESCE(pf.tile_source, f.tile_source, 'duckdb'),
+                    COALESCE(pf.minzoom, f.minzoom) as minzoom,
+                    COALESCE(pf.maxzoom, f.maxzoom) as maxzoom
              FROM files f
              JOIN published_files pf ON f.id = pf.file_id
              WHERE pf.slug = ? AND f.is_public = TRUE",

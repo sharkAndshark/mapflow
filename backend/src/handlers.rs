@@ -15,6 +15,7 @@ use crate::{
         ErrorResponse, FeaturePropertiesResponse, FeatureProperty, FileItem, PreviewMeta,
         UpdateZoomRequest,
     },
+    read_preview_zoom_config,
     tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
 };
@@ -195,6 +196,16 @@ pub async fn get_preview_meta(
         data_bounds_array
     };
 
+    // For preview: tile files use file metadata zoom, dynamic data uses fixed range
+    let (preview_minzoom, preview_maxzoom) = if tile_format.is_some() {
+        // Tile file: use file metadata zoom
+        (minzoom, maxzoom)
+    } else {
+        // Dynamic data: use fixed preview zoom range from config
+        let (min, max) = read_preview_zoom_config();
+        (Some(min), Some(max))
+    };
+
     Ok(Json(PreviewMeta {
         id,
         name,
@@ -203,8 +214,8 @@ pub async fn get_preview_meta(
         bbox: bbox_values,
         data_bounds: data_bounds_array,
         tile_format,
-        minzoom,
-        maxzoom,
+        minzoom: preview_minzoom,
+        maxzoom: preview_maxzoom,
     }))
 }
 
@@ -701,34 +712,26 @@ pub async fn publish_file(
         }
     }
 
-    let insert_result = conn.execute(
-        "INSERT INTO published_files (file_id, slug, tile_source) VALUES (?, ?, ?)",
-        duckdb::params![&id, &slug, &tile_source],
-    );
+    let insert_result = if is_dynamic_data {
+        conn.execute(
+            "INSERT INTO published_files (file_id, slug, tile_source, minzoom, maxzoom) VALUES (?, ?, ?, ?, ?)",
+            duckdb::params![&id, &slug, &tile_source, req.min_zoom, req.max_zoom],
+        )
+    } else {
+        conn.execute(
+            "INSERT INTO published_files (file_id, slug, tile_source) VALUES (?, ?, ?)",
+            duckdb::params![&id, &slug, &tile_source],
+        )
+    };
 
     let publish_result: Result<(), String> = match insert_result {
-        Ok(_) => {
-            let mut update_sql = "UPDATE files SET is_public = TRUE".to_string();
-            let mut params: Vec<Box<dyn duckdb::ToSql>> = Vec::new();
-
-            if is_dynamic_data {
-                if let Some(min) = req.min_zoom {
-                    update_sql.push_str(", minzoom = ?");
-                    params.push(Box::new(min));
-                }
-                if let Some(max) = req.max_zoom {
-                    update_sql.push_str(", maxzoom = ?");
-                    params.push(Box::new(max));
-                }
-            }
-            update_sql.push_str(" WHERE id = ?");
-            params.push(Box::new(id.clone()));
-
-            let params_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-            conn.execute(&update_sql, params_refs.as_slice())
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        }
+        Ok(_) => conn
+            .execute(
+                "UPDATE files SET is_public = TRUE WHERE id = ?",
+                duckdb::params![&id],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
         Err(e) => {
             let err_msg = e.to_string();
             let is_file_already_published = err_msg.contains("PRIMARY KEY")
@@ -825,7 +828,7 @@ pub async fn unpublish_file(
 
     let update_result = conn
         .execute(
-            "UPDATE files SET is_public = FALSE, minzoom = NULL, maxzoom = NULL WHERE id = ?",
+            "UPDATE files SET is_public = FALSE WHERE id = ?",
             duckdb::params![&id],
         )
         .map_err(|e| e.to_string());
@@ -1003,7 +1006,7 @@ pub async fn update_tile_zoom(
 
     let (current_min, current_max): (Option<i32>, Option<i32>) = conn
         .query_row(
-            "SELECT minzoom, maxzoom FROM files WHERE id = ?",
+            "SELECT minzoom, maxzoom FROM published_files WHERE file_id = ?",
             duckdb::params![&id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -1017,7 +1020,7 @@ pub async fn update_tile_zoom(
         return Err(bad_request(&e));
     }
 
-    let mut update_sql = "UPDATE files SET ".to_string();
+    let mut update_sql = "UPDATE published_files SET ".to_string();
     let mut params: Vec<Box<dyn duckdb::ToSql>> = Vec::new();
     let mut has_update = false;
 
@@ -1047,7 +1050,7 @@ pub async fn update_tile_zoom(
         })));
     }
 
-    update_sql.push_str(" WHERE id = ?");
+    update_sql.push_str(" WHERE file_id = ?");
     params.push(Box::new(id.clone()));
 
     let params_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|p| p.as_ref()).collect();

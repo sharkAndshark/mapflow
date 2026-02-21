@@ -977,9 +977,9 @@ async fn test_dynamic_table_preview_returns_null_zoom() {
         .to_bytes();
     let preview: serde_json::Value = serde_json::from_slice(&preview_bytes).unwrap();
 
-    // Dynamic tables should return null for minZoom and maxZoom
-    assert!(preview["minZoom"].is_null());
-    assert!(preview["maxZoom"].is_null());
+    // Dynamic tables should return fixed preview zoom range (0, 22)
+    assert_eq!(preview["minZoom"], 0);
+    assert_eq!(preview["maxZoom"], 22);
 }
 
 #[tokio::test]
@@ -3799,24 +3799,27 @@ async fn test_publish_dynamic_data_with_zoom() {
     let response = app.clone().oneshot(publish_request).await.unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::OK);
 
-    let list_request = Request::builder()
+    // Zoom values for dynamic data are stored in published_files table,
+    // not in files table. Verify via public tile meta endpoint.
+    let meta_request = Request::builder()
         .method("GET")
-        .uri("/api/files")
+        .uri("/tiles/zoom-test/meta")
         .body(Body::empty())
         .unwrap();
 
-    let list_response = app.oneshot(list_request).await.unwrap();
-    let body_bytes = list_response
+    let meta_response = app.oneshot(meta_request).await.unwrap();
+    assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
+
+    let meta_body = meta_response
         .into_body()
         .collect()
         .await
         .unwrap()
         .to_bytes();
-    let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+    let meta_json: serde_json::Value = serde_json::from_slice(&meta_body).unwrap();
 
-    let published_file = files.iter().find(|f| f.id == file_id).unwrap();
-    assert_eq!(published_file.minzoom, Some(2));
-    assert_eq!(published_file.maxzoom, Some(10));
+    assert_eq!(meta_json["minZoom"], 2);
+    assert_eq!(meta_json["maxZoom"], 10);
 }
 
 #[tokio::test]
@@ -3904,24 +3907,27 @@ async fn test_update_tile_zoom_success() {
     let response = app.clone().oneshot(update_zoom_request).await.unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::OK);
 
-    let list_request = Request::builder()
+    // Zoom values for dynamic data are stored in published_files table,
+    // verify via public tile meta endpoint
+    let meta_request = Request::builder()
         .method("GET")
-        .uri("/api/files")
+        .uri("/tiles/update-zoom-test/meta")
         .body(Body::empty())
         .unwrap();
 
-    let list_response = app.oneshot(list_request).await.unwrap();
-    let body_bytes = list_response
+    let meta_response = app.oneshot(meta_request).await.unwrap();
+    assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
+
+    let meta_body = meta_response
         .into_body()
         .collect()
         .await
         .unwrap()
         .to_bytes();
-    let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+    let meta_json: serde_json::Value = serde_json::from_slice(&meta_body).unwrap();
 
-    let updated_file = files.iter().find(|f| f.id == file_id).unwrap();
-    assert_eq!(updated_file.minzoom, Some(5));
-    assert_eq!(updated_file.maxzoom, Some(15));
+    assert_eq!(meta_json["minZoom"], 5);
+    assert_eq!(meta_json["maxZoom"], 15);
 }
 
 #[tokio::test]
@@ -3953,24 +3959,27 @@ async fn test_update_tile_zoom_partial_update() {
     let response = app.clone().oneshot(update_zoom_request).await.unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::OK);
 
-    let list_request = Request::builder()
+    // Zoom values for dynamic data are stored in published_files table,
+    // verify via public tile meta endpoint
+    let meta_request = Request::builder()
         .method("GET")
-        .uri("/api/files")
+        .uri("/tiles/partial-zoom-test/meta")
         .body(Body::empty())
         .unwrap();
 
-    let list_response = app.oneshot(list_request).await.unwrap();
-    let body_bytes = list_response
+    let meta_response = app.oneshot(meta_request).await.unwrap();
+    assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
+
+    let meta_body = meta_response
         .into_body()
         .collect()
         .await
         .unwrap()
         .to_bytes();
-    let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+    let meta_json: serde_json::Value = serde_json::from_slice(&meta_body).unwrap();
 
-    let updated_file = files.iter().find(|f| f.id == file_id).unwrap();
-    assert_eq!(updated_file.minzoom, Some(2));
-    assert_eq!(updated_file.maxzoom, Some(18));
+    assert_eq!(meta_json["minZoom"], 2);
+    assert_eq!(meta_json["maxZoom"], 18);
 }
 
 #[tokio::test]
@@ -4375,24 +4384,26 @@ async fn test_unpublish_clears_zoom() {
     let response = app.clone().oneshot(publish_request).await.unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::OK);
 
-    let list_request = Request::builder()
+    // Verify zoom values are stored in published_files via public tile meta endpoint
+    let meta_request = Request::builder()
         .method("GET")
-        .uri("/api/files")
+        .uri("/tiles/unpublish-clears-zoom/meta")
         .body(Body::empty())
         .unwrap();
 
-    let list_response = app.clone().oneshot(list_request).await.unwrap();
-    let body_bytes = list_response
+    let meta_response = app.clone().oneshot(meta_request).await.unwrap();
+    assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
+
+    let meta_body = meta_response
         .into_body()
         .collect()
         .await
         .unwrap()
         .to_bytes();
-    let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+    let meta_json: serde_json::Value = serde_json::from_slice(&meta_body).unwrap();
 
-    let published_file = files.iter().find(|f| f.id == file_id).unwrap();
-    assert_eq!(published_file.minzoom, Some(5));
-    assert_eq!(published_file.maxzoom, Some(15));
+    assert_eq!(meta_json["minZoom"], 5);
+    assert_eq!(meta_json["maxZoom"], 15);
 
     let unpublish_request = Request::builder()
         .method("POST")
@@ -4403,24 +4414,16 @@ async fn test_unpublish_clears_zoom() {
     let unpublish_response = app.clone().oneshot(unpublish_request).await.unwrap();
     assert_eq!(unpublish_response.status(), axum::http::StatusCode::OK);
 
-    let list_request2 = Request::builder()
+    // After unpublish, the public tile meta endpoint should return 404
+    // because published_files record is deleted
+    let meta_request2 = Request::builder()
         .method("GET")
-        .uri("/api/files")
+        .uri("/tiles/unpublish-clears-zoom/meta")
         .body(Body::empty())
         .unwrap();
 
-    let list_response2 = app.oneshot(list_request2).await.unwrap();
-    let body_bytes2 = list_response2
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes();
-    let files2: Vec<FileItem> = serde_json::from_slice(&body_bytes2).unwrap();
-
-    let unpublished_file = files2.iter().find(|f| f.id == file_id).unwrap();
-    assert_eq!(unpublished_file.minzoom, None);
-    assert_eq!(unpublished_file.maxzoom, None);
+    let meta_response2 = app.oneshot(meta_request2).await.unwrap();
+    assert_eq!(meta_response2.status(), axum::http::StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
