@@ -276,6 +276,20 @@ mod tests {
         assert_eq!(min, 0);
         assert_eq!(max, 22);
 
+        // Test out-of-range values are clamped
+        std::env::set_var("PREVIEW_MIN_ZOOM", "-5");
+        std::env::set_var("PREVIEW_MAX_ZOOM", "30");
+        let (min, max) = read_preview_zoom_config();
+        assert_eq!(min, 0); // clamped to 0
+        assert_eq!(max, 22); // clamped to 22
+
+        // Test min > max is corrected (max clamped to min)
+        std::env::set_var("PREVIEW_MIN_ZOOM", "15");
+        std::env::set_var("PREVIEW_MAX_ZOOM", "5");
+        let (min, max) = read_preview_zoom_config();
+        assert_eq!(min, 15);
+        assert_eq!(max, 15); // clamped to min_zoom
+
         std::env::remove_var("PREVIEW_MIN_ZOOM");
         std::env::remove_var("PREVIEW_MAX_ZOOM");
     }
