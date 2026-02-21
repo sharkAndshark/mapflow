@@ -4423,6 +4423,145 @@ async fn test_unpublish_clears_zoom() {
     assert_eq!(unpublished_file.maxzoom, None);
 }
 
+#[tokio::test]
+async fn test_update_crs_success() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let update_crs_request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/files/{}/crs", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"crs": "EPSG:3857"}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(update_crs_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(result["id"], file_id);
+    assert_eq!(result["crs"], "EPSG:3857");
+    assert_eq!(result["crsType"], "standard");
+
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .body(Body::empty())
+        .unwrap();
+
+    let list_response = app.oneshot(list_request).await.unwrap();
+    let body_bytes = list_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+
+    let updated_file = files.iter().find(|f| f.id == file_id).unwrap();
+    assert_eq!(updated_file.crs, Some("EPSG:3857".to_string()));
+    assert_eq!(updated_file.crs_type, Some("standard".to_string()));
+}
+
+#[tokio::test]
+async fn test_update_crs_to_custom() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let update_crs_request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/files/{}/crs", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"crs": "LOCAL_GRID_2024"}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(update_crs_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(result["crs"], "LOCAL_GRID_2024");
+    assert_eq!(result["crsType"], "custom");
+}
+
+#[tokio::test]
+async fn test_update_crs_file_not_found() {
+    let (app, _temp) = setup_app().await;
+
+    let update_crs_request = Request::builder()
+        .method("PUT")
+        .uri("/api/files/non-existent-id/crs")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"crs": "EPSG:4326"}"#))
+        .unwrap();
+
+    let response = app.oneshot(update_crs_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_update_crs_missing_field() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let update_crs_request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/files/{}/crs", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{}"#))
+        .unwrap();
+
+    let response = app.oneshot(update_crs_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_update_crs_empty_string_sets_null() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let update_crs_request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/files/{}/crs", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"crs": ""}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(update_crs_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(result["crs"].is_null());
+    assert_eq!(result["crsType"], "custom");
+}
+
+#[tokio::test]
+async fn test_update_crs_not_ready_returns_409() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+
+    let update_crs_request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/files/{}/crs", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"crs": "EPSG:4326"}"#))
+        .unwrap();
+
+    let response = app.oneshot(update_crs_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+}
+
 // ============================================================================
 // Field Aliases Tests
 // ============================================================================

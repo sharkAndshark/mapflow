@@ -253,8 +253,12 @@ fn build_load_extension_sql(path: &Path) -> Result<String, String> {
     let raw_path = path
         .to_str()
         .ok_or_else(|| format!("Extension path is not valid UTF-8: {}", path.display()))?;
-    let escaped = raw_path.replace('\'', "''");
+    let escaped = escape_sql_string(raw_path);
     Ok(format!("LOAD '{}';", escaped))
+}
+
+pub fn escape_sql_string(s: &str) -> String {
+    s.replace('\'', "''")
 }
 
 fn try_load_spatial_from_path(conn: &duckdb::Connection, path: &Path) -> Result<(), String> {
@@ -397,6 +401,13 @@ mod tests {
         let path = Path::new("/tmp/mapflow's/spatial.duckdb_extension");
         let sql = build_load_extension_sql(path).expect("sql");
         assert_eq!(sql, "LOAD '/tmp/mapflow''s/spatial.duckdb_extension';");
+    }
+
+    #[test]
+    fn escape_sql_string_escapes_single_quotes() {
+        assert_eq!(escape_sql_string("normal_path"), "normal_path");
+        assert_eq!(escape_sql_string("path'with'quotes"), "path''with''quotes");
+        assert_eq!(escape_sql_string("user's data/file"), "user''s data/file");
     }
 
     #[test]

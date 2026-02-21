@@ -122,7 +122,7 @@ ST_Read_Meta 结果 → 归一化 + 分类
 - [x] E2E: 自定义 CRS 上传流程 (custom-crs.spec.js)
 - [x] E2E: 自定义 CRS 瓦片请求
 - [x] E2E: 预览页正常显示
-- [ ] Integration: PUT /api/files/:id/crs
+- [x] Integration: PUT /api/files/:id/crs (6 tests)
 
 #### 6. Future Test Data (Optional)
 
@@ -208,12 +208,11 @@ function calculateResolutions(bounds, maxZoom = 20) {
 - E2E-003：指向现有前端 E2E (`upload-formats.spec.js`)
 - E2E-005/006 (GPX/TopoJSON)：降为 P2，信任 GDAL 解析层
 
-### API 契约状态码不一致 (P1)
+### API 契约状态码不一致 (P1) ✅ Done (2026-02-20)
 
-| 问题 | 文档 | 实现 | 建议 |
-|------|------|------|------|
-| API-001 返回码 | 200 | 201 (CREATED) | 更新文档为 201 |
-| API-004/010 空瓦片 | 204 | 200 + 空 body | 统一为 204 或更新文档 |
+**验证结果**：文档与实现已一致，无需修改
+- API-001: 文档 201 / 实现 `StatusCode::CREATED` ✅
+- API-004/010 空瓦片: 文档 204 / 实现 `StatusCode::NO_CONTENT` ✅
 
 ### 测试设计改进 (P1)
 
