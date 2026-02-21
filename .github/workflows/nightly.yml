@@ -139,6 +139,10 @@ jobs:
             rust_target: aarch64-apple-darwin
             artifact_id: darwin-arm64
             duckdb_platform: osx_arm64
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            artifact_id: windows-amd64
+            duckdb_platform: windows_amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -173,6 +177,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install protobuf
 
+      - name: Install protobuf compiler (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protobuf -y
+
       - name: Build backend binary
         run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }}
 
@@ -188,7 +196,7 @@ jobs:
           bash scripts/release/package_bundle.sh \
             "${{ needs.meta.outputs.release_version }}" \
             "${{ matrix.artifact_id }}" \
-            "target/${{ matrix.rust_target }}/release/backend" \
+            "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}" \
             "${spatial_ext_path}" \
             "release-assets"
 
@@ -196,7 +204,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: binary-${{ matrix.artifact_id }}
-          path: release-assets/*.tar.gz
+          path: |
+            release-assets/*.tar.gz
+            release-assets/*.zip
 
   docker_build:
     needs:
@@ -359,3 +369,4 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release-assets/**/*.tar.gz
+            release-assets/**/*.zip
