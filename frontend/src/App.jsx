@@ -34,6 +34,18 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   const [isPublishing, setIsPublishing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // Cache slug validation result to avoid duplicate calls
+  const slugValidationError = useMemo(() => {
+    return validateSlug(publishSlug.trim()).error;
+  }, [publishSlug]);
+
+  // Real-time zoom validation for non-tile files
+  const isTileFile = file?.tileFormat != null;
+  const zoomValidationError = useMemo(() => {
+    if (isTileFile) return null;
+    return publishMinZoom > publishMaxZoom ? '最小层级不能大于最大层级' : null;
+  }, [publishMinZoom, publishMaxZoom, isTileFile]);
+
   useEffect(() => {
     const fileId = file?.id;
     const fileStatus = file?.status;
@@ -116,7 +128,6 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
     setIsPublishing(true);
 
     try {
-      const isTileFile = file.tileFormat != null;
       const options = {
         slug: publishSlug.trim() || undefined,
       };
@@ -245,10 +256,11 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                         placeholder={file.id}
                         className="form-input"
                         style={{ width: '100%' }}
+                        data-testid="publish-slug-input"
                       />
-                      {validateSlug(publishSlug.trim()).error && (
+                      {slugValidationError && (
                         <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
-                          {validateSlug(publishSlug.trim()).error}
+                          {slugValidationError}
                         </div>
                       )}
                       <small className="form-hint">
@@ -308,6 +320,11 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                       {file.tileFormat == null && (
                         <small className="form-hint">动态矢量数据可设置 0-22 层级范围</small>
                       )}
+                      {zoomValidationError && (
+                        <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
+                          {zoomValidationError}
+                        </div>
+                      )}
                     </div>
 
                     {/* Public URL preview */}
@@ -339,7 +356,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                         type="button"
                         className="btn-primary"
                         style={{ fontSize: '12px', padding: '4px 12px' }}
-                        disabled={isPublishing || !!validateSlug(publishSlug.trim()).error}
+                        disabled={isPublishing || !!slugValidationError || !!zoomValidationError}
                         onClick={handlePublishSubmit}
                       >
                         {isPublishing ? '发布中...' : '确认发布'}
