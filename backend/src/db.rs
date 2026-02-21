@@ -254,6 +254,9 @@ fn build_load_extension_sql(path: &Path) -> Result<String, String> {
     Ok(format!("LOAD '{}';", escaped))
 }
 
+/// Escapes single quotes in a string for use in DuckDB SQL string literals.
+/// Converts `'` to `''` which is the SQL standard escaping mechanism.
+/// This is sufficient for DuckDB which does not interpret backslashes in strings.
 pub fn escape_sql_string(s: &str) -> String {
     s.replace('\'', "''")
 }
@@ -405,6 +408,11 @@ mod tests {
         assert_eq!(escape_sql_string("normal_path"), "normal_path");
         assert_eq!(escape_sql_string("path'with'quotes"), "path''with''quotes");
         assert_eq!(escape_sql_string("user's data/file"), "user''s data/file");
+        // Edge cases
+        assert_eq!(escape_sql_string(""), ""); // empty string
+        assert_eq!(escape_sql_string("'"), "''"); // only single quote
+        assert_eq!(escape_sql_string("'''"), "''''''"); // multiple consecutive quotes
+        assert_eq!(escape_sql_string("no quotes here"), "no quotes here"); // normal path with spaces
     }
 
     #[test]
