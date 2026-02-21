@@ -42,6 +42,11 @@ build:
   npm --prefix frontend run build
   cargo build --release --manifest-path backend/Cargo.toml
 
+# Build release binary with embedded frontend dist
+build-embed:
+  npm --prefix frontend run build
+  cargo build --release --manifest-path backend/Cargo.toml --features embed-web-dist
+
 # --- Docker Operations (Explicit) ---
 
 # Start container (no rebuild by default)
