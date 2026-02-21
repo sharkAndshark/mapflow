@@ -33,6 +33,9 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   const sidebar = page.locator('.detail-sidebar');
   await expect(sidebar).toBeVisible();
 
+  // Switch to Publish tab
+  await sidebar.getByText('Publish', { exact: true }).click();
+
   // Click publish button in sidebar
   const publishButton = sidebar.getByText('发布', { exact: true });
   await expect(publishButton).toBeVisible();
@@ -85,6 +88,8 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   await readyRow.click();
 
   const readySidebar = page.locator('.detail-sidebar');
+  // Switch to Publish tab
+  await readySidebar.getByText('Publish', { exact: true }).click();
   await expect(readySidebar.getByText('已发布')).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
@@ -116,6 +121,9 @@ test('publish with default slug (empty input)', async ({ page }) => {
   const sidebar = page.locator('.detail-sidebar');
   await expect(sidebar).toBeVisible();
 
+  // Switch to Publish tab
+  await sidebar.getByText('Publish', { exact: true }).click();
+
   const publishButton = sidebar.getByText('发布', { exact: true });
   await publishButton.click();
 
@@ -138,6 +146,9 @@ test('slug validation: invalid characters', async ({ page }) => {
 
   const sidebar = page.locator('.detail-sidebar');
   await expect(sidebar).toBeVisible();
+
+  // Switch to Publish tab
+  await sidebar.getByText('Publish', { exact: true }).click();
 
   const publishButton = sidebar.getByText('发布', { exact: true });
   await publishButton.click();
@@ -165,6 +176,9 @@ test('slug validation: too long', async ({ page }) => {
 
   const sidebar = page.locator('.detail-sidebar');
   await expect(sidebar).toBeVisible();
+
+  // Switch to Publish tab
+  await sidebar.getByText('Publish', { exact: true }).click();
 
   const publishButton = sidebar.getByText('发布', { exact: true });
   await publishButton.click();

@@ -58,13 +58,14 @@
 | UI-001 | 预览可用性 | UI 仅在 status=ready 时显示"查看"按钮（位于文件行操作区），点击在新窗口打开地图预览 | 按钮状态正确 | `npm run test:e2e` | E2E | P0 |
 | UI-002 | 特征检查器 | 显示基于数据集 schema 的稳定属性字段，NULL 值显示为 `--`（斜体、静音），空字符串显示为 `""`（悬停区分） | NULL 和空字符串正确区分 | `npm run test:e2e` | E2E | P0 |
 | UI-003 | 特征高亮 | 在预览地图中点击特征时，被选中的特征会立即以黄色高亮显示（填充：rgba(255,200,0,0.7)，描边：#ffc800，宽度4px），未选中特征保持蓝色（填充：rgba(0,128,255,0.6)，描边：#0080ff，宽度2px） | 点击后特征样式立即切换，无需缩放或移动地图 | `npm run test:e2e` | E2E | P0 |
-| UI-004 | 字段信息显示 | Detail Sidebar 在 status=ready 时显示"字段信息"section，列出字段名和类型，支持加载中和错误状态 | 字段信息正确显示，状态转换正确 | `npm run test:e2e` | E2E | P1 |
+| UI-004 | 字段信息显示 | Detail Sidebar 的 Fields 选项卡在 status=ready 时显示字段表格（原始名称、别名、类型），支持内联编辑别名 | 字段信息正确显示，别名编辑正常 | `npm run test:e2e` | E2E | P1 |
 | UI-005 | 登录页面 | /login 显示登录表单，验证后跳转 | 跳转成功 | `npm run test:e2e` | E2E | P0 |
 | UI-006 | 首次设置 | /init 显示管理员创建表单 | 表单可提交 | `npm run test:e2e` | E2E | P0 |
 | UI-007 | 路由守卫 | 未认证访问受保护路由跳转登录页 | 自动跳转 | `npm run test:e2e` | E2E | P0 |
 | UI-008 | 文件行操作 | 文件列表每行显示操作按钮（仅 ready 状态）：[查看] [发布] 或 [查看] [复制] [取消发布] | 按钮状态正确 | `npm run test:e2e` | E2E | P0 |
 | UI-009 | 发布弹窗 | 点击"发布"打开模态框，显示文件名、slug 输入框（默认文件 ID）、公开地址预览，提交后更新列表 | 弹窗交互正确 | `npm run test:e2e` | E2E | P0 |
 | UI-010 | 缩放层级限制 | Preview 页面根据 API-003 返回的 minZoom/maxZoom 限制地图缩放。mbtiles 文件使用其元数据的缩放范围；动态表（非 mbtiles）不限制缩放（使用默认范围 0-22） | 地图缩放不超过允许范围 | `npm run test:e2e` | E2E | P1 |
+| UI-011 | Detail Sidebar 选项卡 | Detail Sidebar 包含三个选项卡：Basic Info（基本信息）、Fields（字段表格）、Publish（发布设置）。非 ready 状态时 Fields/Publish 显示提示信息 | 选项卡导航正常，内容切换正确 | `npm run test:e2e` | E2E | P2 |
 | E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `frontend/tests/upload-formats.spec.js` | E2E | P0 |
