@@ -2,11 +2,10 @@
 name = "backend"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
 
 [features]
 default = []
-embed-web-dist = []
+embed-web-dist = ["dep:include_dir"]
 
 [dependencies]
 axum = { version = "0.8", features = ["multipart"] }
@@ -34,6 +33,7 @@ rusqlite = { version = "0.38", features = ["bundled"] }
 moka = { version = "0.12", features = ["sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+include_dir = { version = "0.7.4", optional = true }
 
 [dev-dependencies]
 http-body-util = "0.1"
