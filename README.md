@@ -18,7 +18,6 @@ License: Apache-2.0
 
 Each binary bundle contains:
 - `mapflow` backend executable
-- prebuilt frontend (`dist/`)
 - offline spatial extension binary (`extensions/spatial.duckdb_extension`)
 - `spatial-extension-manifest.json`
 
@@ -66,6 +65,7 @@ mapflow.exe
 ```
 
 Binary bundles include `extensions/spatial.duckdb_extension` and load it automatically by default.
+Frontend assets are embedded into the binary for bundle releases.
 
 Optional runtime config:
 
@@ -104,7 +104,7 @@ mapflow.exe
 | `PORT` | `3000` | HTTP server port |
 | `DB_PATH` | `./data/mapflow.duckdb` | DuckDB path |
 | `UPLOAD_DIR` | `./uploads` | Upload storage directory |
-| `WEB_DIST` | `frontend/dist` | Frontend static assets path |
+| `WEB_DIST` | `frontend/dist` | Optional external frontend assets path (if missing, bundle binaries use embedded assets) |
 | `UPLOAD_MAX_SIZE_MB` | `200` | Upload max size |
 | `COOKIE_SECURE` | `false` | Set `true` behind HTTPS |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated CORS allowlist |
