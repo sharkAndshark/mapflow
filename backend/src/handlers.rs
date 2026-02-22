@@ -49,7 +49,7 @@ pub async fn list_files(
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_format, f.minzoom, f.maxzoom
+            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_format, f.minzoom, f.maxzoom, pf.use_aliases
           FROM files f
           LEFT JOIN published_files pf ON f.id = pf.file_id
           ORDER BY f.uploaded_at DESC",
@@ -67,6 +67,7 @@ pub async fn list_files(
             let tile_format: Option<String> = row.get(13)?;
             let minzoom: Option<i32> = row.get(14)?;
             let maxzoom: Option<i32> = row.get(15)?;
+            let use_aliases: Option<bool> = row.get(16)?;
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -87,6 +88,7 @@ pub async fn list_files(
                 tile_format,
                 minzoom,
                 maxzoom,
+                use_aliases,
             })
         })
         .map_err(internal_error)?;
@@ -316,8 +318,8 @@ pub async fn get_tile(
             .and_then(|j| DataBounds::from_json(j)),
     };
 
-    let select_sql =
-        build_mvt_select_sql(&conn, &id, &table_name, &tile_params, z, x, y).map_err(|e| {
+    let select_sql = build_mvt_select_sql(&conn, &id, &table_name, &tile_params, z, x, y, true)
+        .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -714,13 +716,13 @@ pub async fn publish_file(
 
     let insert_result = if is_dynamic_data {
         conn.execute(
-            "INSERT INTO published_files (file_id, slug, tile_source, minzoom, maxzoom) VALUES (?, ?, ?, ?, ?)",
-            duckdb::params![&id, &slug, &tile_source, req.min_zoom, req.max_zoom],
+            "INSERT INTO published_files (file_id, slug, tile_source, minzoom, maxzoom, use_aliases) VALUES (?, ?, ?, ?, ?, ?)",
+            duckdb::params![&id, &slug, &tile_source, req.min_zoom, req.max_zoom, req.use_aliases],
         )
     } else {
         conn.execute(
-            "INSERT INTO published_files (file_id, slug, tile_source) VALUES (?, ?, ?)",
-            duckdb::params![&id, &slug, &tile_source],
+            "INSERT INTO published_files (file_id, slug, tile_source, use_aliases) VALUES (?, ?, ?, ?)",
+            duckdb::params![&id, &slug, &tile_source, req.use_aliases],
         )
     };
 
@@ -786,6 +788,7 @@ pub async fn publish_file(
                 url,
                 slug,
                 is_public: true,
+                use_aliases: Some(req.use_aliases),
             }))
         }
         Err(err_msg) => {
@@ -1147,4 +1150,63 @@ pub async fn update_field_aliases(
     drop(conn);
 
     Ok(Json(serde_json::json!({ "success": true })))
+}
+
+pub async fn update_publish_settings(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Json(req): Json<crate::models::UpdatePublishSettingsRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let conn = state.db.lock().await;
+
+    // Check if file is published
+    let is_public: bool = conn
+        .query_row(
+            "SELECT COALESCE(is_public, FALSE) FROM files WHERE id = ?",
+            duckdb::params![&id],
+            |row| row.get(0),
+        )
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "File not found".to_string(),
+                }),
+            )
+        })?;
+
+    if !is_public {
+        drop(conn);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "File must be published before updating settings".to_string(),
+            }),
+        ));
+    }
+
+    // Update use_aliases if provided
+    if let Some(use_aliases) = req.use_aliases {
+        conn.execute(
+            "UPDATE published_files SET use_aliases = ? WHERE file_id = ?",
+            duckdb::params![use_aliases, &id],
+        )
+        .map_err(internal_error)?;
+    }
+
+    // Fetch current settings
+    let use_aliases: bool = conn
+        .query_row(
+            "SELECT COALESCE(use_aliases, TRUE) FROM published_files WHERE file_id = ?",
+            duckdb::params![&id],
+            |row| row.get(0),
+        )
+        .map_err(internal_error)?;
+
+    drop(conn);
+
+    Ok(Json(serde_json::json!({
+        "id": id,
+        "useAliases": use_aliases
+    })))
 }

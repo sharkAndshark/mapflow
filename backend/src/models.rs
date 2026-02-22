@@ -46,6 +46,8 @@ pub struct FileItem {
     pub minzoom: Option<i32>,
     #[serde(rename = "maxZoom", skip_serializing_if = "Option::is_none")]
     pub maxzoom: Option<i32>,
+    #[serde(rename = "useAliases", skip_serializing_if = "Option::is_none")]
+    pub use_aliases: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -115,6 +117,12 @@ pub struct PublishRequest {
     pub min_zoom: Option<i32>,
     #[serde(rename = "maxZoom")]
     pub max_zoom: Option<i32>,
+    #[serde(rename = "useAliases", default = "default_use_aliases")]
+    pub use_aliases: bool,
+}
+
+fn default_use_aliases() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize)]
@@ -122,6 +130,8 @@ pub struct PublishResponse {
     pub url: String,
     pub slug: String,
     pub is_public: bool,
+    #[serde(rename = "useAliases", skip_serializing_if = "Option::is_none")]
+    pub use_aliases: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -157,6 +167,12 @@ pub struct UpdateZoomRequest {
     pub min_zoom: Option<i32>,
     #[serde(rename = "maxZoom")]
     pub max_zoom: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePublishSettingsRequest {
+    #[serde(rename = "useAliases")]
+    pub use_aliases: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

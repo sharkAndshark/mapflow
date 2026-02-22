@@ -4,7 +4,13 @@ import {
   hasActiveJobs as computeHasActiveJobs,
   mergeServerFilesWithOptimistic,
 } from './polling.js';
-import { publishFile, unpublishFile, updateTileZoom, updateFieldAliases } from './api.js';
+import {
+  publishFile,
+  unpublishFile,
+  updateTileZoom,
+  updateFieldAliases,
+  updatePublishSettings,
+} from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 
 const STATUS_LABELS = {
@@ -24,6 +30,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   const [maxZoom, setMaxZoom] = useState(22);
   const [zoomError, setZoomError] = useState('');
   const [isSavingZoom, setIsSavingZoom] = useState(false);
+  const [editUseAliases, setEditUseAliases] = useState(false);
+  const [useAliasesValue, setUseAliasesValue] = useState(true);
+  const [isSavingUseAliases, setIsSavingUseAliases] = useState(false);
   const [editingAlias, setEditingAlias] = useState(null);
   const [aliasValue, setAliasValue] = useState('');
   const [aliasError, setAliasError] = useState('');
@@ -34,6 +43,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   const [publishSlug, setPublishSlug] = useState('');
   const [publishMinZoom, setPublishMinZoom] = useState(0);
   const [publishMaxZoom, setPublishMaxZoom] = useState(22);
+  const [publishUseAliases, setPublishUseAliases] = useState(true);
   const [publishError, setPublishError] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -99,6 +109,8 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
       setMaxZoom(file.maxZoom ?? 22);
       setEditZoom(false);
       setZoomError('');
+      setEditUseAliases(false);
+      setUseAliasesValue(file.useAliases ?? true);
       setEditingAlias(null);
       setAliasValue('');
       setAliasError('');
@@ -107,6 +119,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
       setPublishSlug('');
       setPublishMinZoom(file.minZoom ?? 0);
       setPublishMaxZoom(file.maxZoom ?? 22);
+      setPublishUseAliases(true);
       setPublishError('');
       setCopySuccess(false);
     }
@@ -137,6 +150,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
     try {
       const options = {
         slug: publishSlug.trim() || undefined,
+        useAliases: publishUseAliases,
       };
       if (!isTileFile) {
         options.minZoom = publishMinZoom;
@@ -334,6 +348,55 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                       )}
                     </div>
 
+                    {/* Field name settings */}
+                    <div>
+                      <label
+                        style={{
+                          fontSize: '12px',
+                          color: '#666',
+                          marginBottom: '4px',
+                          display: 'block',
+                        }}
+                      >
+                        字段名称
+                      </label>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="useAliases"
+                            checked={publishUseAliases}
+                            onChange={() => setPublishUseAliases(true)}
+                          />
+                          <span style={{ fontSize: '12px' }}>使用别名</span>
+                        </label>
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="useAliases"
+                            checked={!publishUseAliases}
+                            onChange={() => setPublishUseAliases(false)}
+                          />
+                          <span style={{ fontSize: '12px' }}>使用原始名称</span>
+                        </label>
+                      </div>
+                      <small className="form-hint">控制公开发布瓦片中的属性字段名称</small>
+                    </div>
+
                     {/* Public URL preview */}
                     <div>
                       <label
@@ -377,6 +440,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                           setPublishSlug('');
                           setPublishMinZoom(file.minZoom ?? 0);
                           setPublishMaxZoom(file.maxZoom ?? 22);
+                          setPublishUseAliases(true);
                           setPublishError('');
                         }}
                       >
@@ -524,6 +588,102 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                   瓦片文件的缩放层级由源文件决定
                 </small>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Field name settings for published files */}
+        {isReady && file.isPublic && file.tileFormat == null && (
+          <div className="detail-group">
+            <div className="detail-label">字段名称</div>
+            <div className="detail-value">
+              {editUseAliases ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="editUseAliases"
+                        checked={useAliasesValue}
+                        onChange={() => setUseAliasesValue(true)}
+                      />
+                      <span style={{ fontSize: '12px' }}>使用别名</span>
+                    </label>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="editUseAliases"
+                        checked={!useAliasesValue}
+                        onChange={() => setUseAliasesValue(false)}
+                      />
+                      <span style={{ fontSize: '12px' }}>使用原始名称</span>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ fontSize: '12px', padding: '4px 12px' }}
+                      disabled={isSavingUseAliases}
+                      onClick={async () => {
+                        setIsSavingUseAliases(true);
+                        try {
+                          await updatePublishSettings(file.id, { useAliases: useAliasesValue });
+                          setEditUseAliases(false);
+                        } catch (err) {
+                          console.error('Failed to update use_aliases:', err);
+                        } finally {
+                          setIsSavingUseAliases(false);
+                        }
+                      }}
+                    >
+                      {isSavingUseAliases ? '保存中...' : '保存'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '12px', padding: '4px 12px' }}
+                      onClick={() => {
+                        setUseAliasesValue(file.useAliases ?? true);
+                        setEditUseAliases(false);
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <span>{file.useAliases !== false ? '使用别名' : '使用原始名称'}</span>
+                  <button
+                    type="button"
+                    className="btn-text"
+                    style={{ fontSize: '12px' }}
+                    onClick={() => setEditUseAliases(true)}
+                  >
+                    修改
+                  </button>
+                </div>
+              )}
+              <small className="form-hint" style={{ marginTop: '4px' }}>
+                控制公开发布瓦片中的属性字段名称
+              </small>
             </div>
           </div>
         )}

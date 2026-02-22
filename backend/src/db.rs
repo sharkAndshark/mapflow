@@ -118,6 +118,10 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     let _ = conn.execute("ALTER TABLE files ADD COLUMN data_bounds VARCHAR", []);
     let _ = conn.execute("ALTER TABLE published_files ADD COLUMN minzoom INTEGER", []);
     let _ = conn.execute("ALTER TABLE published_files ADD COLUMN maxzoom INTEGER", []);
+    let _ = conn.execute(
+        "ALTER TABLE published_files ADD COLUMN use_aliases BOOLEAN DEFAULT TRUE",
+        [],
+    );
 
     conn.execute_batch(
         r"

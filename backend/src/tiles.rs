@@ -25,6 +25,7 @@ impl From<duckdb::Error> for TileError {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_mvt_select_sql(
     conn: &Connection,
     source_id: &str,
@@ -33,6 +34,7 @@ pub fn build_mvt_select_sql(
     z: i32,
     x: i32,
     y: i32,
+    use_aliases: bool,
 ) -> Result<String, TileError> {
     if params.crs_type == CRS_TYPE_CUSTOM {
         match &params.data_bounds {
@@ -84,7 +86,11 @@ pub fn build_mvt_select_sql(
 
     for entry in props_iter {
         let (normalized, original, alias) = entry?;
-        let display_name = alias.unwrap_or(original);
+        let display_name = if use_aliases {
+            alias.unwrap_or(original)
+        } else {
+            original
+        };
         let key = display_name.replace('"', "\"\"");
         struct_fields.push(format!("\"{key}\" := \"{normalized}\""));
     }

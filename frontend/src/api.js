@@ -30,6 +30,7 @@ export async function publishFile(fileId, options = {}) {
   if (options.slug) body.slug = options.slug;
   if (options.minZoom !== undefined) body.minZoom = options.minZoom;
   if (options.maxZoom !== undefined) body.maxZoom = options.maxZoom;
+  if (options.useAliases !== undefined) body.useAliases = options.useAliases;
 
   const res = await fetchWithAuth(`/api/files/${fileId}/publish`, {
     method: 'POST',
@@ -80,6 +81,22 @@ export async function updateFieldAliases(fileId, fields) {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || '更新字段别名失败');
+  }
+  return res.json();
+}
+
+export async function updatePublishSettings(fileId, settings) {
+  const body = {};
+  if (settings.useAliases !== undefined) body.useAliases = settings.useAliases;
+
+  const res = await fetchWithAuth(`/api/files/${fileId}/publish-settings`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '更新发布设置失败');
   }
   return res.json();
 }

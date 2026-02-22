@@ -89,6 +89,7 @@ mod tests {
             published_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             minzoom INTEGER,
             maxzoom INTEGER,
+            use_aliases BOOLEAN DEFAULT TRUE,
             FOREIGN KEY (file_id) REFERENCES files(id)
         );
 
@@ -152,6 +153,7 @@ mod tests {
             tile_format: None,
             minzoom: None,
             maxzoom: None,
+            use_aliases: None,
         };
 
         let conn = state.db.lock().await;

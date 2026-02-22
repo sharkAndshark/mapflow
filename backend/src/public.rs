@@ -30,6 +30,7 @@ struct PublicTileFileMeta {
     file_path: String,
     minzoom: Option<i32>,
     maxzoom: Option<i32>,
+    use_aliases: bool,
 }
 
 pub async fn get_public_tile(
@@ -59,7 +60,8 @@ pub async fn get_public_tile(
         .query_row(
             "SELECT f.crs, f.crs_type, f.data_bounds, f.status, f.table_name, f.tile_format, f.path,
                     COALESCE(pf.minzoom, f.minzoom) as minzoom,
-                    COALESCE(pf.maxzoom, f.maxzoom) as maxzoom
+                    COALESCE(pf.maxzoom, f.maxzoom) as maxzoom,
+                    COALESCE(pf.use_aliases, TRUE) as use_aliases
              FROM files f
              LEFT JOIN published_files pf ON f.id = pf.file_id
              WHERE f.id = ? AND f.is_public = TRUE",
@@ -74,6 +76,7 @@ pub async fn get_public_tile(
                 file_path: row.get(6)?,
                 minzoom: row.get(7)?,
                 maxzoom: row.get(8)?,
+                use_aliases: row.get(9)?,
             }),
         )
         .map_err(|_| {
@@ -148,15 +151,24 @@ pub async fn get_public_tile(
             .and_then(|j| DataBounds::from_json(j)),
     };
 
-    let select_sql = build_mvt_select_sql(&conn, &file_id, &table_name, &tile_params, z, x, y)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Tile generation error: {}", e.0),
-                }),
-            )
-        })?;
+    let select_sql = build_mvt_select_sql(
+        &conn,
+        &file_id,
+        &table_name,
+        &tile_params,
+        z,
+        x,
+        y,
+        meta.use_aliases,
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Tile generation error: {}", e.0),
+            }),
+        )
+    })?;
 
     let query_params = build_mvt_query_params(&tile_params, z, x, y);
     let params_slice: Vec<&dyn duckdb::ToSql> = query_params.iter().map(|p| p.as_ref()).collect();
