@@ -1187,11 +1187,21 @@ pub async fn update_publish_settings(
 
     // Update use_aliases if provided
     if let Some(use_aliases) = req.use_aliases {
-        conn.execute(
-            "UPDATE published_files SET use_aliases = ? WHERE file_id = ?",
-            duckdb::params![use_aliases, &id],
-        )
-        .map_err(internal_error)?;
+        let rows_affected = conn
+            .execute(
+                "UPDATE published_files SET use_aliases = ? WHERE file_id = ?",
+                duckdb::params![use_aliases, &id],
+            )
+            .map_err(internal_error)?;
+        if rows_affected == 0 {
+            drop(conn);
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Published file record not found".to_string(),
+                }),
+            ));
+        }
     }
 
     // Fetch current settings

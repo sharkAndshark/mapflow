@@ -21,7 +21,7 @@ const STATUS_LABELS = {
   failed: '失败',
 };
 
-function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
+function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliasesUpdate }) {
   const [schema, setSchema] = useState(null);
   const [schemaError, setSchemaError] = useState(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
@@ -32,6 +32,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   const [isSavingZoom, setIsSavingZoom] = useState(false);
   const [editUseAliases, setEditUseAliases] = useState(false);
   const [useAliasesValue, setUseAliasesValue] = useState(true);
+  const [useAliasesError, setUseAliasesError] = useState('');
   const [isSavingUseAliases, setIsSavingUseAliases] = useState(false);
   const [editingAlias, setEditingAlias] = useState(null);
   const [aliasValue, setAliasValue] = useState('');
@@ -111,6 +112,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
       setZoomError('');
       setEditUseAliases(false);
       setUseAliasesValue(file.useAliases ?? true);
+      setUseAliasesError('');
       setEditingAlias(null);
       setAliasValue('');
       setAliasError('');
@@ -640,12 +642,18 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                       style={{ fontSize: '12px', padding: '4px 12px' }}
                       disabled={isSavingUseAliases}
                       onClick={async () => {
+                        setUseAliasesError('');
                         setIsSavingUseAliases(true);
                         try {
-                          await updatePublishSettings(file.id, { useAliases: useAliasesValue });
+                          await updatePublishSettings(file.id, {
+                            useAliases: useAliasesValue,
+                          });
                           setEditUseAliases(false);
+                          if (onUseAliasesUpdate) {
+                            onUseAliasesUpdate(file.id, useAliasesValue);
+                          }
                         } catch (err) {
-                          console.error('Failed to update use_aliases:', err);
+                          setUseAliasesError(err.message || '更新字段名称设置失败');
                         } finally {
                           setIsSavingUseAliases(false);
                         }
@@ -660,11 +668,17 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                       onClick={() => {
                         setUseAliasesValue(file.useAliases ?? true);
                         setEditUseAliases(false);
+                        setUseAliasesError('');
                       }}
                     >
                       取消
                     </button>
                   </div>
+                  {useAliasesError && (
+                    <div className="alert" style={{ fontSize: '12px', margin: 0 }}>
+                      {useAliasesError}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div
@@ -948,6 +962,10 @@ export default function App() {
     setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, minZoom, maxZoom } : f)));
   }
 
+  function handleUseAliasesUpdate(fileId, useAliases) {
+    setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, useAliases } : f)));
+  }
+
   // Derive selected file object
   const selectedFile = useMemo(
     () => files.find((f) => f.id === selectedId) || null,
@@ -1166,6 +1184,7 @@ export default function App() {
               onZoomUpdate={handleZoomUpdate}
               onPublish={handlePublish}
               onUnpublish={handleUnpublish}
+              onUseAliasesUpdate={handleUseAliasesUpdate}
             />
           </div>
         </div>
