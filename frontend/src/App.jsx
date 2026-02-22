@@ -412,6 +412,13 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                                     }
                                   };
 
+                                  const handleCellKeyDown = (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      handleStartEdit();
+                                    }
+                                  };
+
                                   return (
                                     <tr
                                       key={fieldKey}
@@ -425,6 +432,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                                         className={`alias-cell ${isEditing ? 'editing' : ''}`}
                                         style={{ padding: '6px 8px', verticalAlign: 'top' }}
                                         onClick={!isEditing ? handleStartEdit : undefined}
+                                        onKeyDown={!isEditing ? handleCellKeyDown : undefined}
+                                        role={!isEditing ? 'button' : undefined}
+                                        tabIndex={!isEditing ? 0 : undefined}
+                                        aria-label={`编辑别名: ${field.alias || '未设置'}`}
                                       >
                                         {isEditing ? (
                                           <div>

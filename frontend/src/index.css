@@ -656,6 +656,11 @@ h1 {
   background-color: #f5f5f5;
 }
 
+.alias-cell:focus-visible {
+  outline: 2px solid #0080ff;
+  outline-offset: 2px;
+}
+
 .alias-cell.editing {
   cursor: default;
   background-color: #fff;

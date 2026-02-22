@@ -152,6 +152,27 @@ test('empty alias shows placeholder', async ({ page }) => {
   expect(text.trim()).toBe('-');
 });
 
+test('alias length validation shows error', async ({ page }) => {
+  const row = await uploadAndWaitReady(page);
+  await openFieldsTab(page, row);
+
+  const aliasCell = page.locator('.fields-table tbody tr:first-child td.alias-cell');
+  await aliasCell.click();
+
+  const input = aliasCell.getByRole('textbox');
+
+  // Create a string longer than 255 characters
+  const longAlias = 'a'.repeat(256);
+  await input.fill(longAlias);
+  await input.press('Enter');
+
+  // Verify error message appears
+  await expect(aliasCell.getByText('别名不能超过 255 个字符')).toBeVisible();
+
+  // Verify edit mode is still active (not saved)
+  await expect(aliasCell.getByRole('textbox')).toBeVisible();
+});
+
 test('alias persists after reload', async ({ page }) => {
   const row = await uploadAndWaitReady(page);
   await openFieldsTab(page, row);
