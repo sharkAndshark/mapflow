@@ -8,10 +8,6 @@ default = []
 embed-web-dist = ["dep:include_dir"]
 embed-spatial-extension = []
 
-[features]
-default = []
-embed-web-dist = ["dep:include_dir"]
-
 [dependencies]
 axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
