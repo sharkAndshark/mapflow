@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 embed-web-dist = ["dep:include_dir"]
+embed-spatial-extension = []
 
 [features]
 default = []

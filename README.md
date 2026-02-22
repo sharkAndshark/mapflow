@@ -18,7 +18,7 @@ License: Apache-2.0
 
 Each binary bundle contains:
 - `mapflow` backend executable
-- offline spatial extension binary (`extensions/spatial.duckdb_extension`)
+- embedded DuckDB spatial extension (materialized to local cache/tmp on startup)
 - `spatial-extension-manifest.json`
 
 ## Quickstart (Docker)
@@ -64,7 +64,7 @@ mapflow.exe
 .\mapflow.exe
 ```
 
-Binary bundles include `extensions/spatial.duckdb_extension` and load it automatically by default.
+Binary bundles embed the spatial extension and auto-extract/load it on startup.
 Frontend assets are embedded into the binary for bundle releases.
 
 Optional runtime config:
@@ -110,6 +110,7 @@ mapflow.exe
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated CORS allowlist |
 | `SPATIAL_EXTENSION_PATH` | unset | Explicit local spatial extension path |
 | `SPATIAL_EXTENSION_DIR` | unset | Directory containing `spatial.duckdb_extension` |
+| `SPATIAL_EXTENSION_CACHE_DIR` | unset | Preferred directory for extracted embedded spatial extension |
 
 ## Development
 
@@ -124,6 +125,7 @@ Common commands:
 just check
 just test
 just docker-up-build
+just bump-duckdb 1.4.4
 ```
 
 ## Contracts & Internal Docs
