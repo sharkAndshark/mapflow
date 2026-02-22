@@ -107,7 +107,7 @@ h1 {
 }
 
 .detail-area {
-  width: 320px;
+  width: 360px;
   flex-shrink: 0;
   background: #fcfcfc;
   display: flex;
@@ -645,8 +645,51 @@ h1 {
   letter-spacing: 0.5px;
 }
 
-.fields-table td:last-child {
-  text-align: right;
+/* Alias cell styles */
+.alias-cell {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.alias-cell:hover {
+  background-color: #f5f5f5;
+}
+
+.alias-cell:focus-visible {
+  outline: 2px solid #0080ff;
+  outline-offset: 2px;
+}
+
+.alias-cell.editing {
+  cursor: default;
+  background-color: #fff;
+}
+
+.alias-input {
+  width: 100%;
+  min-width: 80px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  outline: none;
+}
+
+.alias-input:focus {
+  border-color: #0080ff;
+  box-shadow: 0 0 0 2px rgba(0, 128, 255, 0.15);
+}
+
+.alias-buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.alias-buttons button {
+  font-size: 12px;
+  padding: 4px 10px;
 }
 
 .type-tag {
