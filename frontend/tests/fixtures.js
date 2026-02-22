@@ -52,6 +52,11 @@ const waitForPort = async (port, expectedRunId, timeout = 30000) => {
           continue;
         }
         if (payload.testRunId === expectedRunId) return true;
+        if (payload.testRunId && payload.testRunId !== expectedRunId) {
+          console.warn(
+            `[Worker] Port ${port} responding but testRunId mismatch: got ${payload.testRunId}, expected ${expectedRunId}`,
+          );
+        }
       }
     } catch (e) {
       // ignore
