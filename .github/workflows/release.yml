@@ -155,8 +155,16 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install protobuf -y
 
+      - name: Prepare spatial extension for binary embedding
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/release/spatial_extension_artifact.sh download \
+            "${{ matrix.duckdb_platform }}" \
+            "backend/extensions/spatial.duckdb_extension"
+
       - name: Build backend binary
-        run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist
+        run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist,embed-spatial-extension
 
       - name: Package bundle
         id: package
@@ -164,15 +172,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          spatial_ext_path="release-assets/spatial.duckdb_extension"
-          bash scripts/release/spatial_extension_artifact.sh download \
-            "${{ matrix.duckdb_platform }}" \
-            "${spatial_ext_path}"
           bash scripts/release/package_bundle.sh \
             "${{ github.ref_name }}" \
             "${{ matrix.artifact_id }}" \
             "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}" \
-            "${spatial_ext_path}" \
             "release-assets"
 
       - name: Upload binary bundle

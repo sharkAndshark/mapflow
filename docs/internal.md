@@ -13,7 +13,9 @@ React → HTTP → Axum → DuckDB
 - 栅格瓦片（PNG）：仅静态显示，禁用交互
 
 **DuckDB Spatial 扩展加载：**
-- 启动时优先加载本地 `spatial.duckdb_extension`（支持离线部署）
+- binary bundle 构建时内嵌 `spatial.duckdb_extension`，启动时优先解包到本地 cache/tmp 后加载（支持离线部署）
+- cache/tmp 内容被清理后，启动时会自动重新解包；可通过 `SPATIAL_EXTENSION_CACHE_DIR` 指定更稳定/更严格权限的目录
+- 启动时继续支持加载本地 `spatial.duckdb_extension`（环境变量或可执行文件同目录）
 - 本地加载失败时回退到 DuckDB 默认 `LOAD/INSTALL spatial` 流程
 - `backend/extensions/spatial-extension-manifest.json` 与 `Cargo.lock` 版本必须同步（CI 强校验）
 
@@ -34,4 +36,4 @@ Axum 0.8, axum-login, tower-sessions, DuckDB, OpenLayers
 
 - Stable：`v*` tag 触发，发布 GHCR 多架构镜像与二进制 bundle 资产
 - Nightly：每日 UTC 02:00 自动触发（也支持手动触发），发布 prerelease 与 nightly 镜像标签
-- 发布产物内置 `spatial.duckdb_extension`（按目标平台打包），支持离线启动
+- 二进制发布产物内嵌 `spatial.duckdb_extension`（按目标平台编译时注入），支持单可执行文件离线启动
