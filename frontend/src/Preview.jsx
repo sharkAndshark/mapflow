@@ -552,13 +552,29 @@ export default function Preview() {
                   {popupContent.map((entry) => {
                     const key = entry?.key;
                     const value = entry?.value;
+                    const alias = entry?.alias;
                     const formatted = formatInspectorValue(value);
                     const isNull = formatted.tone === 'null';
                     const isEmptyString = formatted.tone === 'empty';
                     return (
                       <tr key={String(key)} style={{ borderBottom: '1px solid #eee' }}>
                         <td style={{ fontWeight: '600', padding: '4px 8px 4px 0', color: '#555' }}>
-                          {key}
+                          {alias ? (
+                            <>
+                              <span>{alias}</span>
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  color: '#999',
+                                  marginLeft: '4px',
+                                }}
+                              >
+                                {key}
+                              </span>
+                            </>
+                          ) : (
+                            key
+                          )}
                         </td>
                         <td
                           style={{

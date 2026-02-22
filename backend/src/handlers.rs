@@ -397,7 +397,7 @@ pub async fn get_feature_properties(
 
     let mut cols_stmt = conn
         .prepare(
-            "SELECT normalized_name, original_name\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
+            "SELECT normalized_name, original_name, alias\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
         )
         .map_err(internal_error)?;
 
@@ -405,17 +405,18 @@ pub async fn get_feature_properties(
         .query_map(duckdb::params![&id], |row| {
             let normalized: String = row.get(0)?;
             let original: String = row.get(1)?;
-            Ok((normalized, original))
+            let alias: Option<String> = row.get(2)?;
+            Ok((normalized, original, alias))
         })
         .map_err(internal_error)?;
 
-    let mut columns: Vec<(String, String)> = Vec::new();
+    let mut columns: Vec<(String, String, Option<String>)> = Vec::new();
     for c in cols_iter {
         columns.push(c.map_err(internal_error)?);
     }
 
     let mut select_exprs: Vec<String> = Vec::with_capacity(columns.len());
-    for (normalized, _original) in &columns {
+    for (normalized, _original, _alias) in &columns {
         select_exprs.push(format!("\"{normalized}\""));
     }
 
@@ -438,7 +439,7 @@ pub async fn get_feature_properties(
     };
 
     let mut properties: Vec<FeatureProperty> = Vec::with_capacity(columns.len());
-    for (index, (_normalized, original)) in columns.iter().enumerate() {
+    for (index, (_normalized, original, alias)) in columns.iter().enumerate() {
         let raw = match row.get_ref(index).map_err(internal_error)? {
             ValueRef::Null => serde_json::Value::Null,
             ValueRef::Boolean(v) => serde_json::Value::Bool(v),
@@ -465,6 +466,7 @@ pub async fn get_feature_properties(
         properties.push(FeatureProperty {
             key: original.clone(),
             value: raw,
+            alias: alias.clone(),
         });
     }
 
