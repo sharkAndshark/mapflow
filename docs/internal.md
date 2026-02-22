@@ -14,6 +14,7 @@ React → HTTP → Axum → DuckDB
 
 **DuckDB Spatial 扩展加载：**
 - binary bundle 构建时内嵌 `spatial.duckdb_extension`，启动时优先解包到本地 cache/tmp 后加载（支持离线部署）
+- cache/tmp 内容被清理后，启动时会自动重新解包；可通过 `SPATIAL_EXTENSION_CACHE_DIR` 指定更稳定/更严格权限的目录
 - 启动时继续支持加载本地 `spatial.duckdb_extension`（环境变量或可执行文件同目录）
 - 本地加载失败时回退到 DuckDB 默认 `LOAD/INSTALL spatial` 流程
 - `backend/extensions/spatial-extension-manifest.json` 与 `Cargo.lock` 版本必须同步（CI 强校验）

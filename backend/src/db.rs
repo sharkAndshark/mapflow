@@ -1,4 +1,7 @@
 #[cfg(feature = "embed-spatial-extension")]
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(feature = "embed-spatial-extension")]
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     path::{Path, PathBuf},
@@ -265,12 +268,38 @@ fn embedded_spatial_extension_directories() -> Vec<PathBuf> {
 }
 
 #[cfg(feature = "embed-spatial-extension")]
+fn embedded_spatial_extension_file_len(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len())
+}
+
+#[cfg(feature = "embed-spatial-extension")]
+fn verify_materialized_embedded_spatial_extension(
+    path: &Path,
+    expected_len: u64,
+) -> Result<(), String> {
+    match embedded_spatial_extension_file_len(path) {
+        Some(actual_len) if actual_len == expected_len => Ok(()),
+        Some(actual_len) => Err(format!(
+            "Embedded spatial extension size mismatch at {}: expected {} bytes, got {} bytes",
+            path.display(),
+            expected_len,
+            actual_len
+        )),
+        None => Err(format!(
+            "Embedded spatial extension missing after materialization at {}",
+            path.display()
+        )),
+    }
+}
+
+#[cfg(feature = "embed-spatial-extension")]
 fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
     let expected_len = EMBEDDED_SPATIAL_EXTENSION.len() as u64;
-    if let Ok(metadata) = std::fs::metadata(path) {
-        if metadata.is_file() && metadata.len() == expected_len {
-            return Ok(());
-        }
+    if embedded_spatial_extension_file_len(path) == Some(expected_len) {
+        return Ok(());
     }
 
     let parent = path
@@ -287,18 +316,30 @@ fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
 
     std::fs::write(&tmp_path, EMBEDDED_SPATIAL_EXTENSION)
         .map_err(|e| format!("Failed to write {}: {}", tmp_path.display(), e))?;
+    #[cfg(unix)]
+    std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("Failed to set permissions on {}: {}", tmp_path.display(), e))?;
 
     match std::fs::rename(&tmp_path, path) {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            let verify_result = verify_materialized_embedded_spatial_extension(path, expected_len);
+            if verify_result.is_err() {
+                let _ = std::fs::remove_file(path);
+            }
+            verify_result
+        }
         Err(rename_err) => {
-            if let Ok(metadata) = std::fs::metadata(path) {
-                if metadata.is_file() && metadata.len() == expected_len {
-                    let _ = std::fs::remove_file(&tmp_path);
-                    return Ok(());
-                }
+            if embedded_spatial_extension_file_len(path) == Some(expected_len) {
+                let _ = std::fs::remove_file(&tmp_path);
+                return Ok(());
             }
             if std::fs::remove_file(path).is_ok() && std::fs::rename(&tmp_path, path).is_ok() {
-                return Ok(());
+                let verify_result =
+                    verify_materialized_embedded_spatial_extension(path, expected_len);
+                if verify_result.is_err() {
+                    let _ = std::fs::remove_file(path);
+                }
+                return verify_result;
             }
             let _ = std::fs::remove_file(&tmp_path);
             Err(format!(
@@ -629,5 +670,79 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM test", [], |r| r.get(0))
             .expect("query");
         assert_eq!(count, 1);
+    }
+
+    #[cfg(feature = "embed-spatial-extension")]
+    #[test]
+    fn write_embedded_spatial_extension_materializes_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp
+            .path()
+            .join("extensions")
+            .join("spatial.duckdb_extension");
+
+        write_embedded_spatial_extension(&path).expect("write embedded extension");
+
+        let metadata = std::fs::metadata(&path).expect("embedded metadata");
+        assert!(metadata.is_file());
+        assert_eq!(metadata.len(), EMBEDDED_SPATIAL_EXTENSION.len() as u64);
+    }
+
+    #[cfg(feature = "embed-spatial-extension")]
+    #[test]
+    fn write_embedded_spatial_extension_replaces_wrong_size_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp
+            .path()
+            .join("extensions")
+            .join("spatial.duckdb_extension");
+        let parent = path.parent().expect("parent");
+        std::fs::create_dir_all(parent).expect("create dir");
+        std::fs::write(&path, b"bad").expect("write bad file");
+
+        write_embedded_spatial_extension(&path).expect("rewrite embedded extension");
+
+        let metadata = std::fs::metadata(&path).expect("embedded metadata");
+        assert!(metadata.is_file());
+        assert_eq!(metadata.len(), EMBEDDED_SPATIAL_EXTENSION.len() as u64);
+    }
+
+    #[cfg(feature = "embed-spatial-extension")]
+    #[test]
+    fn verify_materialized_embedded_spatial_extension_rejects_size_mismatch() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp
+            .path()
+            .join("extensions")
+            .join("spatial.duckdb_extension");
+        let parent = path.parent().expect("parent");
+        std::fs::create_dir_all(parent).expect("create dir");
+        std::fs::write(&path, b"bad").expect("write bad file");
+
+        let expected_len = EMBEDDED_SPATIAL_EXTENSION.len() as u64;
+        let error = verify_materialized_embedded_spatial_extension(&path, expected_len)
+            .expect_err("expected size mismatch");
+        assert!(error.contains("size mismatch"));
+    }
+
+    #[cfg(all(feature = "embed-spatial-extension", unix))]
+    #[test]
+    fn write_embedded_spatial_extension_sets_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp
+            .path()
+            .join("extensions")
+            .join("spatial.duckdb_extension");
+
+        write_embedded_spatial_extension(&path).expect("write embedded extension");
+
+        let mode = std::fs::metadata(&path)
+            .expect("embedded metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }
