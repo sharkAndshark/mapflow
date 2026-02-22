@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext.jsx';
 import {
   hasActiveJobs as computeHasActiveJobs,
@@ -36,6 +36,23 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
   const [aliasValue, setAliasValue] = useState('');
   const [aliasError, setAliasError] = useState('');
   const [isSavingAlias, setIsSavingAlias] = useState(false);
+  const aliasEditRef = useRef(null);
+
+  // Handle click outside to cancel alias editing
+  useEffect(() => {
+    if (!editingAlias) return;
+
+    const handleClickOutside = (event) => {
+      if (aliasEditRef.current && !aliasEditRef.current.contains(event.target)) {
+        setEditingAlias(null);
+        setAliasValue('');
+        setAliasError('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [editingAlias]);
 
   // Publish-related state
   const [editPublish, setEditPublish] = useState(false);
@@ -318,162 +335,160 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish }) {
                                 >
                                   类型
                                 </th>
-                                <th
-                                  style={{
-                                    textAlign: 'left',
-                                    padding: '4px 8px',
-                                    color: '#666',
-                                    fontWeight: 500,
-                                  }}
-                                >
-                                  操作
-                                </th>
                               </tr>
                             </thead>
                             <tbody>
                               {layer.fields.length === 0 ? (
                                 <tr>
                                   <td
-                                    colSpan="4"
+                                    colSpan="3"
                                     style={{ padding: '8px', color: '#999', fontStyle: 'italic' }}
                                   >
                                     无字段
                                   </td>
                                 </tr>
                               ) : (
-                                layer.fields.map((field) => (
-                                  <tr
-                                    key={field.normalized || field.name}
-                                    style={{ borderBottom: '1px solid #f0f0f0' }}
-                                  >
-                                    <td style={{ padding: '6px 8px' }}>
-                                      <span style={{ fontWeight: 500 }}>{field.name}</span>
-                                    </td>
-                                    <td style={{ padding: '6px 8px' }}>
-                                      {editingAlias === (field.normalized || field.name) ? (
-                                        <input
-                                          type="text"
-                                          value={aliasValue}
-                                          onChange={(e) => setAliasValue(e.target.value)}
-                                          placeholder="输入别名"
-                                          className="form-input"
-                                          style={{
-                                            fontSize: '12px',
-                                            padding: '2px 6px',
-                                            width: '100%',
-                                          }}
-                                          disabled={isSavingAlias}
-                                        />
-                                      ) : (
-                                        <span style={{ color: field.alias ? '#333' : '#999' }}>
-                                          {field.alias || '-'}
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td style={{ padding: '6px 8px' }}>
-                                      <span
-                                        style={{
-                                          fontSize: '11px',
-                                          color: '#666',
-                                          background: '#f5f5f5',
-                                          padding: '1px 6px',
-                                          borderRadius: '3px',
-                                        }}
+                                layer.fields.map((field) => {
+                                  const fieldKey = field.normalized || field.name;
+                                  const isEditing = editingAlias === fieldKey;
+
+                                  const handleStartEdit = () => {
+                                    setEditingAlias(fieldKey);
+                                    setAliasValue(field.alias || '');
+                                    setAliasError('');
+                                  };
+
+                                  const handleCancel = () => {
+                                    setEditingAlias(null);
+                                    setAliasValue('');
+                                    setAliasError('');
+                                  };
+
+                                  const handleSave = async () => {
+                                    const trimmedValue = aliasValue.trim();
+                                    if (trimmedValue.length > 255) {
+                                      setAliasError('别名不能超过 255 个字符');
+                                      return;
+                                    }
+                                    setAliasError('');
+                                    setIsSavingAlias(true);
+                                    try {
+                                      await updateFieldAliases(file.id, [
+                                        {
+                                          normalized_name: fieldKey,
+                                          alias: trimmedValue || null,
+                                        },
+                                      ]);
+                                      setSchema((prev) => {
+                                        if (!prev) return prev;
+                                        return {
+                                          ...prev,
+                                          layers: prev.layers.map((l) => ({
+                                            ...l,
+                                            fields: l.fields.map((f) =>
+                                              (f.normalized || f.name) === fieldKey
+                                                ? { ...f, alias: trimmedValue || null }
+                                                : f,
+                                            ),
+                                          })),
+                                        };
+                                      });
+                                      setEditingAlias(null);
+                                      setAliasValue('');
+                                    } catch (err) {
+                                      setAliasError(err.message || '保存失败');
+                                    } finally {
+                                      setIsSavingAlias(false);
+                                    }
+                                  };
+
+                                  const handleKeyDown = (e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSave();
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      handleCancel();
+                                    }
+                                  };
+
+                                  return (
+                                    <tr
+                                      key={fieldKey}
+                                      style={{ borderBottom: '1px solid #f0f0f0' }}
+                                    >
+                                      <td style={{ padding: '6px 8px' }}>
+                                        <span style={{ fontWeight: 500 }}>{field.name}</span>
+                                      </td>
+                                      <td
+                                        ref={isEditing ? aliasEditRef : null}
+                                        className={`alias-cell ${isEditing ? 'editing' : ''}`}
+                                        style={{ padding: '6px 8px', verticalAlign: 'top' }}
+                                        onClick={!isEditing ? handleStartEdit : undefined}
                                       >
-                                        {field.type}
-                                      </span>
-                                    </td>
-                                    <td style={{ padding: '6px 8px' }}>
-                                      {editingAlias === (field.normalized || field.name) ? (
-                                        <div style={{ display: 'flex', gap: '4px' }}>
-                                          <button
-                                            type="button"
-                                            className="btn-primary"
-                                            style={{ fontSize: '11px', padding: '2px 8px' }}
-                                            disabled={isSavingAlias}
-                                            onClick={async () => {
-                                              const trimmedValue = aliasValue.trim();
-                                              if (trimmedValue.length > 255) {
-                                                setAliasError('别名不能超过 255 个字符');
-                                                return;
-                                              }
-                                              setAliasError('');
-                                              setIsSavingAlias(true);
-                                              try {
-                                                await updateFieldAliases(file.id, [
-                                                  {
-                                                    normalized_name: field.normalized || field.name,
-                                                    alias: trimmedValue || null,
-                                                  },
-                                                ]);
-                                                setSchema((prev) => {
-                                                  if (!prev) return prev;
-                                                  return {
-                                                    ...prev,
-                                                    layers: prev.layers.map((l) => ({
-                                                      ...l,
-                                                      fields: l.fields.map((f) =>
-                                                        (f.normalized || f.name) ===
-                                                        (field.normalized || field.name)
-                                                          ? { ...f, alias: trimmedValue || null }
-                                                          : f,
-                                                      ),
-                                                    })),
-                                                  };
-                                                });
-                                                setEditingAlias(null);
-                                                setAliasValue('');
-                                              } catch (err) {
-                                                setAliasError(err.message || '保存失败');
-                                              } finally {
-                                                setIsSavingAlias(false);
-                                              }
-                                            }}
-                                          >
-                                            {isSavingAlias ? '...' : '保存'}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="btn-secondary"
-                                            style={{ fontSize: '11px', padding: '2px 8px' }}
-                                            onClick={() => {
-                                              setEditingAlias(null);
-                                              setAliasValue('');
-                                              setAliasError('');
-                                            }}
-                                          >
-                                            取消
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          className="btn-text"
-                                          style={{ fontSize: '11px', padding: '0' }}
-                                          onClick={() => {
-                                            setEditingAlias(field.normalized || field.name);
-                                            setAliasValue(field.alias || '');
-                                            setAliasError('');
+                                        {isEditing ? (
+                                          <div>
+                                            <input
+                                              type="text"
+                                              value={aliasValue}
+                                              onChange={(e) => setAliasValue(e.target.value)}
+                                              onKeyDown={handleKeyDown}
+                                              placeholder="输入别名"
+                                              className="alias-input"
+                                              disabled={isSavingAlias}
+                                              autoFocus
+                                            />
+                                            {aliasError && (
+                                              <div
+                                                style={{
+                                                  fontSize: '11px',
+                                                  color: '#d32f2f',
+                                                  marginTop: '4px',
+                                                }}
+                                              >
+                                                {aliasError}
+                                              </div>
+                                            )}
+                                            <div className="alias-buttons">
+                                              <button
+                                                type="button"
+                                                className="btn-primary"
+                                                disabled={isSavingAlias}
+                                                onClick={handleSave}
+                                              >
+                                                {isSavingAlias ? '...' : '保存'}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="btn-secondary"
+                                                onClick={handleCancel}
+                                              >
+                                                取消
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span style={{ color: field.alias ? '#333' : '#999' }}>
+                                            {field.alias || '-'}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td style={{ padding: '6px 8px' }}>
+                                        <span
+                                          style={{
+                                            fontSize: '11px',
+                                            color: '#666',
+                                            background: '#f5f5f5',
+                                            padding: '1px 6px',
+                                            borderRadius: '3px',
                                           }}
                                         >
-                                          {field.alias ? '修改' : '设置'}
-                                        </button>
-                                      )}
-                                      {aliasError &&
-                                        editingAlias === (field.normalized || field.name) && (
-                                          <div
-                                            style={{
-                                              fontSize: '11px',
-                                              color: '#d32f2f',
-                                              marginTop: '2px',
-                                            }}
-                                          >
-                                            {aliasError}
-                                          </div>
-                                        )}
-                                    </td>
-                                  </tr>
-                                ))
+                                          {field.type}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
                               )}
                             </tbody>
                           </table>

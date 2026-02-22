@@ -58,7 +58,7 @@
 | UI-001 | 预览可用性 | UI 仅在 status=ready 时显示"查看"按钮（位于文件行操作区），点击在新窗口打开地图预览 | 按钮状态正确 | `npm run test:e2e` | E2E | P0 |
 | UI-002 | 特征检查器 | 显示基于数据集 schema 的稳定属性字段，NULL 值显示为 `--`（斜体、静音），空字符串显示为 `""`（悬停区分） | NULL 和空字符串正确区分 | `npm run test:e2e` | E2E | P0 |
 | UI-003 | 特征高亮 | 在预览地图中点击特征时，被选中的特征会立即以黄色高亮显示（填充：rgba(255,200,0,0.7)，描边：#ffc800，宽度4px），未选中特征保持蓝色（填充：rgba(0,128,255,0.6)，描边：#0080ff，宽度2px） | 点击后特征样式立即切换，无需缩放或移动地图 | `npm run test:e2e` | E2E | P0 |
-| UI-004 | 字段信息显示 | Detail Sidebar 的 Fields 选项卡在 status=ready 时显示字段表格（原始名称、别名、类型），支持内联编辑别名 | 字段信息正确显示，别名编辑正常 | `npm run test:e2e` | E2E | P1 |
+| UI-004 | 字段信息显示 | Detail Sidebar 的 Fields 选项卡在 status=ready 时显示字段表格（原始名称、别名、类型）。点击别名单元格进入编辑模式，输入框下方显示保存/取消按钮。Enter 保存，Esc 取消，点击其他区域取消编辑。别名输入框最小宽度 80px，可显示至少 15 个字符 | 字段信息正确显示，别名编辑交互正常 | `frontend/tests/field-alias.spec.js` | E2E | P1 |
 | UI-005 | 登录页面 | /login 显示登录表单，验证后跳转 | 跳转成功 | `npm run test:e2e` | E2E | P0 |
 | UI-006 | 首次设置 | /init 显示管理员创建表单 | 表单可提交 | `npm run test:e2e` | E2E | P0 |
 | UI-007 | 路由守卫 | 未认证访问受保护路由跳转登录页 | 自动跳转 | `npm run test:e2e` | E2E | P0 |
