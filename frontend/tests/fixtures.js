@@ -9,13 +9,55 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../');
 
+const sanitizeRunId = (value) => value.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+const hashString = (value) => {
+  let hash = 2166136261;
+  for (const char of value) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+const resolveE2ERunId = () => {
+  const explicit = process.env.MAPFLOW_E2E_RUN_ID?.trim();
+  if (explicit) return sanitizeRunId(explicit);
+  return sanitizeRunId(`ppid-${process.ppid}`);
+};
+
+const resolveBasePort = (runId) => {
+  const explicit = process.env.MAPFLOW_E2E_BASE_PORT?.trim();
+  if (explicit) {
+    const parsed = Number.parseInt(explicit, 10);
+    if (Number.isInteger(parsed) && parsed > 0 && parsed < 65536) return parsed;
+  }
+
+  const bucketSize = 100;
+  const bucketCount = 500;
+  const bucket = hashString(runId) % bucketCount;
+  return 10000 + bucket * bucketSize;
+};
+
 // Helper to wait for port
-const waitForPort = async (port, timeout = 30000) => {
+const waitForPort = async (port, expectedRunId, timeout = 30000) => {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     try {
-      const res = await fetch(`http://localhost:${port}/api/test/is-initialized`);
-      if (res.ok) return true;
+      const res = await fetch(`http://localhost:${port}/api/test/status`);
+      if (res.ok) {
+        const payload = await res.json();
+        if (!payload?.testRunId) {
+          await new Promise((r) => setTimeout(r, 200));
+          continue;
+        }
+        if (payload.testRunId === expectedRunId) return true;
+        if (payload.testRunId && payload.testRunId !== expectedRunId) {
+          console.warn(
+            `[Worker] Port ${port} responding but testRunId mismatch: got ${payload.testRunId}, expected ${expectedRunId}`,
+          );
+        }
+      }
     } catch (e) {
       // ignore
     }
@@ -37,11 +79,12 @@ export const test = base.extend({
   workerServer: [
     async ({}, use, workerInfo) => {
       // 1. Setup paths and ports based on worker index
-      // Worker index is 0-based. We'll use ports starting from 4000
-      // to avoid conflict with default dev (3000) or other services.
+      // Worker index is 0-based.
       const workerId = workerInfo.workerIndex;
-      const port = 4000 + workerId;
-      const testRoot = path.resolve(__dirname, '../../tmp', `worker-${workerId}`);
+      const runId = resolveE2ERunId();
+      const basePort = resolveBasePort(runId);
+      const port = basePort + workerId;
+      const testRoot = path.resolve(__dirname, '../../tmp', `e2e-${runId}`, `worker-${workerId}`);
       const dbPath = path.join(testRoot, 'mapflow.duckdb');
       const uploadDir = path.join(testRoot, 'uploads');
 
@@ -51,7 +94,7 @@ export const test = base.extend({
       fs.rmSync(testRoot, { recursive: true, force: true });
       fs.mkdirSync(uploadDir, { recursive: true });
 
-      console.log(`[Worker ${workerId}] Starting backend on port ${port}...`);
+      console.log(`[Worker ${workerId}] Starting backend on port ${port} (runId=${runId})...`);
 
       // 2. Spawn Backend Process
       // Prefer running the precompiled backend binary for speed.
@@ -84,6 +127,7 @@ export const test = base.extend({
           DB_PATH: dbPath,
           UPLOAD_DIR: uploadDir,
           MAPFLOW_TEST_MODE: '1', // Enable reset API
+          MAPFLOW_TEST_RUN_ID: runId,
           // Front-end dist is optional for API tests, but if we want page.goto('/') to work
           // we need the backend to serve statics.
           // We can point to the real dist or a dummy one.
@@ -97,9 +141,9 @@ export const test = base.extend({
       backendProcess.stderr.on('data', (d) => console.error(`[Backend ${port}] ${d}`));
 
       // 3. Wait for readiness
-      const ready = await waitForPort(port, 60000); // Increased timeout to 60s
+      const ready = await waitForPort(port, runId, 60000); // Increased timeout to 60s
       if (!ready) {
-        throw new Error(`Backend failed to start on port ${port}`);
+        throw new Error(`Backend failed to start on port ${port} for runId=${runId}`);
       }
 
       const serverUrl = `http://localhost:${port}`;
@@ -153,7 +197,7 @@ export const test = base.extend({
       let retries = 50;
       while (retries > 0) {
         try {
-          await fetch(`http://localhost:${port}/api/test/is-initialized`);
+          await fetch(`http://localhost:${port}/api/test/status`);
           await new Promise((r) => setTimeout(r, 100));
           retries--;
         } catch (e) {
