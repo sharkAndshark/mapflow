@@ -313,8 +313,9 @@ fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
 #[cfg(feature = "embed-spatial-extension")]
 fn resolve_embedded_spatial_extension_candidate() -> Result<PathBuf, String> {
     let file_name = build_embedded_spatial_filename();
+    let base_dirs = embedded_spatial_extension_directories();
     let mut errors = Vec::new();
-    for base_dir in embedded_spatial_extension_directories() {
+    for base_dir in &base_dirs {
         let target_path = base_dir.join("extensions").join(&file_name);
         match write_embedded_spatial_extension(&target_path) {
             Ok(_) => return Ok(target_path),
@@ -322,8 +323,15 @@ fn resolve_embedded_spatial_extension_candidate() -> Result<PathBuf, String> {
         }
     }
 
+    let attempted_dirs = base_dirs
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
     Err(format!(
-        "Unable to materialize embedded spatial extension: {}",
+        "Unable to materialize embedded spatial extension (tried: {}): {}",
+        attempted_dirs,
         errors.join(" | ")
     ))
 }
