@@ -37,7 +37,7 @@
 | API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | lifecycle tests 轮询验证 | Integration | P0 |
 | API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | lifecycle tests + `test_preview_not_ready_returns_409` | Integration | P0 |
 | API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证。动态生成返回 MVT（Web Mercator 投影）；MBTiles 返回 MVT 或 PNG。空瓦片（无几何数据）返回 204 No Content | 200 + MVT/PNG / 204（空瓦片） / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
-| API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回稳定 schema 的属性（NULL 值保留），按 ordinal 排序。MBTiles 文件不支持特征属性，返回 400 | 200 / 400（MBTiles） / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
+| API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回 `{fid,properties:[{key,value,alias?}]}`，alias 为字段别名（可选），NULL 值保留，按 ordinal 排序。MBTiles 文件不支持特征属性，返回 400 | 200 / 400（MBTiles） / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
 | API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{layers:[{id,description?,fields:[{name,type,alias?,normalized?}]}]}`，type 为 MVT 兼容类型，alias 为字段别名（可选），normalized 为标准化字段名（可选），按 ordinal 排序，仅 ready 状态可访问。MBTiles 文件从 metadata.json 提取图层信息，栅格瓦片返回空数组，普通数据集返回默认图层 | 200 + layers[] / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
 | API-007 | 发布文件 | POST /api/files/:id/publish 需要认证，设置 `is_public=TRUE` 并分配 `public_slug`，可选自定义 slug（默认文件 ID），返回公开 URL 模板。注意：由于 DuckDB 不支持部分索引，slug 唯一性在 INSERT 前手动检查，存在小概率竞态条件（Phase 1 可接受） | 200 + `{url,slug,isPublic}` / 400（slug 无效/冲突） / 401 / 404 / 409 | `cargo test test_publish_*` | Integration | P0 |
 | API-008 | 取消发布 | POST /api/files/:id/unpublish 需要认证，设置 `is_public=FALSE` 并清空 `public_slug` | 200 / 401 / 404 | `cargo test test_unpublish_*` | Integration | P0 |
@@ -66,6 +66,7 @@
 | UI-009 | 发布弹窗 | 点击"发布"打开模态框，显示文件名、slug 输入框（默认文件 ID）、公开地址预览，提交后更新列表 | 弹窗交互正确 | `npm run test:e2e` | E2E | P0 |
 | UI-010 | 缩放层级限制 | Preview 页面根据 API-003 返回的 minZoom/maxZoom 限制地图缩放。mbtiles 文件使用其元数据的缩放范围；动态表（非 mbtiles）不限制缩放（使用默认范围 0-22） | 地图缩放不超过允许范围 | `npm run test:e2e` | E2E | P1 |
 | UI-011 | Detail Sidebar 选项卡 | Detail Sidebar 包含三个选项卡：Basic Info（基本信息）、Fields（字段表格）、Publish（发布设置）。非 ready 状态时 Fields/Publish 显示提示信息 | 选项卡导航正常，内容切换正确 | `npm run test:e2e` | E2E | P2 |
+| UI-012 | 字段别名显示 | Preview 页面特征检查器显示字段别名。有别名的字段显示为：别名 + 灰色小字原始名；无别名时仅显示原始名。通过 API-005 获取 alias 字段 | 有别名正确显示别名+原始名，无别名仅显示原始名 | `npm run test:e2e` | E2E | P1 |
 | E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `frontend/tests/upload-formats.spec.js` | E2E | P0 |
