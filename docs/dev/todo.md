@@ -1,10 +1,24 @@
 # Known Issues & TODOs
 
-**Last Updated**: 2026-02-20
+**Last Updated**: 2026-02-22
 
 ## Known Issues
 
-### Flaky CI Tests (SIGSEGV)
+### Flaky CI Tests
+
+#### Spatial Import GDAL Error (No such file)
+
+- **Test**: `test_feature_properties_endpoint_returns_null_for_missing_values`
+- **Symptom**: `Spatial import failed: IO Error: GDAL Error (4): /tmp/.../roads.geojson: No such file or directory`
+- **Evidence**:
+  - CI Run: 22262024670, Ubuntu 24.04
+  - 失败频率: 30 次 CI 运行中仅 1 次 (~3.3%)
+  - 本地运行 5 次全部通过
+- **Root Cause**: 高并发 I/O 压力下 GDAL/DuckDB ST_Read 偶发竞态条件
+- **Mitigation**: `--test-threads=2` 限制并发 (已应用)
+- **Priority**: Low
+
+#### SIGSEGV
 
 - **Symptom**: `backend_tests` 偶发 `SIGSEGV` (signal 11) 进程崩溃
 - **Evidence**:
