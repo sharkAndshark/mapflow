@@ -45,7 +45,9 @@ mkdir -p "$output_dir"
 if [ "$is_windows" = true ]; then
   archive_path="${output_dir}/${bundle_name}.zip"
   # Use zip for Windows; -r for recursive, -q for quiet
-  (cd "$(dirname "${bundle_dir}")" && zip -r -q "${archive_path}" "${bundle_name}")
+  # Convert to absolute path before cd to avoid path resolution issues
+  abs_archive_path="$(cd "$(dirname "$archive_path")" && pwd)/$(basename "$archive_path")"
+  (cd "$(dirname "${bundle_dir}")" && zip -r -q "${abs_archive_path}" "${bundle_name}")
 else
   archive_path="${output_dir}/${bundle_name}.tar.gz"
   tar -C "$(dirname "${bundle_dir}")" -czf "${archive_path}" "${bundle_name}"
