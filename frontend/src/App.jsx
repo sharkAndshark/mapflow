@@ -641,53 +641,55 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         )}
                       </div>
 
-                      <div>
-                        <label
-                          style={{
-                            fontSize: '12px',
-                            color: '#666',
-                            marginBottom: '4px',
-                            display: 'block',
-                          }}
-                        >
-                          字段名称
-                        </label>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      {file.tileFormat == null && (
+                        <div>
                           <label
                             style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              cursor: 'pointer',
+                              fontSize: '12px',
+                              color: '#666',
+                              marginBottom: '4px',
+                              display: 'block',
                             }}
                           >
-                            <input
-                              type="radio"
-                              name="useAliases"
-                              checked={publishUseAliases}
-                              onChange={() => setPublishUseAliases(true)}
-                            />
-                            <span style={{ fontSize: '12px' }}>使用别名</span>
+                            字段名称
                           </label>
-                          <label
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <input
-                              type="radio"
-                              name="useAliases"
-                              checked={!publishUseAliases}
-                              onChange={() => setPublishUseAliases(false)}
-                            />
-                            <span style={{ fontSize: '12px' }}>使用原始名称</span>
-                          </label>
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                            <label
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <input
+                                type="radio"
+                                name="useAliases"
+                                checked={publishUseAliases}
+                                onChange={() => setPublishUseAliases(true)}
+                              />
+                              <span style={{ fontSize: '12px' }}>使用别名</span>
+                            </label>
+                            <label
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <input
+                                type="radio"
+                                name="useAliases"
+                                checked={!publishUseAliases}
+                                onChange={() => setPublishUseAliases(false)}
+                              />
+                              <span style={{ fontSize: '12px' }}>使用原始名称</span>
+                            </label>
+                          </div>
+                          <small className="form-hint">控制公开发布瓦片中的属性字段名称</small>
                         </div>
-                        <small className="form-hint">控制公开发布瓦片中的属性字段名称</small>
-                      </div>
+                      )}
 
                       <div>
                         <label
