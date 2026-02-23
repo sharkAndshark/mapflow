@@ -23,7 +23,7 @@ axum-extra = { version = "0.12.5", features = ["query"] }
 bcrypt = "0.18"
 regex = "1.10"
 lazy_static = "1.5"
-uuid = { version = "1.11", features = ["v4", "serde"] }
+uuid = { version = "1.21", features = ["v4", "serde"] }
 axum-login = "0.18"
 tower-sessions = "0.14"
 tower-cookies = "0.11"
