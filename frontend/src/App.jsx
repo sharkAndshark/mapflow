@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext.jsx';
 import {
   hasActiveJobs as computeHasActiveJobs,
@@ -22,6 +22,13 @@ const STATUS_LABELS = {
 };
 
 function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliasesUpdate }) {
+  const [activeTab, setActiveTab] = useState('basic');
+  const tabs = [
+    { id: 'basic', label: 'Basic Info' },
+    { id: 'fields', label: 'Fields' },
+    { id: 'publish', label: 'Publish' },
+  ];
+
   const [schema, setSchema] = useState(null);
   const [schemaError, setSchemaError] = useState(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
@@ -38,8 +45,23 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [aliasValue, setAliasValue] = useState('');
   const [aliasError, setAliasError] = useState('');
   const [isSavingAlias, setIsSavingAlias] = useState(false);
+  const aliasEditRef = useRef(null);
 
-  // Publish-related state
+  useEffect(() => {
+    if (!editingAlias) return;
+
+    const handleClickOutside = (event) => {
+      if (aliasEditRef.current && !aliasEditRef.current.contains(event.target)) {
+        setEditingAlias(null);
+        setAliasValue('');
+        setAliasError('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [editingAlias]);
+
   const [editPublish, setEditPublish] = useState(false);
   const [publishSlug, setPublishSlug] = useState('');
   const [publishMinZoom, setPublishMinZoom] = useState(0);
@@ -49,12 +71,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [isPublishing, setIsPublishing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
-  // Cache slug validation result to avoid duplicate calls
   const slugValidationError = useMemo(() => {
     return validateSlug(publishSlug.trim()).error;
   }, [publishSlug]);
 
-  // Real-time zoom validation for non-tile files
   const isTileFile = file?.tileFormat != null;
   const zoomValidationError = useMemo(() => {
     if (isTileFile) return null;
@@ -116,7 +136,6 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
       setEditingAlias(null);
       setAliasValue('');
       setAliasError('');
-      // Reset publish-related state when file changes
       setEditPublish(false);
       setPublishSlug('');
       setPublishMinZoom(file.minZoom ?? 0);
@@ -126,6 +145,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
       setCopySuccess(false);
     }
   }, [file]);
+
+  useEffect(() => {
+    setActiveTab('basic');
+  }, [file?.id]);
 
   function copyPublicUrl(slug) {
     if (!slug) {
@@ -196,530 +219,66 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
           <span className="detail-id">{file.id}</span>
         </div>
 
-        <div className="detail-group">
-          <div className="detail-label">Type</div>
-          <div className="detail-value">{file.type}</div>
-        </div>
-
-        <div className="detail-group">
-          <div className="detail-label">Size</div>
-          <div className="detail-value">{formatSize(file.size || 0)}</div>
-        </div>
-
-        <div className="detail-group">
-          <div className="detail-label">Status</div>
-          <div className={`status ${file.status}`} data-testid="file-status">
-            {STATUS_LABELS[file.status] || file.status}
-          </div>
-        </div>
-
-        <div className="detail-group">
-          <div className="detail-label">Uploaded At</div>
-          <div className="detail-value">
-            {file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '--'}
-          </div>
-        </div>
-
-        {file.crs && (
-          <div className="detail-group">
-            <div className="detail-label">CRS</div>
-            <div className="detail-value">{file.crs}</div>
-          </div>
-        )}
-
-        {/* Publish status section */}
-        {isReady && (
-          <>
-            {!file.isPublic && !editPublish && (
-              <div className="detail-group">
-                <div className="detail-label">发布状态</div>
-                <div className="detail-value">
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span style={{ color: '#888' }}>未发布</span>
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      style={{ fontSize: '12px', padding: '4px 12px' }}
-                      onClick={() => setEditPublish(true)}
-                    >
-                      发布
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!file.isPublic && editPublish && (
-              <div className="detail-group">
-                <div className="detail-label">发布设置</div>
-                <div className="detail-value">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {/* URL Slug */}
-                    <div>
-                      <label
-                        style={{
-                          fontSize: '12px',
-                          color: '#666',
-                          marginBottom: '4px',
-                          display: 'block',
-                        }}
-                      >
-                        URL 标识（可选）
-                      </label>
-                      <input
-                        type="text"
-                        value={publishSlug}
-                        onChange={(e) => setPublishSlug(e.target.value)}
-                        placeholder={file.id}
-                        className="form-input"
-                        style={{ width: '100%' }}
-                        data-testid="publish-slug-input"
-                      />
-                      {slugValidationError && (
-                        <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
-                          {slugValidationError}
-                        </div>
-                      )}
-                      <small className="form-hint">
-                        留空则使用文件 ID。仅支持字母、数字、连字符和下划线
-                      </small>
-                    </div>
-
-                    {/* Zoom levels */}
-                    <div>
-                      <label
-                        style={{
-                          fontSize: '12px',
-                          color: '#666',
-                          marginBottom: '4px',
-                          display: 'block',
-                        }}
-                      >
-                        缩放层级
-                        {file.tileFormat != null && (
-                          <span style={{ color: '#888', fontWeight: 'normal' }}> (只读)</span>
-                        )}
-                      </label>
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                        <div style={{ flex: 1 }}>
-                          <small className="form-hint">最小</small>
-                          {file.tileFormat != null ? (
-                            <div className="form-value">{file.minZoom ?? '-'}</div>
-                          ) : (
-                            <input
-                              type="number"
-                              min="0"
-                              max="22"
-                              value={publishMinZoom}
-                              onChange={(e) => setPublishMinZoom(parseInt(e.target.value) || 0)}
-                              className="form-input"
-                              style={{ width: '100%' }}
-                            />
-                          )}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <small className="form-hint">最大</small>
-                          {file.tileFormat != null ? (
-                            <div className="form-value">{file.maxZoom ?? '-'}</div>
-                          ) : (
-                            <input
-                              type="number"
-                              min="0"
-                              max="22"
-                              value={publishMaxZoom}
-                              onChange={(e) => setPublishMaxZoom(parseInt(e.target.value) || 22)}
-                              className="form-input"
-                              style={{ width: '100%' }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      {file.tileFormat == null && (
-                        <small className="form-hint">动态矢量数据可设置 0-22 层级范围</small>
-                      )}
-                      {zoomValidationError && (
-                        <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
-                          {zoomValidationError}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Field name settings */}
-                    <div>
-                      <label
-                        style={{
-                          fontSize: '12px',
-                          color: '#666',
-                          marginBottom: '4px',
-                          display: 'block',
-                        }}
-                      >
-                        字段名称
-                      </label>
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                        <label
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <input
-                            type="radio"
-                            name="useAliases"
-                            checked={publishUseAliases}
-                            onChange={() => setPublishUseAliases(true)}
-                          />
-                          <span style={{ fontSize: '12px' }}>使用别名</span>
-                        </label>
-                        <label
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <input
-                            type="radio"
-                            name="useAliases"
-                            checked={!publishUseAliases}
-                            onChange={() => setPublishUseAliases(false)}
-                          />
-                          <span style={{ fontSize: '12px' }}>使用原始名称</span>
-                        </label>
-                      </div>
-                      <small className="form-hint">控制公开发布瓦片中的属性字段名称</small>
-                    </div>
-
-                    {/* Public URL preview */}
-                    <div>
-                      <label
-                        style={{
-                          fontSize: '12px',
-                          color: '#666',
-                          marginBottom: '4px',
-                          display: 'block',
-                        }}
-                      >
-                        公开地址
-                      </label>
-                      <div className="form-value code" style={{ fontSize: '12px' }}>
-                        /tiles/{publishSlug.trim() || file.id}/{'{z}/{x}/{y}'}
-                      </div>
-                    </div>
-
-                    {publishError && (
-                      <div className="alert" style={{ margin: 0 }}>
-                        {publishError}
-                      </div>
-                    )}
-
-                    {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        style={{ fontSize: '12px', padding: '4px 12px' }}
-                        disabled={isPublishing || !!slugValidationError || !!zoomValidationError}
-                        onClick={handlePublishSubmit}
-                      >
-                        {isPublishing ? '发布中...' : '确认发布'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        style={{ fontSize: '12px', padding: '4px 12px' }}
-                        onClick={() => {
-                          setEditPublish(false);
-                          setPublishSlug('');
-                          setPublishMinZoom(file.minZoom ?? 0);
-                          setPublishMaxZoom(file.maxZoom ?? 22);
-                          setPublishUseAliases(true);
-                          setPublishError('');
-                        }}
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {file.isPublic && (
-              <>
-                <div className="detail-group">
-                  <div className="detail-label">发布状态</div>
-                  <div className="detail-value">
-                    <span style={{ color: '#4caf50' }}>已发布</span>
-                  </div>
-                </div>
-
-                <div className="detail-group">
-                  <div className="detail-label">公开地址</div>
-                  <div className="detail-value">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div className="form-value code" style={{ fontSize: '12px' }}>
-                        /tiles/{file.publicSlug}/{'{z}/{x}/{y}'}
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-text"
-                        style={{ fontSize: '12px', padding: 0, textAlign: 'left' }}
-                        onClick={() => copyPublicUrl(file.publicSlug)}
-                      >
-                        {copySuccess ? '已复制' : '复制地址'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        {isReady && file.isPublic && (
-          <div className="detail-group">
-            <div className="detail-label">缩放层级</div>
-            <div className="detail-value">
-              {editZoom ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <div style={{ flex: 1 }}>
-                      <small className="form-hint">最小</small>
-                      <input
-                        type="number"
-                        min="0"
-                        max="22"
-                        value={minZoom}
-                        onChange={(e) => setMinZoom(parseInt(e.target.value) || 0)}
-                        className="form-input"
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <small className="form-hint">最大</small>
-                      <input
-                        type="number"
-                        min="0"
-                        max="22"
-                        value={maxZoom}
-                        onChange={(e) => setMaxZoom(parseInt(e.target.value) || 22)}
-                        className="form-input"
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                  </div>
-                  {zoomError && (
-                    <div className="alert" style={{ margin: 0 }}>
-                      {zoomError}
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      style={{ fontSize: '12px', padding: '4px 12px' }}
-                      disabled={isSavingZoom}
-                      onClick={async () => {
-                        if (minZoom > maxZoom) {
-                          setZoomError('最小层级不能大于最大层级');
-                          return;
-                        }
-                        setZoomError('');
-                        setIsSavingZoom(true);
-                        try {
-                          await updateTileZoom(file.id, minZoom, maxZoom);
-                          setEditZoom(false);
-                          if (onZoomUpdate) {
-                            onZoomUpdate(file.id, minZoom, maxZoom);
-                          }
-                        } catch (err) {
-                          setZoomError(err.message || '保存失败');
-                        } finally {
-                          setIsSavingZoom(false);
-                        }
-                      }}
-                    >
-                      {isSavingZoom ? '保存中...' : '保存'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ fontSize: '12px', padding: '4px 12px' }}
-                      onClick={() => {
-                        setMinZoom(file.minZoom ?? 0);
-                        setMaxZoom(file.maxZoom ?? 22);
-                        setEditZoom(false);
-                        setZoomError('');
-                      }}
-                    >
-                      取消
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                >
-                  <span>
-                    {file.minZoom ?? 0} ~ {file.maxZoom ?? 22}
-                  </span>
-                  {file.tileFormat == null && (
-                    <button
-                      type="button"
-                      className="btn-text"
-                      style={{ fontSize: '12px' }}
-                      onClick={() => setEditZoom(true)}
-                    >
-                      修改
-                    </button>
-                  )}
-                </div>
-              )}
-              {file.tileFormat != null && !editZoom && (
-                <small className="form-hint" style={{ marginTop: '4px' }}>
-                  瓦片文件的缩放层级由源文件决定
-                </small>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Field name settings for published files */}
-        {isReady && file.isPublic && file.tileFormat == null && (
-          <div className="detail-group">
-            <div className="detail-label">字段名称</div>
-            <div className="detail-value">
-              {editUseAliases ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <label
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="editUseAliases"
-                        checked={useAliasesValue}
-                        onChange={() => setUseAliasesValue(true)}
-                      />
-                      <span style={{ fontSize: '12px' }}>使用别名</span>
-                    </label>
-                    <label
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="editUseAliases"
-                        checked={!useAliasesValue}
-                        onChange={() => setUseAliasesValue(false)}
-                      />
-                      <span style={{ fontSize: '12px' }}>使用原始名称</span>
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      style={{ fontSize: '12px', padding: '4px 12px' }}
-                      disabled={isSavingUseAliases}
-                      onClick={async () => {
-                        setUseAliasesError('');
-                        setIsSavingUseAliases(true);
-                        try {
-                          await updatePublishSettings(file.id, {
-                            useAliases: useAliasesValue,
-                          });
-                          setEditUseAliases(false);
-                          if (onUseAliasesUpdate) {
-                            onUseAliasesUpdate(file.id, useAliasesValue);
-                          }
-                        } catch (err) {
-                          setUseAliasesError(err.message || '更新字段名称设置失败');
-                        } finally {
-                          setIsSavingUseAliases(false);
-                        }
-                      }}
-                    >
-                      {isSavingUseAliases ? '保存中...' : '保存'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ fontSize: '12px', padding: '4px 12px' }}
-                      onClick={() => {
-                        setUseAliasesValue(file.useAliases ?? true);
-                        setEditUseAliases(false);
-                        setUseAliasesError('');
-                      }}
-                    >
-                      取消
-                    </button>
-                  </div>
-                  {useAliasesError && (
-                    <div className="alert" style={{ fontSize: '12px', margin: 0 }}>
-                      {useAliasesError}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                >
-                  <span>{file.useAliases !== false ? '使用别名' : '使用原始名称'}</span>
-                  <button
-                    type="button"
-                    className="btn-text"
-                    style={{ fontSize: '12px' }}
-                    onClick={() => setEditUseAliases(true)}
-                  >
-                    修改
-                  </button>
-                </div>
-              )}
-              <small className="form-hint" style={{ marginTop: '4px' }}>
-                控制公开发布瓦片中的属性字段名称
-              </small>
-            </div>
-          </div>
-        )}
-
-        {/* Unpublish button */}
-        {isReady && file.isPublic && (
-          <div className="detail-group">
+        <div className="tab-nav" role="tablist">
+          {tabs.map((tab) => (
             <button
+              key={tab.id}
               type="button"
-              className="btn-secondary"
-              style={{ width: '100%', fontSize: '12px' }}
-              onClick={handleUnpublishClick}
+              className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`tabpanel-${tab.id}`}
             >
-              取消发布
+              {tab.label}
             </button>
+          ))}
+        </div>
+
+        {activeTab === 'basic' && (
+          <div className="tab-content" role="tabpanel" id="tabpanel-basic">
+            <div className="detail-group">
+              <div className="detail-label">Type</div>
+              <div className="detail-value">{file.type}</div>
+            </div>
+
+            <div className="detail-group">
+              <div className="detail-label">Size</div>
+              <div className="detail-value">{formatSize(file.size || 0)}</div>
+            </div>
+
+            <div className="detail-group">
+              <div className="detail-label">Status</div>
+              <div className={`status ${file.status}`} data-testid="file-status">
+                {STATUS_LABELS[file.status] || file.status}
+              </div>
+            </div>
+
+            <div className="detail-group">
+              <div className="detail-label">Uploaded At</div>
+              <div className="detail-value">
+                {file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '--'}
+              </div>
+            </div>
+
+            {file.crs && (
+              <div className="detail-group">
+                <div className="detail-label">CRS</div>
+                <div className="detail-value">{file.crs}</div>
+              </div>
+            )}
+
+            {isFailed && file.error && (
+              <div className="detail-error">
+                <strong>Error:</strong> {file.error}
+              </div>
+            )}
           </div>
         )}
 
-        {isReady && (
-          <div className="detail-group">
-            <div className="detail-label">字段信息</div>
-            <div className="detail-value">
+        {activeTab === 'fields' &&
+          (isReady ? (
+            <div className="tab-content fields-section" role="tabpanel" id="tabpanel-fields">
               {isLoadingSchema ? (
                 <span style={{ color: '#888', fontSize: '12px' }}>加载中...</span>
               ) : schemaError ? (
@@ -744,170 +303,210 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           >
                             {layer.description ? `${layer.id} - ${layer.description}` : layer.id}
                           </div>
-                          <div
-                            style={{
-                              paddingLeft: '12px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '4px',
-                            }}
+                          <table
+                            className="fields-table"
+                            style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}
                           >
-                            {layer.fields.length === 0 ? (
-                              <span
-                                style={{ color: '#999', fontSize: '12px', fontStyle: 'italic' }}
-                              >
-                                无字段
-                              </span>
-                            ) : (
-                              layer.fields.map((field) => (
-                                <div
-                                  key={field.normalized || field.name}
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
+                                <th
                                   style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '2px',
-                                    padding: '4px 0',
+                                    textAlign: 'left',
+                                    padding: '4px 8px',
+                                    color: '#666',
+                                    fontWeight: 500,
                                   }}
                                 >
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'center',
-                                    }}
+                                  原始名称
+                                </th>
+                                <th
+                                  style={{
+                                    textAlign: 'left',
+                                    padding: '4px 8px',
+                                    color: '#666',
+                                    fontWeight: 500,
+                                  }}
+                                >
+                                  别名
+                                </th>
+                                <th
+                                  style={{
+                                    textAlign: 'left',
+                                    padding: '4px 8px',
+                                    color: '#666',
+                                    fontWeight: 500,
+                                  }}
+                                >
+                                  类型
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {layer.fields.length === 0 ? (
+                                <tr>
+                                  <td
+                                    colSpan="3"
+                                    style={{ padding: '8px', color: '#999', fontStyle: 'italic' }}
                                   >
-                                    <div
-                                      style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    无字段
+                                  </td>
+                                </tr>
+                              ) : (
+                                layer.fields.map((field) => {
+                                  const fieldKey = field.normalized || field.name;
+                                  const isEditing = editingAlias === fieldKey;
+
+                                  const handleStartEdit = () => {
+                                    setEditingAlias(fieldKey);
+                                    setAliasValue(field.alias || '');
+                                    setAliasError('');
+                                  };
+
+                                  const handleCancel = () => {
+                                    setEditingAlias(null);
+                                    setAliasValue('');
+                                    setAliasError('');
+                                  };
+
+                                  const handleSave = async () => {
+                                    const trimmedValue = aliasValue.trim();
+                                    if (trimmedValue.length > 255) {
+                                      setAliasError('别名不能超过 255 个字符');
+                                      return;
+                                    }
+                                    setAliasError('');
+                                    setIsSavingAlias(true);
+                                    try {
+                                      await updateFieldAliases(file.id, [
+                                        {
+                                          normalized_name: fieldKey,
+                                          alias: trimmedValue || null,
+                                        },
+                                      ]);
+                                      setSchema((prev) => {
+                                        if (!prev) return prev;
+                                        return {
+                                          ...prev,
+                                          layers: prev.layers.map((l) => ({
+                                            ...l,
+                                            fields: l.fields.map((f) =>
+                                              (f.normalized || f.name) === fieldKey
+                                                ? { ...f, alias: trimmedValue || null }
+                                                : f,
+                                            ),
+                                          })),
+                                        };
+                                      });
+                                      setEditingAlias(null);
+                                      setAliasValue('');
+                                    } catch (err) {
+                                      setAliasError(err.message || '保存失败');
+                                    } finally {
+                                      setIsSavingAlias(false);
+                                    }
+                                  };
+
+                                  const handleKeyDown = (e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSave();
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      handleCancel();
+                                    }
+                                  };
+
+                                  const handleCellKeyDown = (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      handleStartEdit();
+                                    }
+                                  };
+
+                                  return (
+                                    <tr
+                                      key={fieldKey}
+                                      style={{ borderBottom: '1px solid #f0f0f0' }}
                                     >
-                                      {field.alias ? (
-                                        <>
-                                          <span style={{ fontWeight: 500 }}>{field.alias}</span>
-                                          <span
-                                            style={{
-                                              fontSize: '10px',
-                                              color: '#999',
-                                              textDecoration: 'line-through',
-                                            }}
-                                          >
-                                            {field.name}
-                                          </span>
-                                        </>
-                                      ) : (
+                                      <td style={{ padding: '6px 8px' }}>
                                         <span style={{ fontWeight: 500 }}>{field.name}</span>
-                                      )}
-                                    </div>
-                                    <span
-                                      style={{
-                                        fontSize: '11px',
-                                        color: '#666',
-                                        background: '#f5f5f5',
-                                        padding: '1px 6px',
-                                        borderRadius: '3px',
-                                      }}
-                                    >
-                                      {field.type}
-                                    </span>
-                                  </div>
-                                  {editingAlias === (field.normalized || field.name) ? (
-                                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                                      <input
-                                        type="text"
-                                        value={aliasValue}
-                                        onChange={(e) => setAliasValue(e.target.value)}
-                                        placeholder="输入别名"
-                                        className="form-input"
-                                        style={{ fontSize: '12px', padding: '2px 6px', flex: 1 }}
-                                        disabled={isSavingAlias}
-                                      />
-                                      <button
-                                        type="button"
-                                        className="btn-primary"
-                                        style={{ fontSize: '11px', padding: '2px 8px' }}
-                                        disabled={isSavingAlias}
-                                        onClick={async () => {
-                                          const trimmedValue = aliasValue.trim();
-                                          if (trimmedValue.length > 255) {
-                                            setAliasError('别名不能超过 255 个字符');
-                                            return;
-                                          }
-                                          setAliasError('');
-                                          setIsSavingAlias(true);
-                                          try {
-                                            await updateFieldAliases(file.id, [
-                                              {
-                                                normalized_name: field.normalized || field.name,
-                                                alias: trimmedValue || null,
-                                              },
-                                            ]);
-                                            setSchema((prev) => {
-                                              if (!prev) return prev;
-                                              return {
-                                                ...prev,
-                                                layers: prev.layers.map((l) => ({
-                                                  ...l,
-                                                  fields: l.fields.map((f) =>
-                                                    (f.normalized || f.name) ===
-                                                    (field.normalized || field.name)
-                                                      ? { ...f, alias: trimmedValue || null }
-                                                      : f,
-                                                  ),
-                                                })),
-                                              };
-                                            });
-                                            setEditingAlias(null);
-                                            setAliasValue('');
-                                          } catch (err) {
-                                            setAliasError(err.message || '保存失败');
-                                          } finally {
-                                            setIsSavingAlias(false);
-                                          }
-                                        }}
+                                      </td>
+                                      <td
+                                        ref={isEditing ? aliasEditRef : null}
+                                        className={`alias-cell ${isEditing ? 'editing' : ''}`}
+                                        style={{ padding: '6px 8px', verticalAlign: 'top' }}
+                                        onClick={!isEditing ? handleStartEdit : undefined}
+                                        onKeyDown={!isEditing ? handleCellKeyDown : undefined}
+                                        role={!isEditing ? 'button' : undefined}
+                                        tabIndex={!isEditing ? 0 : undefined}
+                                        aria-label={`编辑别名: ${field.alias || '未设置'}`}
                                       >
-                                        {isSavingAlias ? '...' : '保存'}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn-secondary"
-                                        style={{ fontSize: '11px', padding: '2px 8px' }}
-                                        onClick={() => {
-                                          setEditingAlias(null);
-                                          setAliasValue('');
-                                          setAliasError('');
-                                        }}
-                                      >
-                                        取消
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="btn-text"
-                                      style={{ fontSize: '11px', padding: '0' }}
-                                      onClick={() => {
-                                        setEditingAlias(field.normalized || field.name);
-                                        setAliasValue(field.alias || '');
-                                        setAliasError('');
-                                      }}
-                                    >
-                                      {field.alias ? '修改别名' : '设置别名'}
-                                    </button>
-                                  )}
-                                  {aliasError &&
-                                    editingAlias === (field.normalized || field.name) && (
-                                      <div
-                                        style={{
-                                          fontSize: '11px',
-                                          color: '#d32f2f',
-                                          marginTop: '2px',
-                                        }}
-                                      >
-                                        {aliasError}
-                                      </div>
-                                    )}
-                                </div>
-                              ))
-                            )}
-                          </div>
+                                        {isEditing ? (
+                                          <div>
+                                            <input
+                                              type="text"
+                                              value={aliasValue}
+                                              onChange={(e) => setAliasValue(e.target.value)}
+                                              onKeyDown={handleKeyDown}
+                                              placeholder="输入别名"
+                                              className="alias-input"
+                                              disabled={isSavingAlias}
+                                              autoFocus
+                                            />
+                                            {aliasError && (
+                                              <div
+                                                style={{
+                                                  fontSize: '11px',
+                                                  color: '#d32f2f',
+                                                  marginTop: '4px',
+                                                }}
+                                              >
+                                                {aliasError}
+                                              </div>
+                                            )}
+                                            <div className="alias-buttons">
+                                              <button
+                                                type="button"
+                                                className="btn-primary"
+                                                disabled={isSavingAlias}
+                                                onClick={handleSave}
+                                              >
+                                                {isSavingAlias ? '...' : '保存'}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="btn-secondary"
+                                                onClick={handleCancel}
+                                              >
+                                                取消
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span style={{ color: field.alias ? '#333' : '#999' }}>
+                                            {field.alias || '-'}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td style={{ padding: '6px 8px' }}>
+                                        <span
+                                          style={{
+                                            fontSize: '11px',
+                                            color: '#666',
+                                            background: '#f5f5f5',
+                                            padding: '1px 6px',
+                                            borderRadius: '3px',
+                                          }}
+                                        >
+                                          {field.type}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
                         </div>
                       ))}
                     </div>
@@ -915,14 +514,505 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                 </div>
               ) : null}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="tab-empty" role="tabpanel" id="tabpanel-fields">
+              文件处理完成后可查看字段信息
+            </div>
+          ))}
 
-        {isFailed && file.error && (
-          <div className="detail-error">
-            <strong>Error:</strong> {file.error}
-          </div>
-        )}
+        {activeTab === 'publish' &&
+          (isReady ? (
+            <div className="tab-content" role="tabpanel" id="tabpanel-publish">
+              {!file.isPublic && !editPublish && (
+                <div className="detail-group">
+                  <div className="detail-label">发布状态</div>
+                  <div className="detail-value">
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <span style={{ color: '#888' }}>未发布</span>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ fontSize: '12px', padding: '4px 12px' }}
+                        onClick={() => setEditPublish(true)}
+                      >
+                        发布
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!file.isPublic && editPublish && (
+                <div className="detail-group">
+                  <div className="detail-label">发布设置</div>
+                  <div className="detail-value">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div>
+                        <label
+                          style={{
+                            fontSize: '12px',
+                            color: '#666',
+                            marginBottom: '4px',
+                            display: 'block',
+                          }}
+                        >
+                          URL 标识（可选）
+                        </label>
+                        <input
+                          type="text"
+                          value={publishSlug}
+                          onChange={(e) => setPublishSlug(e.target.value)}
+                          placeholder={file.id}
+                          className="form-input"
+                          style={{ width: '100%' }}
+                          data-testid="publish-slug-input"
+                        />
+                        {slugValidationError && (
+                          <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
+                            {slugValidationError}
+                          </div>
+                        )}
+                        <small className="form-hint">
+                          留空则使用文件 ID。仅支持字母、数字、连字符和下划线
+                        </small>
+                      </div>
+
+                      <div>
+                        <label
+                          style={{
+                            fontSize: '12px',
+                            color: '#666',
+                            marginBottom: '4px',
+                            display: 'block',
+                          }}
+                        >
+                          缩放层级
+                          {file.tileFormat != null && (
+                            <span style={{ color: '#888', fontWeight: 'normal' }}> (只读)</span>
+                          )}
+                        </label>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <div style={{ flex: 1 }}>
+                            <small className="form-hint">最小</small>
+                            {file.tileFormat != null ? (
+                              <div className="form-value">{file.minZoom ?? '-'}</div>
+                            ) : (
+                              <input
+                                type="number"
+                                min="0"
+                                max="22"
+                                value={publishMinZoom}
+                                onChange={(e) => setPublishMinZoom(parseInt(e.target.value) || 0)}
+                                className="form-input"
+                                style={{ width: '100%' }}
+                              />
+                            )}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <small className="form-hint">最大</small>
+                            {file.tileFormat != null ? (
+                              <div className="form-value">{file.maxZoom ?? '-'}</div>
+                            ) : (
+                              <input
+                                type="number"
+                                min="0"
+                                max="22"
+                                value={publishMaxZoom}
+                                onChange={(e) => setPublishMaxZoom(parseInt(e.target.value) || 22)}
+                                className="form-input"
+                                style={{ width: '100%' }}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        {file.tileFormat == null && (
+                          <small className="form-hint">动态矢量数据可设置 0-22 层级范围</small>
+                        )}
+                        {zoomValidationError && (
+                          <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
+                            {zoomValidationError}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label
+                          style={{
+                            fontSize: '12px',
+                            color: '#666',
+                            marginBottom: '4px',
+                            display: 'block',
+                          }}
+                        >
+                          字段名称
+                        </label>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="useAliases"
+                              checked={publishUseAliases}
+                              onChange={() => setPublishUseAliases(true)}
+                            />
+                            <span style={{ fontSize: '12px' }}>使用别名</span>
+                          </label>
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="useAliases"
+                              checked={!publishUseAliases}
+                              onChange={() => setPublishUseAliases(false)}
+                            />
+                            <span style={{ fontSize: '12px' }}>使用原始名称</span>
+                          </label>
+                        </div>
+                        <small className="form-hint">控制公开发布瓦片中的属性字段名称</small>
+                      </div>
+
+                      <div>
+                        <label
+                          style={{
+                            fontSize: '12px',
+                            color: '#666',
+                            marginBottom: '4px',
+                            display: 'block',
+                          }}
+                        >
+                          公开地址
+                        </label>
+                        <div className="form-value code" style={{ fontSize: '12px' }}>
+                          /tiles/{publishSlug.trim() || file.id}/{'{z}/{x}/{y}'}
+                        </div>
+                      </div>
+
+                      {publishError && (
+                        <div className="alert" style={{ margin: 0 }}>
+                          {publishError}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ fontSize: '12px', padding: '4px 12px' }}
+                          disabled={isPublishing || !!slugValidationError || !!zoomValidationError}
+                          onClick={handlePublishSubmit}
+                        >
+                          {isPublishing ? '发布中...' : '确认发布'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ fontSize: '12px', padding: '4px 12px' }}
+                          onClick={() => {
+                            setEditPublish(false);
+                            setPublishSlug('');
+                            setPublishMinZoom(file.minZoom ?? 0);
+                            setPublishMaxZoom(file.maxZoom ?? 22);
+                            setPublishUseAliases(true);
+                            setPublishError('');
+                          }}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {file.isPublic && (
+                <>
+                  <div className="detail-group">
+                    <div className="detail-label">发布状态</div>
+                    <div className="detail-value">
+                      <span style={{ color: '#4caf50' }}>已发布</span>
+                    </div>
+                  </div>
+
+                  <div className="detail-group">
+                    <div className="detail-label">公开地址</div>
+                    <div className="detail-value">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div className="form-value code" style={{ fontSize: '12px' }}>
+                          /tiles/{file.publicSlug}/{'{z}/{x}/{y}'}
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-text"
+                          style={{ fontSize: '12px', padding: 0, textAlign: 'left' }}
+                          onClick={() => copyPublicUrl(file.publicSlug)}
+                        >
+                          {copySuccess ? '已复制' : '复制地址'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {file.isPublic && (
+                <div className="detail-group">
+                  <div className="detail-label">缩放层级</div>
+                  <div className="detail-value">
+                    {editZoom ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <div style={{ flex: 1 }}>
+                            <small className="form-hint">最小</small>
+                            <input
+                              type="number"
+                              min="0"
+                              max="22"
+                              value={minZoom}
+                              onChange={(e) => setMinZoom(parseInt(e.target.value) || 0)}
+                              className="form-input"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <small className="form-hint">最大</small>
+                            <input
+                              type="number"
+                              min="0"
+                              max="22"
+                              value={maxZoom}
+                              onChange={(e) => setMaxZoom(parseInt(e.target.value) || 22)}
+                              className="form-input"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                        </div>
+                        {zoomError && (
+                          <div className="alert" style={{ margin: 0 }}>
+                            {zoomError}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            style={{ fontSize: '12px', padding: '4px 12px' }}
+                            disabled={isSavingZoom}
+                            onClick={async () => {
+                              if (minZoom > maxZoom) {
+                                setZoomError('最小层级不能大于最大层级');
+                                return;
+                              }
+                              setZoomError('');
+                              setIsSavingZoom(true);
+                              try {
+                                await updateTileZoom(file.id, minZoom, maxZoom);
+                                setEditZoom(false);
+                                if (onZoomUpdate) {
+                                  onZoomUpdate(file.id, minZoom, maxZoom);
+                                }
+                              } catch (err) {
+                                setZoomError(err.message || '保存失败');
+                              } finally {
+                                setIsSavingZoom(false);
+                              }
+                            }}
+                          >
+                            {isSavingZoom ? '保存中...' : '保存'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ fontSize: '12px', padding: '4px 12px' }}
+                            onClick={() => {
+                              setMinZoom(file.minZoom ?? 0);
+                              setMaxZoom(file.maxZoom ?? 22);
+                              setEditZoom(false);
+                              setZoomError('');
+                            }}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>
+                          {file.minZoom ?? 0} ~ {file.maxZoom ?? 22}
+                        </span>
+                        {file.tileFormat == null && (
+                          <button
+                            type="button"
+                            className="btn-text"
+                            style={{ fontSize: '12px' }}
+                            onClick={() => setEditZoom(true)}
+                          >
+                            修改
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {file.tileFormat != null && !editZoom && (
+                      <small className="form-hint" style={{ marginTop: '4px' }}>
+                        瓦片文件的缩放层级由源文件决定
+                      </small>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {file.isPublic && file.tileFormat == null && (
+                <div className="detail-group">
+                  <div className="detail-label">字段名称</div>
+                  <div className="detail-value">
+                    {editUseAliases ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="editUseAliases"
+                              checked={useAliasesValue}
+                              onChange={() => setUseAliasesValue(true)}
+                            />
+                            <span style={{ fontSize: '12px' }}>使用别名</span>
+                          </label>
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="editUseAliases"
+                              checked={!useAliasesValue}
+                              onChange={() => setUseAliasesValue(false)}
+                            />
+                            <span style={{ fontSize: '12px' }}>使用原始名称</span>
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            style={{ fontSize: '12px', padding: '4px 12px' }}
+                            disabled={isSavingUseAliases}
+                            onClick={async () => {
+                              setUseAliasesError('');
+                              setIsSavingUseAliases(true);
+                              try {
+                                await updatePublishSettings(file.id, {
+                                  useAliases: useAliasesValue,
+                                });
+                                setEditUseAliases(false);
+                                if (onUseAliasesUpdate) {
+                                  onUseAliasesUpdate(file.id, useAliasesValue);
+                                }
+                              } catch (err) {
+                                setUseAliasesError(err.message || '更新字段名称设置失败');
+                              } finally {
+                                setIsSavingUseAliases(false);
+                              }
+                            }}
+                          >
+                            {isSavingUseAliases ? '保存中...' : '保存'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ fontSize: '12px', padding: '4px 12px' }}
+                            onClick={() => {
+                              setUseAliasesValue(file.useAliases ?? true);
+                              setEditUseAliases(false);
+                              setUseAliasesError('');
+                            }}
+                          >
+                            取消
+                          </button>
+                        </div>
+                        {useAliasesError && (
+                          <div className="alert" style={{ fontSize: '12px', margin: 0 }}>
+                            {useAliasesError}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>{file.useAliases !== false ? '使用别名' : '使用原始名称'}</span>
+                        <button
+                          type="button"
+                          className="btn-text"
+                          style={{ fontSize: '12px' }}
+                          onClick={() => setEditUseAliases(true)}
+                        >
+                          修改
+                        </button>
+                      </div>
+                    )}
+                    <small className="form-hint" style={{ marginTop: '4px' }}>
+                      控制公开发布瓦片中的属性字段名称
+                    </small>
+                  </div>
+                </div>
+              )}
+
+              {file.isPublic && (
+                <div className="detail-group">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ width: '100%', fontSize: '12px' }}
+                    onClick={handleUnpublishClick}
+                  >
+                    取消发布
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="tab-empty" role="tabpanel" id="tabpanel-publish">
+              文件处理完成后可进行发布操作
+            </div>
+          ))}
       </div>
     </div>
   );
@@ -947,7 +1037,11 @@ export default function App() {
   async function handlePublish(fileId, options) {
     const result = await publishFile(fileId, options);
     setFiles((prev) =>
-      prev.map((f) => (f.id === fileId ? { ...f, isPublic: true, publicSlug: result.slug } : f)),
+      prev.map((f) =>
+        f.id === fileId
+          ? { ...f, isPublic: true, publicSlug: result.slug, useAliases: result.useAliases }
+          : f,
+      ),
     );
   }
 
@@ -966,7 +1060,6 @@ export default function App() {
     setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, useAliases } : f)));
   }
 
-  // Derive selected file object
   const selectedFile = useMemo(
     () => files.find((f) => f.id === selectedId) || null,
     [files, selectedId],
@@ -974,7 +1067,6 @@ export default function App() {
 
   const hasActiveJobs = useMemo(() => computeHasActiveJobs(files), [files]);
 
-  // Polling Logic
   useEffect(() => {
     if (!hasActiveJobs) return;
 
@@ -990,7 +1082,7 @@ export default function App() {
       } catch (err) {
         console.error('Polling failed', err);
       }
-    }, 2000); // Poll every 2 seconds
+    }, 2000);
 
     return () => clearInterval(intervalId);
   }, [hasActiveJobs]);
@@ -1046,7 +1138,6 @@ export default function App() {
     };
 
     setFiles((prev) => [optimistic, ...prev]);
-    // Auto-select the uploading file
     setSelectedId(tempId);
 
     const formData = new FormData();

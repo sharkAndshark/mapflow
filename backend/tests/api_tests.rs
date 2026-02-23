@@ -5249,3 +5249,75 @@ async fn test_update_publish_settings_requires_published() {
         "File must be published before updating settings"
     );
 }
+
+#[tokio::test]
+async fn test_feature_properties_returns_alias() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    let body_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    let first_field = &schema["layers"][0]["fields"][0];
+    let normalized_name = first_field["normalized"]
+        .as_str()
+        .unwrap_or_else(|| first_field["name"].as_str().unwrap());
+    let original_name = first_field["name"].as_str().unwrap();
+
+    let alias_value = "自定义别名";
+    let set_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"fields": [{{"normalized_name": "{}", "alias": "{}"}}]}}"#,
+            normalized_name, alias_value
+        )))
+        .unwrap();
+
+    let set_response = app.clone().oneshot(set_request).await.unwrap();
+    assert_eq!(set_response.status(), axum::http::StatusCode::OK);
+
+    let props_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let props_response = app.oneshot(props_request).await.unwrap();
+    assert_eq!(props_response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = props_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let props_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(props_json["fid"], 1);
+    let props = props_json["properties"]
+        .as_array()
+        .expect("properties array");
+
+    let field_with_alias = props
+        .iter()
+        .find(|p| p["key"].as_str() == Some(original_name))
+        .expect("field should exist");
+
+    assert_eq!(field_with_alias["alias"].as_str(), Some(alias_value));
+}

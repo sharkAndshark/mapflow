@@ -78,6 +78,8 @@ pub struct PreviewMeta {
 pub struct FeatureProperty {
     pub key: String,
     pub value: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
 }
 
 #[allow(dead_code)]
