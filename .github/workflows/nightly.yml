@@ -181,6 +181,10 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install protobuf -y
 
+      - name: Install zip (Windows)
+        if: runner.os == 'Windows'
+        run: choco install zip -y
+
       - name: Build backend binary
         run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist
 
