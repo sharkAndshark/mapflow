@@ -163,7 +163,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          targets: ${{ matrix.rust_target }}
+          target: ${{ matrix.rust_target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -179,7 +179,7 @@ jobs:
 
       - name: Install protobuf compiler (Windows)
         if: runner.os == 'Windows'
-        run: choco install protobuf -y
+        run: choco install protoc -y
 
       - name: Prepare spatial extension for binary embedding
         shell: bash
