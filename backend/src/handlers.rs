@@ -1213,7 +1213,14 @@ pub async fn update_publish_settings(
             duckdb::params![&id],
             |row| row.get(0),
         )
-        .map_err(internal_error)?;
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Published file settings not found".to_string(),
+                }),
+            )
+        })?;
 
     drop(conn);
 
