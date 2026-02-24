@@ -1,7 +1,55 @@
+use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
 use tokio::{fs, sync::Mutex};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[derive(Parser)]
+#[command(version, about)]
+struct Cli {
+    #[arg(long, env = "LISTEN", default_value = ":3000")]
+    listen: String,
+
+    #[arg(long, env = "LISTEN_MAX_PORT")]
+    listen_max_port: Option<u16>,
+}
+
+fn parse_listen_addr(listen: &str) -> (String, u16) {
+    let (host, port_str) = if let Some(stripped) = listen.strip_prefix(':') {
+        ("0.0.0.0", stripped)
+    } else if let Some(colon_pos) = listen.rfind(':') {
+        (&listen[..colon_pos], &listen[colon_pos + 1..])
+    } else {
+        panic!(
+            "Invalid LISTEN format: '{}'. Expected '[host]:port' or ':port'",
+            listen
+        );
+    };
+
+    let port: u16 = port_str
+        .parse()
+        .unwrap_or_else(|_| panic!("Invalid port in LISTEN: '{}'", port_str));
+
+    (host.to_string(), port)
+}
+
+async fn bind_with_fallback(
+    host: &str,
+    base_port: u16,
+    max_port: u16,
+) -> (tokio::net::TcpListener, u16) {
+    for port in base_port..=max_port {
+        let addr = format!("{}:{}", host, port);
+        match tokio::net::TcpListener::bind(&addr).await {
+            Ok(listener) => return (listener, port),
+            Err(e) if port == base_port => {
+                tracing::debug!(error = %e, port, "Port {} in use, trying next...", port);
+            }
+            Err(_) => {}
+        }
+    }
+    panic!("No available port in range {}-{}", base_port, max_port);
+}
 
 #[tokio::main]
 async fn main() {
@@ -79,13 +127,26 @@ async fn main() {
         }
     }
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    let addr = format!("0.0.0.0:{port}");
-    tracing::info!(addr = %addr, "Server starting");
+    let cli = Cli::parse();
+    let (host, base_port) = parse_listen_addr(&cli.listen);
+    let max_port = cli
+        .listen_max_port
+        .unwrap_or_else(|| base_port.saturating_add(99));
 
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .expect("failed to bind");
+    tracing::info!(listen = %cli.listen, host = %host, base_port, max_port, "Server starting");
+
+    let (listener, actual_port) = bind_with_fallback(&host, base_port, max_port).await;
+
+    if actual_port != base_port {
+        tracing::warn!(
+            original_port = base_port,
+            actual_port,
+            "Port {} was in use, using port {} instead",
+            base_port,
+            actual_port
+        );
+    }
+    tracing::info!("Listening on http://{}:{}", host, actual_port);
 
     let db_for_shutdown = db.clone();
     let shutdown = async move {

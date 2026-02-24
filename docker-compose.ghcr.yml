@@ -9,5 +9,5 @@ services:
       - ./uploads:/app/uploads
       - ./data:/app/data
     environment:
-      - PORT=3000
+      - LISTEN=:3000
       - UPLOAD_MAX_SIZE_MB=${UPLOAD_MAX_SIZE_MB:-200}

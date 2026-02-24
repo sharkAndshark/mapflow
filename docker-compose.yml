@@ -10,7 +10,7 @@ services:
       - ./uploads:/app/uploads
       - ./data:/app/data
     environment:
-      - PORT=3000
+      - LISTEN=:3000
       - UPLOAD_MAX_SIZE_MB=${UPLOAD_MAX_SIZE_MB:-200}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000}

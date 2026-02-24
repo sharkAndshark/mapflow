@@ -48,6 +48,7 @@ fi
 # -----------------------------------------------------------------------------
 PORT="${PORT:-3000}"
 VITE_PORT="${VITE_PORT:-5173}"
+LISTEN=":${PORT}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -162,7 +163,7 @@ if [ ! -f "$BINARY_PATH" ]; then
 fi
 
 log "Starting backend on port $PORT..."
-PORT="$PORT" "$BINARY_PATH" &
+LISTEN="$LISTEN" "$BINARY_PATH" &
 BACKEND_PID=$!
 log "Backend PID: $BACKEND_PID"
 
@@ -201,7 +202,7 @@ log "Backend is ready!"
 # Start Frontend
 # -----------------------------------------------------------------------------
 log "Starting frontend on port $VITE_PORT..."
-PORT="$PORT" VITE_PORT="$VITE_PORT" npm --prefix frontend run dev -- --port "$VITE_PORT" --strictPort &
+LISTEN="$LISTEN" VITE_PORT="$VITE_PORT" npm --prefix frontend run dev -- --port "$VITE_PORT" --strictPort &
 FRONTEND_PID=$!
 log "Frontend PID: $FRONTEND_PID"
 

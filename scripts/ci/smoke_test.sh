@@ -23,7 +23,7 @@ trap cleanup EXIT
 
 cid=$(docker run -d --rm \
   -p "${port}:3000" \
-  -e PORT=3000 \
+  -e LISTEN=:3000 \
   -e DB_PATH=/app/data/mapflow.duckdb \
   -e UPLOAD_DIR=/app/uploads \
   -v "${data_dir}:/app/data" \

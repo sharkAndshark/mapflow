@@ -33,6 +33,9 @@
 
 | ID | 模块 | 可观测行为 | 验证标准 | 验证命令 | 层级 | 优先级 |
 |----|------|-----------|---------|---------|------|--------|
+| CLI-001 | 服务启动 | 支持 `--listen [host]:port` 和 `LISTEN` 环境变量。`:port` 表示监听所有接口。CLI 优先于环境变量。默认 `:3000` | 绑定到指定地址 | `cargo test test_listen_*` | Unit | P1 |
+| CLI-002 | 端口回退 | 端口被占用时自动尝试 port+1 至 `--listen-max-port`。日志：`Listening on http://0.0.0.0:{actual_port}` | 日志显示实际端口 | `cargo test test_port_fallback` | Unit | P1 |
+| CLI-003 | 端口耗尽 | 所有端口不可用时 panic：`No available port in range {start}-{end}` | panic 信息清晰 | `cargo test test_port_exhausted` | Unit | P2 |
 | API-001 | 上传 | POST /api/uploads 需要认证，接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 201 + 元数据 / 400（格式无效） / 401（未认证） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
 | API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | lifecycle tests 轮询验证 | Integration | P0 |
 | API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | lifecycle tests + `test_preview_not_ready_returns_409` | Integration | P0 |

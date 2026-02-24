@@ -75,8 +75,11 @@ Optional runtime config:
 export WEB_DIST=./dist
 export DB_PATH=./data/mapflow.duckdb
 export UPLOAD_DIR=./uploads
-export PORT=3000
+export LISTEN=:3000
 ./mapflow
+
+# Or use CLI flags
+./mapflow --listen :8080 --listen-max-port 8100
 ```
 
 ```cmd
@@ -84,7 +87,7 @@ export PORT=3000
 set WEB_DIST=.\dist
 set DB_PATH=.\data\mapflow.duckdb
 set UPLOAD_DIR=.\uploads
-set PORT=3000
+set LISTEN=:3000
 mapflow.exe
 ```
 
@@ -100,9 +103,10 @@ mapflow.exe
 
 ## Runtime Configuration
 
-| Env | Default | Description |
+| Env / CLI | Default | Description |
 |---|---|---|
-| `PORT` | `3000` | HTTP server port |
+| `LISTEN` / `--listen` | `:3000` | Listen address (format: `[host]:port` or `:port`) |
+| `LISTEN_MAX_PORT` / `--listen-max-port` | base+99 | Max port for fallback when port is in use |
 | `DB_PATH` | `./data/mapflow.duckdb` | DuckDB path |
 | `UPLOAD_DIR` | `./uploads` | Upload storage directory |
 | `WEB_DIST` | `frontend/dist` | Optional external frontend assets path (if missing, bundle binaries use embedded assets) |

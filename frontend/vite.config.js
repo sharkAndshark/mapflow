@@ -2,7 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(() => {
-  const backendPort = process.env.PORT || '3000';
+  const listenAddr = process.env.LISTEN || ':3000';
+  const backendPort = listenAddr.split(':').pop() || '3000';
   const frontendPort = process.env.VITE_PORT || '5173';
 
   return {

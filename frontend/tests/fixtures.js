@@ -123,7 +123,7 @@ export const test = base.extend({
         cwd: repoRoot,
         env: {
           ...process.env,
-          PORT: String(port),
+          LISTEN: `:${port}`,
           DB_PATH: dbPath,
           UPLOAD_DIR: uploadDir,
           MAPFLOW_TEST_MODE: '1', // Enable reset API
