@@ -4995,3 +4995,240 @@ async fn test_feature_properties_returns_alias() {
 
     assert_eq!(field_with_alias["alias"].as_str(), Some(alias_value));
 }
+
+#[tokio::test]
+async fn test_update_publish_settings_success() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    // Publish with useAliases=true
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"slug": "settings-test", "useAliases": true}"#,
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    // Update useAliases to false
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/publish-settings", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"useAliases": false}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(result["id"], file_id);
+    assert_eq!(result["useAliases"], false);
+
+    // Verify the setting persists via file list
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .body(Body::empty())
+        .unwrap();
+
+    let list_response = app.oneshot(list_request).await.unwrap();
+    let list_bytes = list_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let files: Vec<FileItem> = serde_json::from_slice(&list_bytes).unwrap();
+
+    let file = files.iter().find(|f| f.id == file_id).unwrap();
+    assert_eq!(file.use_aliases, Some(false));
+}
+
+#[tokio::test]
+async fn test_update_publish_settings_not_published() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    // Try to update settings without publishing first
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/publish-settings", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"useAliases": false}"#))
+        .unwrap();
+
+    let response = app.oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let error: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(error["error"]
+        .as_str()
+        .unwrap()
+        .contains("must be published"));
+}
+
+#[tokio::test]
+async fn test_update_publish_settings_file_not_found() {
+    let (app, _temp) = setup_app().await;
+
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri("/api/files/nonexistent-id/publish-settings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"useAliases": false}"#))
+        .unwrap();
+
+    let response = app.oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_public_tile_uses_alias() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    // Set field alias
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    let schema_bytes = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema: serde_json::Value = serde_json::from_slice(&schema_bytes).unwrap();
+
+    let first_field = &schema["layers"][0]["fields"][0];
+    let normalized_name = first_field["normalized"]
+        .as_str()
+        .unwrap_or_else(|| first_field["name"].as_str().unwrap());
+
+    let set_alias_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/field-aliases", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"fields": [{{"normalized_name": "{}", "alias": "MyAlias"}}]}}"#,
+            normalized_name
+        )))
+        .unwrap();
+
+    let set_alias_response = app.clone().oneshot(set_alias_request).await.unwrap();
+    assert_eq!(set_alias_response.status(), axum::http::StatusCode::OK);
+
+    // Publish with useAliases=true
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"slug": "alias-test-true", "useAliases": true}"#,
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    // Request public tile - should use alias
+    let tile_request = Request::builder()
+        .method("GET")
+        .uri("/tiles/alias-test-true/0/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let tile_response = app.clone().oneshot(tile_request).await.unwrap();
+    assert_eq!(tile_response.status(), axum::http::StatusCode::OK);
+
+    let tile_bytes = tile_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+
+    // Parse MVT and check for alias in property keys
+    let reader = MvtReader::new(tile_bytes.to_vec()).expect("Valid MVT tile");
+    let features = reader.get_features(0).expect("Features");
+
+    let has_alias_key = features.iter().any(|f| {
+        f.properties
+            .as_ref()
+            .map(|props| props.contains_key("MyAlias"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_alias_key,
+        "Tile should have 'MyAlias' as property key when useAliases=true"
+    );
+
+    // Update to useAliases=false
+    let update_request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/files/{}/publish-settings", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"useAliases": false}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(update_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    // Request public tile again - should use original name
+    let tile_request2 = Request::builder()
+        .method("GET")
+        .uri("/tiles/alias-test-true/0/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let tile_response2 = app.oneshot(tile_request2).await.unwrap();
+    assert_eq!(tile_response2.status(), axum::http::StatusCode::OK);
+
+    let tile_bytes2 = tile_response2
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+
+    // Parse MVT and check for original name in property keys (not alias)
+    let reader2 = MvtReader::new(tile_bytes2.to_vec()).expect("Valid MVT tile");
+    let features2 = reader2.get_features(0).expect("Features");
+
+    let has_original_key = features2.iter().any(|f| {
+        f.properties
+            .as_ref()
+            .map(|props| props.contains_key(normalized_name))
+            .unwrap_or(false)
+    });
+    let has_alias_key2 = features2.iter().any(|f| {
+        f.properties
+            .as_ref()
+            .map(|props| props.contains_key("MyAlias"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_original_key,
+        "Tile should have original name as property key when useAliases=false"
+    );
+    assert!(
+        !has_alias_key2,
+        "Tile should NOT have alias as property key when useAliases=false"
+    );
+}
