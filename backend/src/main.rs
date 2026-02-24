@@ -38,6 +38,12 @@ async fn bind_with_fallback(
     base_port: u16,
     max_port: u16,
 ) -> (tokio::net::TcpListener, u16) {
+    if max_port < base_port {
+        panic!(
+            "LISTEN_MAX_PORT ({}) must be >= listen port ({})",
+            max_port, base_port
+        );
+    }
     for port in base_port..=max_port {
         let addr = format!("{}:{}", host, port);
         match tokio::net::TcpListener::bind(&addr).await {
@@ -274,6 +280,15 @@ mod tests {
                 }
             }
             bind_with_fallback("127.0.0.1", 46000, 46002).await;
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "LISTEN_MAX_PORT (3000) must be >= listen port (4000)")]
+    fn test_max_port_less_than_base_port() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            bind_with_fallback("127.0.0.1", 4000, 3000).await;
         });
     }
 }
