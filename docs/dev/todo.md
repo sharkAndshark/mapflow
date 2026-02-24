@@ -1,6 +1,6 @@
 # Known Issues & TODOs
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-22
 
 ## Known Issues
 
@@ -8,16 +8,13 @@
 
 #### Spatial Import GDAL Error (No such file)
 
-- **Tests**:
-  - `test_feature_properties_endpoint_returns_null_for_missing_values`
-  - `test_public_tile_respects_minzoom_only`
-- **Symptom**: `Spatial import failed: IO Error: GDAL Error (4): /tmp/.../points.geojson: No such file or directory`
+- **Test**: `test_feature_properties_endpoint_returns_null_for_missing_values`
+- **Symptom**: `Spatial import failed: IO Error: GDAL Error (4): /tmp/.../roads.geojson: No such file or directory`
 - **Evidence**:
-  - CI Runs: 22262024670, 22289556132, Ubuntu 24.04
-  - 失败频率: ~3% (30+ CI 运行中偶发)
-  - 本地运行全部通过
-  - 同一 commit 在 push 事件通过，PR 事件失败（flaky 特征）
-- **Root Cause**: 高并发 I/O 压力下 GDAL/DuckDB ST_Read 偶发竞态条件。虽然 `sync_all()` 已调用，CI 虚拟化环境文件系统同步可能存在延迟
+  - CI Run: 22262024670, Ubuntu 24.04
+  - 失败频率: 30 次 CI 运行中仅 1 次 (~3.3%)
+  - 本地运行 5 次全部通过
+- **Root Cause**: 高并发 I/O 压力下 GDAL/DuckDB ST_Read 偶发竞态条件
 - **Mitigation**: `--test-threads=2` 限制并发 (已应用)
 - **Priority**: Low
 
