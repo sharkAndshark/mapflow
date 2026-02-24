@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
 use tokio::{fs, sync::Mutex};
@@ -14,13 +15,13 @@ struct Cli {
     listen_max_port: Option<u16>,
 }
 
-fn parse_listen_addr(listen: &str) -> (String, u16) {
+fn parse_listen_addr(listen: &str) -> Result<(String, u16)> {
     let (host, port_str) = if let Some(stripped) = listen.strip_prefix(':') {
         ("0.0.0.0", stripped)
     } else if let Some(colon_pos) = listen.rfind(':') {
         (&listen[..colon_pos], &listen[colon_pos + 1..])
     } else {
-        panic!(
+        bail!(
             "Invalid LISTEN format: '{}'. Expected '[host]:port' or ':port'",
             listen
         );
@@ -28,37 +29,38 @@ fn parse_listen_addr(listen: &str) -> (String, u16) {
 
     let port: u16 = port_str
         .parse()
-        .unwrap_or_else(|_| panic!("Invalid port in LISTEN: '{}'", port_str));
+        .map_err(|_| anyhow::anyhow!("Invalid port in LISTEN: '{}'", port_str))?;
 
-    (host.to_string(), port)
+    Ok((host.to_string(), port))
 }
 
 async fn bind_with_fallback(
     host: &str,
     base_port: u16,
     max_port: u16,
-) -> (tokio::net::TcpListener, u16) {
+) -> Result<(tokio::net::TcpListener, u16)> {
     if max_port < base_port {
-        panic!(
+        bail!(
             "LISTEN_MAX_PORT ({}) must be >= listen port ({})",
-            max_port, base_port
+            max_port,
+            base_port
         );
     }
     for port in base_port..=max_port {
         let addr = format!("{}:{}", host, port);
         match tokio::net::TcpListener::bind(&addr).await {
-            Ok(listener) => return (listener, port),
+            Ok(listener) => return Ok((listener, port)),
             Err(e) if port == base_port => {
                 tracing::debug!(error = %e, port, "Port {} in use, trying next...", port);
             }
             Err(_) => {}
         }
     }
-    panic!("No available port in range {}-{}", base_port, max_port);
+    bail!("No available port in range {}-{}", base_port, max_port);
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -134,14 +136,14 @@ async fn main() {
     }
 
     let cli = Cli::parse();
-    let (host, base_port) = parse_listen_addr(&cli.listen);
+    let (host, base_port) = parse_listen_addr(&cli.listen)?;
     let max_port = cli
         .listen_max_port
         .unwrap_or_else(|| base_port.saturating_add(99));
 
     tracing::info!(listen = %cli.listen, host = %host, base_port, max_port, "Server starting");
 
-    let (listener, actual_port) = bind_with_fallback(&host, base_port, max_port).await;
+    let (listener, actual_port) = bind_with_fallback(&host, base_port, max_port).await?;
 
     if actual_port != base_port {
         tracing::warn!(
@@ -168,8 +170,9 @@ async fn main() {
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
-        .await
-        .expect("server failed");
+        .await?;
+
+    Ok(())
 }
 
 async fn shutdown_signal() {
@@ -202,42 +205,46 @@ mod tests {
 
     #[test]
     fn test_listen_addr_port_only() {
-        let (host, port) = parse_listen_addr(":3000");
+        let (host, port) = parse_listen_addr(":3000").unwrap();
         assert_eq!(host, "0.0.0.0");
         assert_eq!(port, 3000);
     }
 
     #[test]
     fn test_listen_addr_host_and_port() {
-        let (host, port) = parse_listen_addr("127.0.0.1:8080");
+        let (host, port) = parse_listen_addr("127.0.0.1:8080").unwrap();
         assert_eq!(host, "127.0.0.1");
         assert_eq!(port, 8080);
     }
 
     #[test]
     fn test_listen_addr_localhost() {
-        let (host, port) = parse_listen_addr("localhost:3000");
+        let (host, port) = parse_listen_addr("localhost:3000").unwrap();
         assert_eq!(host, "localhost");
         assert_eq!(port, 3000);
     }
 
     #[test]
     fn test_listen_addr_ipv6() {
-        let (host, port) = parse_listen_addr("[::1]:8080");
+        let (host, port) = parse_listen_addr("[::1]:8080").unwrap();
         assert_eq!(host, "[::1]");
         assert_eq!(port, 8080);
     }
 
     #[test]
-    #[should_panic(expected = "Invalid LISTEN format")]
     fn test_listen_addr_missing_colon() {
-        parse_listen_addr("3000");
+        let result = parse_listen_addr("3000");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid LISTEN format"), "Error was: {}", err);
     }
 
     #[test]
-    #[should_panic(expected = "Invalid port in LISTEN")]
     fn test_listen_addr_invalid_port() {
-        parse_listen_addr(":abc");
+        let result = parse_listen_addr(":abc");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid port"), "Error was: {}", err);
     }
 
     #[test]
@@ -247,8 +254,9 @@ mod tests {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let bound_port = listener.local_addr().unwrap().port();
 
-            let (_, actual_port) =
-                bind_with_fallback("127.0.0.1", bound_port, bound_port + 10).await;
+            let (_, actual_port) = bind_with_fallback("127.0.0.1", bound_port, bound_port + 10)
+                .await
+                .unwrap();
 
             drop(listener);
 
@@ -263,13 +271,14 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let base_port = 45000;
-            let (_, actual_port) = bind_with_fallback("127.0.0.1", base_port, base_port + 10).await;
+            let (_, actual_port) = bind_with_fallback("127.0.0.1", base_port, base_port + 10)
+                .await
+                .unwrap();
             assert_eq!(actual_port, base_port);
         });
     }
 
     #[test]
-    #[should_panic(expected = "No available port in range")]
     fn test_port_exhausted() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
@@ -279,16 +288,29 @@ mod tests {
                     listeners.push(l);
                 }
             }
-            bind_with_fallback("127.0.0.1", 46000, 46002).await;
+            let result = bind_with_fallback("127.0.0.1", 46000, 46002).await;
+            assert!(result.is_err());
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("No available port in range"),
+                "Error was: {}",
+                err
+            );
         });
     }
 
     #[test]
-    #[should_panic(expected = "LISTEN_MAX_PORT (3000) must be >= listen port (4000)")]
     fn test_max_port_less_than_base_port() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            bind_with_fallback("127.0.0.1", 4000, 3000).await;
+            let result = bind_with_fallback("127.0.0.1", 4000, 3000).await;
+            assert!(result.is_err());
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("LISTEN_MAX_PORT (3000) must be >= listen port (4000)"),
+                "Error was: {}",
+                err
+            );
         });
     }
 }
