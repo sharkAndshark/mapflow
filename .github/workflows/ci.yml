@@ -61,7 +61,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Backend tests
-        run: cargo test --manifest-path backend/Cargo.toml -- --test-threads=2
+        run: cargo test --manifest-path backend/Cargo.toml -- --test-threads=1
 
   frontend_unit:
     runs-on: ubuntu-latest
