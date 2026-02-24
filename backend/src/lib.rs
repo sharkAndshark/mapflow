@@ -12,6 +12,7 @@ mod password;
 mod public;
 mod routes;
 mod session_store;
+mod static_assets;
 mod test_routes;
 mod tiles;
 mod upload;
@@ -34,6 +35,8 @@ pub use models::{
 pub use password::{hash_password, validate_password_complexity, verify_password, PasswordError};
 pub use routes::{build_api_router, build_test_router};
 pub use session_store::DuckDBStore;
+#[cfg(feature = "embed-web-dist")]
+pub use static_assets::serve_embedded_spa;
 pub use validation::{validate_geojson, validate_shapefile_zip};
 
 #[cfg(test)]

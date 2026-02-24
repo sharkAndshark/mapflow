@@ -1,7 +1,12 @@
 use axum::Router;
 
 #[cfg(debug_assertions)]
-use axum::{extract::State, http::StatusCode, routing::post, Json};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json,
+};
 
 #[cfg(debug_assertions)]
 use tokio::fs;
@@ -14,8 +19,12 @@ use crate::AppState;
 #[cfg(debug_assertions)]
 pub fn add_test_routes(router: Router<AppState>) -> Router<AppState> {
     if std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1") {
-        tracing::info!("Test mode enabled (debug only): exposing POST /api/test/reset");
-        router.route("/api/test/reset", post(reset_test_state))
+        tracing::info!(
+            "Test mode enabled (debug only): exposing POST /api/test/reset and GET /api/test/status"
+        );
+        router
+            .route("/api/test/reset", post(reset_test_state))
+            .route("/api/test/status", get(test_status))
     } else {
         router
     }
@@ -86,5 +95,17 @@ async fn reset_test_state(State(state): State<AppState>) -> impl axum::response:
     (
         StatusCode::OK,
         Json(serde_json::json!({ "status": "reset_complete" })),
+    )
+}
+
+#[cfg(debug_assertions)]
+async fn test_status() -> impl axum::response::IntoResponse {
+    let run_id = std::env::var("MAPFLOW_TEST_RUN_ID").unwrap_or_else(|_| "unset".to_string());
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "ok",
+            "testRunId": run_id
+        })),
     )
 }

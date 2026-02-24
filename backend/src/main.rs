@@ -60,6 +60,23 @@ async fn main() {
         app = app.fallback_service(
             ServeDir::new(&web_dist_path).not_found_service(ServeFile::new(index_path)),
         );
+    } else {
+        #[cfg(feature = "embed-web-dist")]
+        {
+            tracing::info!(
+                web_dist = %web_dist,
+                "WEB_DIST not found, serving embedded frontend bundle"
+            );
+            app = app.fallback(backend::serve_embedded_spa);
+        }
+
+        #[cfg(not(feature = "embed-web-dist"))]
+        {
+            tracing::warn!(
+                web_dist = %web_dist,
+                "WEB_DIST not found and embedded frontend disabled; frontend routes unavailable"
+            );
+        }
     }
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());

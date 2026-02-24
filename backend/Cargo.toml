@@ -3,6 +3,11 @@ name = "backend"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+embed-web-dist = ["dep:include_dir"]
+embed-spatial-extension = []
+
 [dependencies]
 axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
@@ -18,7 +23,7 @@ axum-extra = { version = "0.12.5", features = ["query"] }
 bcrypt = "0.18"
 regex = "1.10"
 lazy_static = "1.5"
-uuid = { version = "1.11", features = ["v4", "serde"] }
+uuid = { version = "1.21", features = ["v4", "serde"] }
 axum-login = "0.18"
 tower-sessions = "0.14"
 tower-cookies = "0.11"
@@ -29,6 +34,7 @@ rusqlite = { version = "0.38", features = ["bundled"] }
 moka = { version = "0.12", features = ["sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+include_dir = { version = "0.7.4", optional = true }
 
 [dev-dependencies]
 http-body-util = "0.1"

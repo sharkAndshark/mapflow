@@ -13,13 +13,12 @@ License: Apache-2.0
 
 | Channel | Trigger | GitHub Release | GHCR Tags | Assets |
 |---|---|---|---|---|
-| Stable | `v*` tag push | Full release | `latest`, `vX.Y.Z` | Linux + macOS bundles |
-| Nightly | Daily schedule (`02:00 UTC`) + manual dispatch | Pre-release | `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Linux + macOS bundles |
+| Stable | `v*` tag push | Full release | `latest`, `vX.Y.Z` | Linux + macOS + Windows bundles |
+| Nightly | Daily schedule (`02:00 UTC`) + manual dispatch | Pre-release | `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Linux + macOS + Windows bundles |
 
 Each binary bundle contains:
 - `mapflow` backend executable
-- prebuilt frontend (`dist/`)
-- offline spatial extension binary (`extensions/spatial.duckdb_extension`)
+- embedded DuckDB spatial extension (materialized to local cache/tmp on startup)
 - `spatial-extension-manifest.json`
 
 ## Quickstart (Docker)
@@ -48,23 +47,45 @@ docker compose -f docker-compose.ghcr.yml down
 
 ## Quickstart (Binary Bundle)
 
-1. Download an asset from [GitHub Releases](https://github.com/sharkAndshark/mapflow/releases).
+1. Download an asset from [GitHub Releases](https://github.com/sharkAndshark/mapflow/releases):
+   - Linux: `mapflow-*-linux-amd64.tar.gz`
+   - macOS (Apple Silicon): `mapflow-*-darwin-arm64.tar.gz`
+   - Windows: `mapflow-*-windows-amd64.zip`
 2. Extract it, then run:
 
 ```bash
+# Linux/macOS
 ./mapflow
+
+# Windows (Command Prompt)
+mapflow.exe
+
+# Windows (PowerShell)
+.\mapflow.exe
 ```
 
-Binary bundles include `extensions/spatial.duckdb_extension` and load it automatically by default.
+Binary bundles embed the spatial extension and auto-extract/load it on startup.
+If the extracted extension in cache/tmp is cleaned up, MapFlow re-materializes it on next startup.
+Frontend assets are embedded into the binary for bundle releases.
 
 Optional runtime config:
 
 ```bash
+# Linux/macOS
 export WEB_DIST=./dist
 export DB_PATH=./data/mapflow.duckdb
 export UPLOAD_DIR=./uploads
 export PORT=3000
 ./mapflow
+```
+
+```cmd
+:: Windows (Command Prompt)
+set WEB_DIST=.\dist
+set DB_PATH=.\data\mapflow.duckdb
+set UPLOAD_DIR=.\uploads
+set PORT=3000
+mapflow.exe
 ```
 
 ## Supported Upload Formats
@@ -84,12 +105,13 @@ export PORT=3000
 | `PORT` | `3000` | HTTP server port |
 | `DB_PATH` | `./data/mapflow.duckdb` | DuckDB path |
 | `UPLOAD_DIR` | `./uploads` | Upload storage directory |
-| `WEB_DIST` | `frontend/dist` | Frontend static assets path |
+| `WEB_DIST` | `frontend/dist` | Optional external frontend assets path (if missing, bundle binaries use embedded assets) |
 | `UPLOAD_MAX_SIZE_MB` | `200` | Upload max size |
 | `COOKIE_SECURE` | `false` | Set `true` behind HTTPS |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated CORS allowlist |
 | `SPATIAL_EXTENSION_PATH` | unset | Explicit local spatial extension path |
 | `SPATIAL_EXTENSION_DIR` | unset | Directory containing `spatial.duckdb_extension` |
+| `SPATIAL_EXTENSION_CACHE_DIR` | unset | Preferred directory for extracted embedded spatial extension (set to a user-private directory for stricter permission requirements) |
 
 ## Development
 
@@ -104,6 +126,7 @@ Common commands:
 just check
 just test
 just docker-up-build
+just bump-duckdb 1.4.4
 ```
 
 ## Contracts & Internal Docs

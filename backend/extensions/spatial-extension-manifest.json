@@ -21,6 +21,11 @@
       "platform": "osx_arm64",
       "archive_url": "http://extensions.duckdb.org/v1.4.4/osx_arm64/spatial.duckdb_extension.gz",
       "local_relpath": "backend/extensions/duckdb/v1.4.4/osx_arm64/spatial.duckdb_extension"
+    },
+    {
+      "platform": "windows_amd64",
+      "archive_url": "http://extensions.duckdb.org/v1.4.4/windows_amd64/spatial.duckdb_extension.gz",
+      "local_relpath": "backend/extensions/duckdb/v1.4.4/windows_amd64/spatial.duckdb_extension"
     }
   ]
 }

@@ -4,13 +4,7 @@ import {
   hasActiveJobs as computeHasActiveJobs,
   mergeServerFilesWithOptimistic,
 } from './polling.js';
-import {
-  publishFile,
-  unpublishFile,
-  updateTileZoom,
-  updateFieldAliases,
-  updatePublishSettings,
-} from './api.js';
+import { publishFile, unpublishFile, updateTileZoom, updateFieldAliases } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 
 const STATUS_LABELS = {
@@ -22,6 +16,7 @@ const STATUS_LABELS = {
 };
 
 function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliasesUpdate }) {
+  // Tab state
   const [activeTab, setActiveTab] = useState('basic');
   const tabs = [
     { id: 'basic', label: 'Basic Info' },
@@ -47,6 +42,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [isSavingAlias, setIsSavingAlias] = useState(false);
   const aliasEditRef = useRef(null);
 
+  // Handle click outside to cancel alias editing
   useEffect(() => {
     if (!editingAlias) return;
 
@@ -62,6 +58,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingAlias]);
 
+  // Publish-related state
   const [editPublish, setEditPublish] = useState(false);
   const [publishSlug, setPublishSlug] = useState('');
   const [publishMinZoom, setPublishMinZoom] = useState(0);
@@ -71,10 +68,12 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [isPublishing, setIsPublishing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // Cache slug validation result to avoid duplicate calls
   const slugValidationError = useMemo(() => {
     return validateSlug(publishSlug.trim()).error;
   }, [publishSlug]);
 
+  // Real-time zoom validation for non-tile files
   const isTileFile = file?.tileFormat != null;
   const zoomValidationError = useMemo(() => {
     if (isTileFile) return null;
@@ -136,6 +135,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
       setEditingAlias(null);
       setAliasValue('');
       setAliasError('');
+      // Reset publish-related state when file changes
       setEditPublish(false);
       setPublishSlug('');
       setPublishMinZoom(file.minZoom ?? 0);
@@ -146,6 +146,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
     }
   }, [file]);
 
+  // Reset to basic tab only when file ID changes (different file selected)
+  // Using file?.id instead of [file] prevents tab reset when file properties change
+  // (e.g., when isPublic changes after publishing)
   useEffect(() => {
     setActiveTab('basic');
   }, [file?.id]);
@@ -219,6 +222,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
           <span className="detail-id">{file.id}</span>
         </div>
 
+        {/* Tab navigation */}
         <div className="tab-nav" role="tablist">
           {tabs.map((tab) => (
             <button
@@ -235,6 +239,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
           ))}
         </div>
 
+        {/* Basic Info Tab */}
         {activeTab === 'basic' && (
           <div className="tab-content" role="tabpanel" id="tabpanel-basic">
             <div className="detail-group">
@@ -276,6 +281,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
           </div>
         )}
 
+        {/* Fields Tab */}
         {activeTab === 'fields' &&
           (isReady ? (
             <div className="tab-content fields-section" role="tabpanel" id="tabpanel-fields">
@@ -520,9 +526,11 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
             </div>
           ))}
 
+        {/* Publish Tab */}
         {activeTab === 'publish' &&
           (isReady ? (
             <div className="tab-content" role="tabpanel" id="tabpanel-publish">
+              {/* Publish status section */}
               {!file.isPublic && !editPublish && (
                 <div className="detail-group">
                   <div className="detail-label">发布状态</div>
@@ -553,6 +561,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                   <div className="detail-label">发布设置</div>
                   <div className="detail-value">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {/* URL Slug */}
                       <div>
                         <label
                           style={{
@@ -583,6 +592,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         </small>
                       </div>
 
+                      {/* Zoom levels */}
                       <div>
                         <label
                           style={{
@@ -691,6 +701,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         </div>
                       )}
 
+                      {/* Public URL preview */}
                       <div>
                         <label
                           style={{
@@ -713,6 +724,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         </div>
                       )}
 
+                      {/* Action buttons */}
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
                           type="button"
@@ -732,7 +744,6 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             setPublishSlug('');
                             setPublishMinZoom(file.minZoom ?? 0);
                             setPublishMaxZoom(file.maxZoom ?? 22);
-                            setPublishUseAliases(true);
                             setPublishError('');
                           }}
                         >
@@ -997,6 +1008,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                 </div>
               )}
 
+              {/* Unpublish button */}
               {file.isPublic && (
                 <div className="detail-group">
                   <button
@@ -1062,6 +1074,7 @@ export default function App() {
     setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, useAliases } : f)));
   }
 
+  // Derive selected file object
   const selectedFile = useMemo(
     () => files.find((f) => f.id === selectedId) || null,
     [files, selectedId],
@@ -1069,6 +1082,7 @@ export default function App() {
 
   const hasActiveJobs = useMemo(() => computeHasActiveJobs(files), [files]);
 
+  // Polling Logic
   useEffect(() => {
     if (!hasActiveJobs) return;
 
@@ -1084,7 +1098,7 @@ export default function App() {
       } catch (err) {
         console.error('Polling failed', err);
       }
-    }, 2000);
+    }, 2000); // Poll every 2 seconds
 
     return () => clearInterval(intervalId);
   }, [hasActiveJobs]);
@@ -1140,6 +1154,7 @@ export default function App() {
     };
 
     setFiles((prev) => [optimistic, ...prev]);
+    // Auto-select the uploading file
     setSelectedId(tempId);
 
     const formData = new FormData();

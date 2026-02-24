@@ -107,7 +107,7 @@ h1 {
 }
 
 .detail-area {
-  width: 320px;
+  width: 360px;
   flex-shrink: 0;
   background: #fcfcfc;
   display: flex;
@@ -580,4 +580,139 @@ h1 {
   .row {
     grid-template-columns: 1.5fr 0.8fr 0.8fr 1.2fr 0.8fr 1fr;
   }
+}
+
+/* Tab navigation */
+.tab-nav {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 16px;
+  gap: 4px;
+}
+
+.tab-btn {
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+}
+
+.tab-btn:hover {
+  color: #333;
+}
+
+.tab-btn.active {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+  font-weight: 500;
+}
+
+.tab-content {
+  min-height: 100px;
+}
+
+.tab-empty {
+  color: #999;
+  font-size: 13px;
+  text-align: center;
+  padding: 24px;
+}
+
+/* Fields table */
+.fields-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fields-table th,
+.fields-table td {
+  padding: 8px 6px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.fields-table th {
+  font-weight: 600;
+  color: #666;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Alias cell styles */
+.alias-cell {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.alias-cell:hover {
+  background-color: #f5f5f5;
+}
+
+.alias-cell:focus-visible {
+  outline: 2px solid #0080ff;
+  outline-offset: 2px;
+}
+
+.alias-cell.editing {
+  cursor: default;
+  background-color: #fff;
+}
+
+.alias-input {
+  width: 100%;
+  min-width: 80px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  outline: none;
+}
+
+.alias-input:focus {
+  border-color: #0080ff;
+  box-shadow: 0 0 0 2px rgba(0, 128, 255, 0.15);
+}
+
+.alias-buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.alias-buttons button {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.type-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #666;
+}
+
+.layer-section {
+  margin-bottom: 16px;
+}
+
+.layer-desc {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.layer-section:last-child {
+  margin-bottom: 0;
 }
