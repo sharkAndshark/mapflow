@@ -5120,6 +5120,7 @@ async fn test_public_tile_uses_alias() {
     let normalized_name = first_field["normalized"]
         .as_str()
         .unwrap_or_else(|| first_field["name"].as_str().unwrap());
+    let original_name = first_field["name"].as_str().expect("original field name");
 
     let set_alias_request = Request::builder()
         .method("PATCH")
@@ -5214,7 +5215,7 @@ async fn test_public_tile_uses_alias() {
     let has_original_key = features2.iter().any(|f| {
         f.properties
             .as_ref()
-            .map(|props| props.contains_key(normalized_name))
+            .map(|props| props.contains_key(original_name))
             .unwrap_or(false)
     });
     let has_alias_key2 = features2.iter().any(|f| {
