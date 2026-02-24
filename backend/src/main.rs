@@ -189,3 +189,91 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_listen_addr_port_only() {
+        let (host, port) = parse_listen_addr(":3000");
+        assert_eq!(host, "0.0.0.0");
+        assert_eq!(port, 3000);
+    }
+
+    #[test]
+    fn test_listen_addr_host_and_port() {
+        let (host, port) = parse_listen_addr("127.0.0.1:8080");
+        assert_eq!(host, "127.0.0.1");
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn test_listen_addr_localhost() {
+        let (host, port) = parse_listen_addr("localhost:3000");
+        assert_eq!(host, "localhost");
+        assert_eq!(port, 3000);
+    }
+
+    #[test]
+    fn test_listen_addr_ipv6() {
+        let (host, port) = parse_listen_addr("[::1]:8080");
+        assert_eq!(host, "[::1]");
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid LISTEN format")]
+    fn test_listen_addr_missing_colon() {
+        parse_listen_addr("3000");
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid port in LISTEN")]
+    fn test_listen_addr_invalid_port() {
+        parse_listen_addr(":abc");
+    }
+
+    #[test]
+    fn test_port_fallback_finds_next_available() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let bound_port = listener.local_addr().unwrap().port();
+
+            let (_, actual_port) =
+                bind_with_fallback("127.0.0.1", bound_port, bound_port + 10).await;
+
+            drop(listener);
+
+            assert_ne!(actual_port, bound_port);
+            assert!(actual_port > bound_port);
+            assert!(actual_port <= bound_port + 10);
+        });
+    }
+
+    #[test]
+    fn test_port_fallback_uses_base_if_available() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let base_port = 45000;
+            let (_, actual_port) = bind_with_fallback("127.0.0.1", base_port, base_port + 10).await;
+            assert_eq!(actual_port, base_port);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "No available port in range")]
+    fn test_port_exhausted() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let mut listeners = vec![];
+            for port in 46000..=46002 {
+                if let Ok(l) = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await {
+                    listeners.push(l);
+                }
+            }
+            bind_with_fallback("127.0.0.1", 46000, 46002).await;
+        });
+    }
+}
