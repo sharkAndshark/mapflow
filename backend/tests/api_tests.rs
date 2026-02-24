@@ -5094,6 +5094,92 @@ async fn test_update_publish_settings_file_not_found() {
 }
 
 #[tokio::test]
+async fn test_republish_with_different_use_aliases() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    // First publish with useAliases=true
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"slug": "republish-test", "useAliases": true}"#,
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(result["useAliases"], true);
+
+    // Verify file list shows use_aliases=true
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .body(Body::empty())
+        .unwrap();
+
+    let list_response = app.clone().oneshot(list_request).await.unwrap();
+    let list_bytes = list_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let files: Vec<FileItem> = serde_json::from_slice(&list_bytes).unwrap();
+    let file = files.iter().find(|f| f.id == file_id).unwrap();
+    assert_eq!(file.use_aliases, Some(true));
+
+    // Unpublish
+    let unpublish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/unpublish", file_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(unpublish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    // Republish with useAliases=false
+    let republish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"slug": "republish-test-2", "useAliases": false}"#,
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(republish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(result["useAliases"], false);
+
+    // Verify file list shows use_aliases=false
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .body(Body::empty())
+        .unwrap();
+
+    let list_response = app.oneshot(list_request).await.unwrap();
+    let list_bytes = list_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let files: Vec<FileItem> = serde_json::from_slice(&list_bytes).unwrap();
+    let file = files.iter().find(|f| f.id == file_id).unwrap();
+    assert_eq!(file.use_aliases, Some(false));
+}
+
+#[tokio::test]
 async fn test_public_tile_uses_alias() {
     let (app, _temp) = setup_app().await;
 

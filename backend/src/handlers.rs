@@ -1200,7 +1200,7 @@ pub async fn update_publish_settings(
             return Err((
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
-                    error: "Published file record not found".to_string(),
+                    error: "Published file settings not found".to_string(),
                 }),
             ));
         }
