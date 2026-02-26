@@ -49,7 +49,7 @@ export default function Settings() {
     setError('');
     setSuccess('');
 
-    const value = parseFloat(maxSizeMb);
+    const value = parseInt(maxSizeMb, 10);
     if (isNaN(value) || value < 1) {
       setError('请输入有效的数值（最小 1 MB）');
       return;
