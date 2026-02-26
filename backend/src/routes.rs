@@ -40,6 +40,7 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
             axum::http::Method::POST,
             axum::http::Method::PUT,
             axum::http::Method::DELETE,
+            axum::http::Method::PATCH,
         ])
         .allow_headers([
             axum::http::header::CONTENT_TYPE,
