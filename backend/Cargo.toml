@@ -38,6 +38,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 include_dir = { version = "0.7.4", optional = true }
 clap = { version = "4", features = ["derive", "env"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
+
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile = "3"
