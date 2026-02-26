@@ -257,3 +257,22 @@ function calculateResolutions(bounds, maxZoom = 20) {
 - UI-002: 空字符串显示样式与文档描述不完全一致（应增加视觉区分）
 - PMTiles: 无 Range 请求时完整下载可能内存压力，考虑流式响应
 - 前端 CSS: `.preview-page`, `.spinner`, `.badge` 等样式未定义
+
+## Windows Desktop Experience
+
+### System Tray (Phase 1)
+
+- [ ] 添加 tray-item 依赖（Windows only）
+- [ ] 创建托盘模块 (tray.rs)
+- [ ] 托盘菜单：打开 Web 界面
+- [ ] 托盘菜单：退出 → 优雅关闭 + checkpoint
+- [ ] Windows GUI 子系统配置（无控制台窗口）
+- [ ] 托盘图标（当前为 placeholder，需替换）
+- [ ] 手动测试：托盘退出 → 重启无 WAL 错误
+
+### Future
+
+- [ ] 日志文件输出（GUI 模式无控制台）
+- [ ] 托盘菜单：打开日志文件
+- [ ] 托盘菜单：显示服务状态（运行中/已停止）
+- [ ] 托盘菜单：关于对话框

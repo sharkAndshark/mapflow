@@ -4,7 +4,13 @@
 
 ## 架构
 
+```
 React → HTTP → Axum → DuckDB
+
+Windows 桌面集成:
+  托盘图标 → shutdown_signal → CHECKPOINT
+  (GUI 子系统编译，无控制台窗口)
+```
 
 **MBTiles 支持：**
 - MBTiles 文件不导入 DuckDB，直接读取原始 SQLite 文件
@@ -22,7 +28,9 @@ React → HTTP → Axum → DuckDB
 ## 系统韧性
 
 - **启动恢复**：WAL 损坏时自动删除并重试（`db::open_with_wal_recovery`）
-- **优雅关闭**：SIGINT/SIGTERM 时执行 CHECKPOINT 刷入数据
+- **优雅关闭**：
+  - Unix: SIGINT/SIGTERM 时执行 CHECKPOINT 刷入数据
+  - Windows: 系统托盘"退出"菜单触发优雅关闭（避免强制终止导致 WAL 损坏）
 
 ## 认证
 

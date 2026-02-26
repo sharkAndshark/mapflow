@@ -59,6 +59,147 @@ async fn bind_with_fallback(
     bail!("No available port in range {}-{}", base_port, max_port);
 }
 
+#[cfg(windows)]
+fn main() -> Result<()> {
+    use std::sync::mpsc;
+
+    let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,backend=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let db_path = std::env::var("DB_PATH").unwrap_or_else(|_| backend::DEFAULT_DB_PATH.to_string());
+    tracing::info!(db_path = %db_path, "Initializing database");
+    let db_path = PathBuf::from(db_path);
+    let conn = backend::init_database(&db_path);
+
+    let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string());
+    tracing::info!(upload_dir = %upload_dir, "Using upload directory");
+    let upload_dir = PathBuf::from(upload_dir);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let _guard = rt.enter();
+
+    let _ = std::fs::create_dir_all(&upload_dir);
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let (max_size, max_size_label) = backend::read_max_size_config();
+    tracing::info!(max_size, max_size_label, "Upload size limit configured");
+
+    let db = Arc::new(Mutex::new(conn));
+
+    let auth_backend = backend::AuthBackend::new(db.clone());
+    let session_store = backend::DuckDBStore::new(db.clone());
+
+    let state = backend::AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size,
+        max_size_label,
+        auth_backend,
+        session_store,
+    };
+
+    rt.block_on(async {
+        match backend::reconcile_processing_files(&state.db).await {
+            Ok(count) => {
+                tracing::info!(reconciled = count, "Reconciled processing files on startup")
+            }
+            Err(e) => tracing::warn!(error = %e, "Failed to reconcile processing files on startup"),
+        }
+    });
+
+    let mut app = backend::build_api_router(state.clone());
+
+    let web_dist = std::env::var("WEB_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
+    let web_dist_path = PathBuf::from(&web_dist);
+    if web_dist_path.exists() {
+        tracing::info!(web_dist = %web_dist, "Serving static files");
+        let index_path = web_dist_path.join("index.html");
+        app = app.fallback_service(
+            ServeDir::new(&web_dist_path).not_found_service(ServeFile::new(index_path)),
+        );
+    } else {
+        #[cfg(feature = "embed-web-dist")]
+        {
+            tracing::info!(
+                web_dist = %web_dist,
+                "WEB_DIST not found, serving embedded frontend bundle"
+            );
+            app = app.fallback(backend::serve_embedded_spa);
+        }
+
+        #[cfg(not(feature = "embed-web-dist"))]
+        {
+            tracing::warn!(
+                web_dist = %web_dist,
+                "WEB_DIST not found and embedded frontend disabled; frontend routes unavailable"
+            );
+        }
+    }
+
+    let cli = Cli::parse();
+    let (host, base_port) = parse_listen_addr(&cli.listen)?;
+    let max_port = cli
+        .listen_max_port
+        .unwrap_or_else(|| base_port.saturating_add(99));
+
+    tracing::info!(listen = %cli.listen, host = %host, base_port, max_port, "Server starting");
+
+    let (listener, actual_port) = rt.block_on(bind_with_fallback(&host, base_port, max_port))?;
+
+    if actual_port != base_port {
+        tracing::warn!(
+            original_port = base_port,
+            actual_port,
+            "Port {} was in use, using port {} instead",
+            base_port,
+            actual_port
+        );
+    }
+    tracing::info!("Listening on http://{}:{}", host, actual_port);
+
+    if let Err(e) = backend::tray::create_tray(shutdown_tx, actual_port) {
+        tracing::error!(error = ?e, "Failed to create system tray");
+    }
+
+    let db_for_shutdown = db.clone();
+    rt.block_on(async {
+        let shutdown = async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to install Ctrl+C handler");
+            tracing::info!("Ctrl+C received");
+        };
+
+        tokio::select! {
+            _ = shutdown => {},
+            _ = async { shutdown_rx.recv().ok(); () } => {},
+        }
+
+        tracing::info!("Shutdown signal received, checkpointing database...");
+        let conn = db_for_shutdown.lock().await;
+        if let Err(e) = conn.execute("CHECKPOINT", []) {
+            tracing::error!(error = %e, "Failed to checkpoint database during shutdown");
+        } else {
+            tracing::info!("Database checkpoint completed");
+        }
+    });
+
+    rt.block_on(axum::serve(listener, app))?;
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
 #[tokio::main]
 async fn main() -> Result<()> {
     #[cfg(target_os = "windows")]
@@ -180,6 +321,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
