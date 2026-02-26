@@ -74,7 +74,7 @@ export default function Settings() {
     setSuccess('');
   }
 
-  const hasChanges = parseFloat(maxSizeMb) !== originalValue;
+  const hasChanges = parseInt(maxSizeMb, 10) !== originalValue;
 
   if (!user || user.role !== 'admin') {
     return null;
