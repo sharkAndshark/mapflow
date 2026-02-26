@@ -52,6 +52,7 @@
 | API-014 | 健康检查 | GET /health **无需认证**，返回服务状态 | 200 + `{status:"ok"}` | `cargo test test_health_check` | Integration | P2 |
 | API-015 | 字段别名更新 | PATCH /api/files/:id/field-aliases 需要认证，更新数据集字段的显示别名。别名用于 MVT 瓦片属性键，发布后可在地图上显示自定义字段名。验证：别名不能为空字符串，最大 255 字符。仅 ready 状态可修改 | 200 + `{success:true}` / 400（空别名/超长/字段不存在） / 401 / 404 / 409 | `cargo test test_update_field_aliases_*` | Integration | P1 |
 | API-016 | 更新发布设置 | PATCH /api/files/:id/publish-settings 需要认证，更新已发布文件的设置。目前支持 useAliases（控制公开切片是否使用字段别名）。仅已发布文件可修改 | 200 + `{id,useAliases}` / 400（未发布） / 401 / 404 | `cargo test test_update_publish_settings_*` | Integration | P1 |
+| API-017 | 系统设置 | GET/PATCH /api/settings 需要认证。GET 返回 `{maxSizeMb}`。PATCH 仅 admin 可用，更新上传大小限制（最小 1MB），持久化到 system_settings 表，重启后保留 | 200 + `{maxSizeMb}` / 400（值无效） / 401 / 403（非admin） | `cargo test test_get_settings_* test_update_settings_*` | Integration | P1 |
 | AUTH-001 | 首次设置 | POST /api/auth/init 创建初始管理员 | 200 / 400 / 409 / 500 | `npm run test:e2e` | E2E | P0 |
 | AUTH-002 | 登录 | POST /api/auth/login 验证凭证，设置会话 | 200 / 401 / 500 | `npm run test:e2e` | E2E | P0 |
 | AUTH-003 | 登出 | POST /api/auth/logout 清除会话 | 204 / 500 | `npm run test:e2e` | E2E | P0 |
