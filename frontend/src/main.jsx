@@ -7,6 +7,7 @@ import App from './App.jsx';
 import Login from './Login.jsx';
 import Init from './Init.jsx';
 import Preview from './Preview.jsx';
+import Settings from './Settings.jsx';
 import './index.css';
 
 const root = createRoot(document.getElementById('root'));
@@ -29,6 +30,14 @@ root.render(
           element={
             <ProtectedRoute>
               <Preview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <Settings />
             </ProtectedRoute>
           }
         />

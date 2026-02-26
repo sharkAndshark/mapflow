@@ -1,5 +1,6 @@
 const DEFAULT_MAX_SIZE_MB: u64 = 1024;
-const BYTES_PER_MB: u64 = 1024 * 1024;
+pub const BYTES_PER_MB: u64 = 1024 * 1024;
+const MIN_UPLOAD_SIZE_MB: u64 = 1;
 
 /// Read CORS allowed origins from environment variable
 /// Format: comma-separated list of origins (e.g., "http://localhost:5173,https://example.com")
@@ -38,6 +39,66 @@ pub fn read_max_size_config() -> (u64, String) {
         .unwrap_or(DEFAULT_MAX_SIZE_MB);
     let bytes = max_size_mb.saturating_mul(BYTES_PER_MB);
     (bytes, format_bytes(bytes))
+}
+
+pub fn read_max_size_from_db(conn: &duckdb::Connection) -> Option<(u64, String)> {
+    let result: Result<String, _> = conn.query_row(
+        "SELECT value FROM system_settings WHERE key = 'upload_max_size_mb'",
+        [],
+        |row| row.get(0),
+    );
+
+    result.ok().and_then(|value| {
+        value.parse::<u64>().ok().map(|mb| {
+            let bytes = mb.saturating_mul(BYTES_PER_MB);
+            (bytes, format_bytes(bytes))
+        })
+    })
+}
+
+pub fn save_max_size_to_db(conn: &duckdb::Connection, max_size_mb: u64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO system_settings (key, value) VALUES ('upload_max_size_mb', ?)",
+        duckdb::params![max_size_mb.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn init_max_size_config(conn: &duckdb::Connection) -> (u64, String) {
+    if let Some(cached) = read_max_size_from_db(conn) {
+        tracing::info!(
+            max_size_mb = cached.0 / BYTES_PER_MB,
+            source = "database",
+            "Upload size limit loaded from database"
+        );
+        return cached;
+    }
+
+    let (bytes, label) = read_max_size_config();
+    let max_size_mb = bytes / BYTES_PER_MB;
+
+    if let Err(e) = save_max_size_to_db(conn, max_size_mb) {
+        tracing::warn!(error = %e, "Failed to persist upload size to database, using in-memory value");
+    } else {
+        tracing::info!(
+            max_size_mb,
+            source = "env_or_default",
+            "Upload size limit initialized and saved to database"
+        );
+    }
+
+    (bytes, label)
+}
+
+pub fn validate_upload_size_mb(value: u64) -> Result<u64, String> {
+    if value < MIN_UPLOAD_SIZE_MB {
+        return Err(format!(
+            "Upload size must be at least {}MB (got {})",
+            MIN_UPLOAD_SIZE_MB, value
+        ));
+    }
+    Ok(value)
 }
 
 pub fn format_bytes(bytes: u64) -> String {
