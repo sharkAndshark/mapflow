@@ -228,13 +228,13 @@ mod tests {
             .lock()
             .expect("env lock");
 
-        let default_mb: u64 = 200;
+        let default_mb: u64 = 1024;
         let bytes_per_mb: u64 = 1024 * 1024;
 
         std::env::remove_var("UPLOAD_MAX_SIZE_MB");
         let (bytes, label) = read_max_size_config();
         assert_eq!(bytes, default_mb * bytes_per_mb);
-        assert_eq!(label, "200MB");
+        assert_eq!(label, "1GB");
 
         std::env::set_var("UPLOAD_MAX_SIZE_MB", "12");
         let (bytes, label) = read_max_size_config();
@@ -244,12 +244,12 @@ mod tests {
         std::env::set_var("UPLOAD_MAX_SIZE_MB", "0");
         let (bytes, label) = read_max_size_config();
         assert_eq!(bytes, default_mb * bytes_per_mb);
-        assert_eq!(label, "200MB");
+        assert_eq!(label, "1GB");
 
         std::env::set_var("UPLOAD_MAX_SIZE_MB", "nope");
         let (bytes, label) = read_max_size_config();
         assert_eq!(bytes, default_mb * bytes_per_mb);
-        assert_eq!(label, "200MB");
+        assert_eq!(label, "1GB");
         std::env::remove_var("UPLOAD_MAX_SIZE_MB");
     }
 
