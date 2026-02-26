@@ -1,19 +1,22 @@
 #[cfg(feature = "embed-spatial-extension")]
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(not(feature = "embed-spatial-extension"))]
+use std::time::Duration;
 #[cfg(feature = "embed-spatial-extension")]
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex as StdMutex, OnceLock},
-    time::Duration,
 };
 
 use tokio::sync::Mutex;
 
 pub const DEFAULT_DB_PATH: &str = "./data/mapflow.duckdb";
 pub const PROCESSING_RECONCILIATION_ERROR: &str = "Server restarted during processing";
+#[cfg(not(feature = "embed-spatial-extension"))]
 const SPATIAL_INSTALL_MAX_ATTEMPTS: u32 = 5;
+#[cfg(not(feature = "embed-spatial-extension"))]
 const SPATIAL_INSTALL_RETRY_BASE_MS: u64 = 250;
 const SPATIAL_EXTENSION_PATH_ENV: &str = "SPATIAL_EXTENSION_PATH";
 const SPATIAL_EXTENSION_DIR_ENV: &str = "SPATIAL_EXTENSION_DIR";
@@ -23,6 +26,7 @@ const DEV_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "backend/extensions/spatial.du
 #[cfg(feature = "embed-spatial-extension")]
 const SPATIAL_EXTENSION_CACHE_DIR_ENV: &str = "SPATIAL_EXTENSION_CACHE_DIR";
 
+#[cfg(not(feature = "embed-spatial-extension"))]
 static SPATIAL_INSTALL_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 #[cfg(feature = "embed-spatial-extension")]
 static EMBEDDED_SPATIAL_EXTENSION: &[u8] = include_bytes!(concat!(
@@ -303,12 +307,25 @@ fn verify_materialized_embedded_spatial_extension(
 fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
     let expected_len = EMBEDDED_SPATIAL_EXTENSION.len() as u64;
     if embedded_spatial_extension_file_len(path) == Some(expected_len) {
+        tracing::debug!(
+            path = %path.display(),
+            size = expected_len,
+            "Embedded spatial extension already exists with correct size"
+        );
         return Ok(());
     }
 
     let parent = path
         .parent()
         .ok_or_else(|| format!("Missing parent directory for {}", path.display()))?;
+
+    tracing::info!(
+        path = %path.display(),
+        parent = %parent.display(),
+        size = expected_len,
+        "Materializing embedded spatial extension"
+    );
+
     std::fs::create_dir_all(parent)
         .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
 
@@ -359,12 +376,36 @@ fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
 fn resolve_embedded_spatial_extension_candidate() -> Result<PathBuf, String> {
     let file_name = build_embedded_spatial_filename();
     let base_dirs = embedded_spatial_extension_directories();
+
+    tracing::info!(
+        filename = %file_name,
+        candidate_count = base_dirs.len(),
+        "Attempting to materialize embedded spatial extension"
+    );
+
     let mut errors = Vec::new();
     for base_dir in &base_dirs {
         let target_path = base_dir.join("extensions").join(&file_name);
+        tracing::debug!(
+            path = %target_path.display(),
+            "Trying to write embedded extension to candidate directory"
+        );
         match write_embedded_spatial_extension(&target_path) {
-            Ok(_) => return Ok(target_path),
-            Err(e) => errors.push(format!("{} ({})", target_path.display(), e)),
+            Ok(_) => {
+                tracing::info!(
+                    path = %target_path.display(),
+                    "Embedded spatial extension materialized successfully"
+                );
+                return Ok(target_path);
+            }
+            Err(e) => {
+                tracing::debug!(
+                    path = %target_path.display(),
+                    error = %e,
+                    "Failed to write embedded extension to candidate directory"
+                );
+                errors.push(format!("{} ({})", target_path.display(), e));
+            }
         }
     }
 
@@ -375,7 +416,8 @@ fn resolve_embedded_spatial_extension_candidate() -> Result<PathBuf, String> {
         .join(", ");
 
     Err(format!(
-        "Unable to materialize embedded spatial extension (tried: {}): {}",
+        "Unable to materialize embedded spatial extension (tried {} directories: {}): {}",
+        base_dirs.len(),
         attempted_dirs,
         errors.join(" | ")
     ))
@@ -486,20 +528,94 @@ fn try_load_spatial_from_path(conn: &duckdb::Connection, path: &Path) -> Result<
     })
 }
 
+#[cfg(feature = "embed-spatial-extension")]
+pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String> {
+    let local_candidates = local_spatial_extension_candidates();
+
+    tracing::info!(
+        candidates = ?local_candidates,
+        "Searching for embedded spatial extension"
+    );
+
+    if let Some(local_path) = find_existing_local_spatial_extension_path(&local_candidates) {
+        tracing::info!(
+            path = %local_path.display(),
+            "Loading spatial extension from embedded file"
+        );
+        match try_load_spatial_from_path(conn, &local_path) {
+            Ok(_) => {
+                tracing::info!("Spatial extension loaded successfully");
+                return Ok(());
+            }
+            Err(error) => {
+                panic!(
+                    "Failed to load embedded spatial extension from '{}': {}\n\
+                     \n\
+                     The embedded extension file may be corrupted or incompatible with this DuckDB version.\n\
+                     \n\
+                     To fix this issue:\n\
+                     1. Delete the file at the path above\n\
+                     2. Restart MapFlow to re-extract the embedded extension\n\
+                     \n\
+                     If the problem persists, the release bundle may be corrupted. \
+                     Please re-download or report an issue.",
+                    local_path.display(),
+                    error
+                );
+            }
+        }
+    }
+
+    panic!(
+        "Embedded spatial extension feature is enabled but no extension file was found.\n\
+         \n\
+         Searched paths:\n{}\n\
+         \n\
+         This indicates a build or packaging error in the release bundle.\n\
+         Please report this issue if you downloaded an official release.",
+        local_candidates
+            .iter()
+            .map(|p| format!("  - {}", p.display()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+#[cfg(not(feature = "embed-spatial-extension"))]
 pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String> {
     let local_candidates = local_spatial_extension_candidates();
     let mut errors: Vec<String> = Vec::with_capacity(SPATIAL_INSTALL_MAX_ATTEMPTS as usize + 2);
 
-    // Local-first path: prefer explicit/local/embedded extension files when available.
+    tracing::info!(
+        candidates = ?local_candidates,
+        "Searching for spatial extension"
+    );
+
+    // Local-first path: prefer explicit/local extension files when available.
     if let Some(local_path) = find_existing_local_spatial_extension_path(&local_candidates) {
+        tracing::info!(
+            path = %local_path.display(),
+            "Loading spatial extension from local file"
+        );
         match try_load_spatial_from_path(conn, &local_path) {
-            Ok(_) => return Ok(()),
-            Err(error) => errors.push(error),
+            Ok(_) => {
+                tracing::info!("Spatial extension loaded successfully");
+                return Ok(());
+            }
+            Err(error) => {
+                tracing::warn!(
+                    path = %local_path.display(),
+                    error = %error,
+                    "Failed to load local spatial extension, will try network install"
+                );
+                errors.push(error);
+            }
         }
     }
 
     // Fast path fallback: extension already installed in local DuckDB cache.
     if conn.execute_batch("LOAD spatial;").is_ok() {
+        tracing::info!("Spatial extension loaded from DuckDB cache");
         return Ok(());
     }
 
@@ -521,10 +637,18 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
         return Ok(());
     }
 
+    tracing::info!(
+        attempts = SPATIAL_INSTALL_MAX_ATTEMPTS,
+        "Attempting to download spatial extension from network"
+    );
+
     for attempt in 1..=SPATIAL_INSTALL_MAX_ATTEMPTS {
         match conn.execute_batch("INSTALL spatial;") {
             Ok(_) => match conn.execute_batch("LOAD spatial;") {
-                Ok(_) => return Ok(()),
+                Ok(_) => {
+                    tracing::info!("Spatial extension downloaded and loaded successfully");
+                    return Ok(());
+                }
                 Err(e) => errors.push(format!(
                     "attempt {}: install ok, load failed: {}",
                     attempt, e
