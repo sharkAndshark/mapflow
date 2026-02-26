@@ -1,4 +1,4 @@
-const DEFAULT_MAX_SIZE_MB: u64 = 200;
+const DEFAULT_MAX_SIZE_MB: u64 = 1024;
 const BYTES_PER_MB: u64 = 1024 * 1024;
 
 /// Read CORS allowed origins from environment variable

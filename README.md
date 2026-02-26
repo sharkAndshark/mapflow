@@ -110,7 +110,7 @@ mapflow.exe
 | `DB_PATH` | `./data/mapflow.duckdb` | DuckDB path |
 | `UPLOAD_DIR` | `./uploads` | Upload storage directory |
 | `WEB_DIST` | `frontend/dist` | Optional external frontend assets path (if missing, bundle binaries use embedded assets) |
-| `UPLOAD_MAX_SIZE_MB` | `200` | Upload max size |
+| `UPLOAD_MAX_SIZE_MB` | `1024` | Upload max size |
 | `COOKIE_SECURE` | `false` | Set `true` behind HTTPS |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated CORS allowlist |
 | `SPATIAL_EXTENSION_PATH` | unset | Explicit local spatial extension path |

@@ -1220,7 +1220,7 @@ export default function App() {
           <h2>上传文件</h2>
           <span className="panel-meta">
             支持 .zip / .geojson / .geojsonl / .kml / .gpx / .topojson / .mbtiles，单文件最大
-            200MB（可配置）
+            1GB（可配置）
           </span>
         </div>
 
