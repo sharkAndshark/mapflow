@@ -172,17 +172,22 @@ fn main() -> Result<()> {
     }
 
     let db_for_shutdown = db.clone();
-    rt.block_on(async {
-        let shutdown = async move {
+    let shutdown = async move {
+        let ctrl_c = async {
             tokio::signal::ctrl_c()
                 .await
                 .expect("Failed to install Ctrl+C handler");
             tracing::info!("Ctrl+C received");
         };
 
+        let tray_exit = async {
+            shutdown_rx.recv().ok();
+            tracing::info!("Tray exit received");
+        };
+
         tokio::select! {
-            _ = shutdown => {},
-            _ = async { shutdown_rx.recv().ok(); () } => {},
+            _ = ctrl_c => {},
+            _ = tray_exit => {},
         }
 
         tracing::info!("Shutdown signal received, checkpointing database...");
@@ -192,9 +197,9 @@ fn main() -> Result<()> {
         } else {
             tracing::info!("Database checkpoint completed");
         }
-    });
+    };
 
-    rt.block_on(axum::serve(listener, app))?;
+    rt.block_on(axum::serve(listener, app).with_graceful_shutdown(shutdown))?;
 
     Ok(())
 }

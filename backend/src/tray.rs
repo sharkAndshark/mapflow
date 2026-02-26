@@ -22,8 +22,11 @@ pub fn create_tray(
 
     tracing::info!("System tray icon created");
 
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::spawn(move || {
+        let _tray = tray;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
     });
 
     Ok(())
