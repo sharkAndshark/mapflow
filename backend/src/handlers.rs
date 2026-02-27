@@ -4,9 +4,12 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use axum_login::AuthSession;
 use duckdb::types::ValueRef;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use crate::config::{format_bytes, save_max_size_to_db, validate_upload_size_mb, BYTES_PER_MB};
 use crate::{
     crs::{normalize_crs, DataBounds, CRS_TYPE_CUSTOM},
     http_errors::{bad_request, internal_error},
@@ -1230,11 +1233,6 @@ pub async fn update_publish_settings(
     })))
 }
 
-use axum_login::AuthSession;
-use serde::{Deserialize, Serialize};
-
-use crate::config::{format_bytes, save_max_size_to_db, validate_upload_size_mb, BYTES_PER_MB};
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SettingsResponse {
     #[serde(rename = "maxSizeMb")]
@@ -1301,10 +1299,8 @@ pub async fn update_settings(
 
     {
         let mut max_size = state.max_size.write().await;
-        *max_size = new_bytes;
-    }
-    {
         let mut max_size_label = state.max_size_label.write().await;
+        *max_size = new_bytes;
         *max_size_label = new_label;
     }
 
