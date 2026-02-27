@@ -5,31 +5,31 @@
 [![Nightly](https://github.com/sharkAndshark/mapflow/actions/workflows/nightly.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/nightly.yml)
 [![Security](https://github.com/sharkAndshark/mapflow/actions/workflows/security.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/security.yml)
 
-> A lightweight spatial data management tool: upload, preview, and publish tile services
+> 轻量级空间数据管理工具：上传、预览、发布瓦片服务
 
-**Status**: Early version, rapid iteration (API may change)
+**状态**：早期版本，快速迭代中（API 可能变动）
 
-## Core Features
+## 核心功能
 
-- **Upload**: Supports Shapefile, GeoJSON, KML, GPX, TopoJSON, MBTiles, and more
-- **Preview**: View spatial data and tiles online
-- **Publish**: Generate public tile URLs
+- **上传**：支持 Shapefile、GeoJSON、KML、GPX、TopoJSON、MBTiles 等格式
+- **预览**：在线查看空间数据和瓦片
+- **发布**：生成公开的瓦片 URL
 
-## Quick Start
+## 一分钟上手
 
 ```bash
 docker run -d -p 3000:3000 ghcr.io/sharkandshark/mapflow:nightly
 ```
 
-## Supported Formats
+## 支持格式
 
-- Shapefile (`.zip` containing `.shp/.shx/.dbf`)
-- GeoJSON (`.geojson`, `.json`)
-- GeoJSONSeq / NDJSON (`.geojsonl`, `.geojsons`)
-- KML (`.kml`)
-- GPX (`.gpx`)
-- TopoJSON (`.topojson`)
-- MBTiles (`.mbtiles`, vector MVT + raster PNG)
+- Shapefile（`.zip` 包含 `.shp/.shx/.dbf`）
+- GeoJSON（`.geojson`, `.json`）
+- GeoJSONSeq / NDJSON（`.geojsonl`, `.geojsons`）
+- KML（`.kml`）
+- GPX（`.gpx`）
+- TopoJSON（`.topojson`）
+- MBTiles（`.mbtiles`，支持矢量 MVT 和栅格 PNG）
 
 ## License
 
@@ -37,4 +37,4 @@ Apache-2.0
 
 ---
 
-[中文文档](./README_zh.md)
+[English](./README.md)
