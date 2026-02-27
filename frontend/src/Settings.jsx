@@ -75,6 +75,7 @@ export default function Settings() {
   }
 
   const hasChanges = parseInt(maxSizeMb, 10) !== originalValue;
+  const isValid = !isNaN(parseInt(maxSizeMb, 10));
 
   if (!user || user.role !== 'admin') {
     return null;
@@ -139,7 +140,11 @@ export default function Settings() {
               </div>
 
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="submit" className="btn-primary" disabled={isSaving || !hasChanges}>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={isSaving || !hasChanges || !isValid}
+                >
                   {isSaving ? '保存中...' : '保存'}
                 </button>
                 <button

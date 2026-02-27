@@ -49,9 +49,17 @@ pub fn read_max_size_from_db(conn: &duckdb::Connection) -> Option<(u64, String)>
     );
 
     result.ok().and_then(|value| {
-        value.parse::<u64>().ok().map(|mb| {
+        value.parse::<u64>().ok().and_then(|mb| {
+            if mb < MIN_UPLOAD_SIZE_MB {
+                tracing::warn!(
+                    db_value = mb,
+                    min_required = MIN_UPLOAD_SIZE_MB,
+                    "Database contains upload size below minimum, ignoring"
+                );
+                return None;
+            }
             let bytes = mb.saturating_mul(BYTES_PER_MB);
-            (bytes, format_bytes(bytes))
+            Some((bytes, format_bytes(bytes)))
         })
     })
 }
