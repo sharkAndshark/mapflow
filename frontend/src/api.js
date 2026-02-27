@@ -100,3 +100,25 @@ export async function updatePublishSettings(fileId, settings) {
   }
   return res.json();
 }
+
+export async function getSettings() {
+  const res = await fetchWithAuth('/api/settings');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '获取设置失败');
+  }
+  return res.json();
+}
+
+export async function updateSettings(maxSizeMb) {
+  const res = await fetchWithAuth('/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ maxSizeMb }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '更新设置失败');
+  }
+  return res.json();
+}

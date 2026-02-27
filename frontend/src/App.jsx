@@ -1196,6 +1196,11 @@ export default function App() {
               {user.username} ({user.role})
             </span>
           )}
+          {user?.role === 'admin' && (
+            <a href="/settings" className="btn-text" style={{ fontSize: '14px' }}>
+              设置
+            </a>
+          )}
           <label className="upload-button">
             <input
               type="file"

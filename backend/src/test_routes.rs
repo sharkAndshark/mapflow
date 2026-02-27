@@ -25,6 +25,7 @@ pub fn add_test_routes(router: Router<AppState>) -> Router<AppState> {
         router
             .route("/api/test/reset", post(reset_test_state))
             .route("/api/test/status", get(test_status))
+            .route("/api/test/session", post(create_test_session))
     } else {
         router
     }
@@ -107,5 +108,49 @@ async fn test_status() -> impl axum::response::IntoResponse {
             "status": "ok",
             "testRunId": run_id
         })),
+    )
+}
+
+#[cfg(debug_assertions)]
+use serde::Deserialize;
+
+#[cfg(debug_assertions)]
+#[derive(Deserialize)]
+struct CreateSessionRequest {
+    session_id: String,
+    data: String,
+    expiry_date: String,
+}
+
+#[cfg(debug_assertions)]
+async fn create_test_session(
+    State(state): State<AppState>,
+    Json(req): Json<CreateSessionRequest>,
+) -> impl axum::response::IntoResponse {
+    let conn = state.db.lock().await;
+
+    let expiry_date: chrono::DateTime<chrono::Utc> = match req.expiry_date.parse() {
+        Ok(dt) => dt,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": format!("Invalid expiry_date: {}", e) })),
+            );
+        }
+    };
+
+    if let Err(e) = conn.execute(
+        "INSERT OR REPLACE INTO sessions (id, data, expiry_date) VALUES (?, ?, ?)",
+        duckdb::params![req.session_id, req.data, expiry_date],
+    ) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to create session: {}", e) })),
+        );
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "status": "session_created" })),
     )
 }

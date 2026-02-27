@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, sync::RwLock};
 
 use crate::{AuthBackend, DuckDBStore};
 
@@ -10,8 +10,8 @@ pub struct AppState {
     pub upload_dir: PathBuf,
     pub upload_dir_canonical: PathBuf,
     pub db: Arc<Mutex<duckdb::Connection>>,
-    pub max_size: u64,
-    pub max_size_label: String,
+    pub max_size: Arc<RwLock<u64>>,
+    pub max_size_label: Arc<RwLock<String>>,
     pub auth_backend: AuthBackend,
     pub session_store: DuckDBStore,
 }

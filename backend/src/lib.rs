@@ -24,7 +24,8 @@ mod tray;
 pub use auth::{AuthBackend, User};
 pub use auth_routes::build_auth_router;
 pub use config::{
-    format_bytes, read_cookie_secure, read_max_size_config, read_preview_zoom_config,
+    format_bytes, init_max_size_config, read_cookie_secure, read_max_size_config,
+    read_preview_zoom_config,
 };
 pub use db::{
     init_database, is_initialized, reconcile_processing_files, set_initialized, DEFAULT_DB_PATH,
@@ -51,7 +52,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::OnceLock;
     use tempfile::TempDir;
-    use tokio::sync::Mutex;
+    use tokio::sync::{Mutex, RwLock};
     use tower::util::ServiceExt;
 
     static ENV_LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
@@ -116,8 +117,8 @@ mod tests {
             upload_dir,
             upload_dir_canonical,
             db: conn.clone(),
-            max_size,
-            max_size_label: format_bytes(max_size),
+            max_size: Arc::new(RwLock::new(max_size)),
+            max_size_label: Arc::new(RwLock::new(format_bytes(max_size))),
             auth_backend: AuthBackend::new(conn.clone()),
             session_store: DuckDBStore::new(conn),
         };
