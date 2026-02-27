@@ -1,6 +1,6 @@
 #[cfg(windows)]
 pub fn create_tray(
-    shutdown_tx: std::sync::mpsc::Sender<()>,
+    shutdown_tx: tokio::sync::mpsc::UnboundedSender<()>,
     port: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use tray_item::{IconSource, TrayItem};

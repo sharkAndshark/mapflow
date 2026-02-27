@@ -61,9 +61,7 @@ async fn bind_with_fallback(
 
 #[cfg(windows)]
 fn main() -> Result<()> {
-    use std::sync::mpsc;
-
-    let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
     tracing_subscriber::registry()
         .with(
@@ -181,7 +179,7 @@ fn main() -> Result<()> {
         };
 
         let tray_exit = async {
-            shutdown_rx.recv().ok();
+            shutdown_rx.recv().await;
             tracing::info!("Tray exit received");
         };
 
