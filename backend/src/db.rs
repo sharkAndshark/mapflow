@@ -2,12 +2,14 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 #[cfg(not(feature = "embed-spatial-extension"))]
+use std::sync::{Mutex as StdMutex, OnceLock};
+#[cfg(not(feature = "embed-spatial-extension"))]
 use std::time::Duration;
 #[cfg(feature = "embed-spatial-extension")]
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex as StdMutex, OnceLock},
+    sync::Arc,
 };
 
 use tokio::sync::Mutex;
