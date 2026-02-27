@@ -180,8 +180,10 @@ fn main() -> Result<()> {
         };
 
         let tray_exit = async {
-            shutdown_rx.recv().await;
-            tracing::info!("Tray exit received");
+            match shutdown_rx.recv().await {
+                Some(_) => tracing::info!("Tray exit received"),
+                None => tracing::warn!("Tray channel closed unexpectedly"),
+            }
         };
 
         tokio::select! {
