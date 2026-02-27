@@ -40,15 +40,13 @@ clap = { version = "4", features = ["derive", "env"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
+tray-item = "0.10"
 
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile = "3"
 mvt-reader = "2.2.0"
 flate2 = "1"
-
-[target.'cfg(windows)'.dependencies]
-tray-item = "0.10"
 
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = "2.4"
