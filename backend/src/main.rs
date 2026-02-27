@@ -166,7 +166,8 @@ fn main() -> Result<()> {
     tracing::info!("Listening on http://{}:{}", host, actual_port);
 
     if let Err(e) = backend::tray::create_tray(shutdown_tx, actual_port) {
-        tracing::error!(error = ?e, "Failed to create system tray");
+        tracing::error!(error = ?e, "Failed to create system tray - cannot continue in GUI mode");
+        return Err(e.into());
     }
 
     let db_for_shutdown = db.clone();
