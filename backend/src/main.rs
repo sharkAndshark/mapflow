@@ -1,7 +1,9 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
-use tokio::{fs, sync::Mutex};
+#[cfg(not(windows))]
+use tokio::fs;
+use tokio::sync::Mutex;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
