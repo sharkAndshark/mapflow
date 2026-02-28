@@ -18,9 +18,6 @@ mod tiles;
 mod upload;
 mod validation;
 
-#[cfg(windows)]
-mod tray;
-
 pub use auth::{AuthBackend, User};
 pub use auth_routes::build_auth_router;
 pub use config::{

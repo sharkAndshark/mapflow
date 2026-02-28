@@ -213,12 +213,15 @@ fn append_unique_path(candidates: &mut Vec<PathBuf>, path: PathBuf) {
 
 #[cfg(feature = "embed-spatial-extension")]
 fn build_embedded_spatial_filename() -> String {
-    // Keep the filename deterministic so multiple restarts reuse the same extracted artifact.
+    // DuckDB derives entrypoint function name from the extension filename.
+    // The filename MUST be "spatial.duckdb_extension" to match the expected
+    // entrypoint "spatial_duckdb_cpp_init". Use a versioned subdirectory
+    // for integrity checking and automatic invalidation on upgrades.
     let checksum = EMBEDDED_SPATIAL_EXTENSION.iter().fold(0u64, |acc, byte| {
         acc.wrapping_mul(16777619).wrapping_add(u64::from(*byte))
     });
     format!(
-        "spatial-{}-{:016x}.duckdb_extension",
+        "v{}-{:016x}/spatial.duckdb_extension",
         EMBEDDED_SPATIAL_EXTENSION.len(),
         checksum
     )
