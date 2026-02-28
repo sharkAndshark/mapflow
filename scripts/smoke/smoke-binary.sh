@@ -74,9 +74,9 @@ cleanup() {
     wait "$PID" 2>/dev/null || true
   fi
   if [ "$KEEP_DATA" != "true" ] && [ -d "$WORK_DIR" ]; then
-    rm -rf "$WORK_DIR"
+    rm -rf "$WORK_DIR" || true
   fi
-  exit $exit_code
+  exit "$exit_code"
 }
 trap cleanup EXIT
 
