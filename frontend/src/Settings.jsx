@@ -134,7 +134,7 @@ export default function Settings() {
                     disabled={isSaving}
                   />
                   <small className="form-hint" style={{ display: 'block', marginTop: '4px' }}>
-                    最小值 1 MB
+                    范围：1 MB - 100 GB
                   </small>
                 </div>
               </div>
