@@ -1,6 +1,7 @@
 const DEFAULT_MAX_SIZE_MB: u64 = 1024;
 pub const BYTES_PER_MB: u64 = 1024 * 1024;
 const MIN_UPLOAD_SIZE_MB: u64 = 1;
+const MAX_UPLOAD_SIZE_MB: u64 = 102400; // 100GB
 
 /// Read CORS allowed origins from environment variable
 /// Format: comma-separated list of origins (e.g., "http://localhost:5173,https://example.com")
@@ -104,6 +105,12 @@ pub fn validate_upload_size_mb(value: u64) -> Result<u64, String> {
         return Err(format!(
             "Upload size must be at least {}MB (got {})",
             MIN_UPLOAD_SIZE_MB, value
+        ));
+    }
+    if value > MAX_UPLOAD_SIZE_MB {
+        return Err(format!(
+            "Upload size must be at most {}MB (got {})",
+            MAX_UPLOAD_SIZE_MB, value
         ));
     }
     Ok(value)
