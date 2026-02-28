@@ -476,22 +476,47 @@ pub async fn head_public_pmtiles(
         .into_response())
 }
 
+struct PublicMetaRow {
+    name: String,
+    tile_source: String,
+    crs: Option<String>,
+    crs_type: Option<String>,
+    data_bounds_json: Option<String>,
+    tile_format: Option<String>,
+    tile_bounds_json: Option<String>,
+    minzoom: Option<i32>,
+    maxzoom: Option<i32>,
+}
+
 pub async fn get_public_tile_meta(
     State(state): State<AppState>,
     AxumPath(slug): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let (name, tile_source, minzoom, maxzoom): (String, String, Option<i32>, Option<i32>) = conn
+    let row: PublicMetaRow = conn
         .query_row(
             "SELECT f.name, COALESCE(pf.tile_source, f.tile_source, 'duckdb'),
+                    f.crs, f.crs_type, f.data_bounds, f.tile_format, f.tile_bounds,
                     COALESCE(pf.minzoom, f.minzoom) as minzoom,
                     COALESCE(pf.maxzoom, f.maxzoom) as maxzoom
              FROM files f
              JOIN published_files pf ON f.id = pf.file_id
              WHERE pf.slug = ? AND f.is_public = TRUE",
             duckdb::params![&slug],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok(PublicMetaRow {
+                    name: row.get(0)?,
+                    tile_source: row.get(1)?,
+                    crs: row.get(2)?,
+                    crs_type: row.get(3)?,
+                    data_bounds_json: row.get(4)?,
+                    tile_format: row.get(5)?,
+                    tile_bounds_json: row.get(6)?,
+                    minzoom: row.get(7)?,
+                    maxzoom: row.get(8)?,
+                })
+            },
         )
         .map_err(|_| {
             (
@@ -502,20 +527,40 @@ pub async fn get_public_tile_meta(
             )
         })?;
 
-    let tile_url = if tile_source == "pmtiles" {
+    let tile_url = if row.tile_source == "pmtiles" {
         format!("/tiles/{}", slug)
     } else {
         format!("/tiles/{}/{{z}}/{{x}}/{{y}}", slug)
     };
     let viewer_url = format!("/tiles/{}", slug);
 
+    let crs_type = row.crs_type.unwrap_or_else(|| "standard".to_string());
+    let data_bounds: Option<DataBounds> = row
+        .data_bounds_json
+        .as_ref()
+        .and_then(|j| DataBounds::from_json(j));
+    let data_bounds_array = data_bounds.as_ref().map(|b| b.to_array());
+
+    let bbox_values = if let Some(bounds_json) = row.tile_bounds_json {
+        serde_json::from_str::<[f64; 4]>(&bounds_json).ok()
+    } else if crs_type == "custom" {
+        data_bounds_array
+    } else {
+        None
+    };
+
     Ok(Json(PublicTileMeta {
         slug: slug.clone(),
-        name,
-        tile_source,
+        name: row.name,
+        tile_source: row.tile_source,
         tile_url,
         viewer_url,
-        minzoom,
-        maxzoom,
+        crs: row.crs,
+        crs_type: crs_type.clone(),
+        bbox: bbox_values,
+        data_bounds: data_bounds_array,
+        tile_format: row.tile_format,
+        minzoom: row.minzoom,
+        maxzoom: row.maxzoom,
     }))
 }

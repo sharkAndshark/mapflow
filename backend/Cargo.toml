@@ -43,3 +43,6 @@ http-body-util = "0.1"
 tempfile = "3"
 mvt-reader = "2.2.0"
 flate2 = "1"
+
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "2.4"

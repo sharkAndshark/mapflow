@@ -48,7 +48,7 @@
 | API-011 | 更新CRS | PUT /api/files/:id/crs 需要认证，更新文件的坐标系定义。请求体 `{crs: string}`（必填），空字符串设为 null 并标记为 custom。自动归一化并更新 crs_type | 200 + `{id,crs,crsType}` / 400（缺少crs） / 401 / 404 / 409（非ready） | `cargo test test_update_crs_*` | Integration | P1 |
 | API-010 | 公开瓦片 | GET /tiles/:slug/:z/:x/:y **无需认证**，验证 `public_slug` 存在且 `is_public=TRUE`。动态生成返回 MVT（属性键根据 useAliases 设置决定使用别名或原始名称）；MBTiles 返回 MVT 或 PNG。空瓦片返回 204 No Content | 200 + MVT/PNG / 204（空瓦片） / 400 / 404 | `cargo test test_public_tiles_*` + `cargo test test_public_tile_uses_alias` | Integration | P0 |
 | API-012 | 公开PMTiles | GET /tiles/:slug **无需认证**，PMTiles HTTP Range 代理。处理 Range 请求头，返回对应字节范围。支持 `HEAD` 检测文件大小。PMTiles 格式单文件包含所有瓦片和元数据 | 206（Partial Content）/ 200（HEAD）/ 404 / 416（Range Invalid） | `cargo test test_pmtiles_*` | Integration | P0 |
-| API-013 | 公开瓦片元数据 | GET /tiles/:slug/meta **无需认证**，返回公开瓦片的元数据（name, tile_source, tile_url, viewer_url）用于前端判断使用哪种瓦片源 | 200 + `{slug,name,tile_source,tile_url,viewer_url}` / 404 | `cargo test test_pmtiles_meta_*` | Integration | P0 |
+| API-013 | 公开瓦片元数据 | GET /tiles/:slug/meta **无需认证**，返回公开瓦片的完整元数据：slug, name, tileSource, tileUrl, viewerUrl, crs, crsType（"standard"或"custom"）, bbox（WGS84，仅MBTiles或有tile_bounds时）, dataBounds（custom CRS时）, tileFormat（"mvt"或"png"）, minZoom, maxZoom | 200 + `{slug,name,tileSource,tileUrl,viewerUrl,crs?,crsType,bbox?,dataBounds?,tileFormat?,minZoom?,maxZoom?}` / 404 | `cargo test test_pmtiles_meta_* test_public_tile_meta_includes_zoom` | Integration | P0 |
 | API-014 | 健康检查 | GET /health **无需认证**，返回服务状态 | 200 + `{status:"ok"}` | `cargo test test_health_check` | Integration | P2 |
 | API-015 | 字段别名更新 | PATCH /api/files/:id/field-aliases 需要认证，更新数据集字段的显示别名。别名用于 MVT 瓦片属性键，发布后可在地图上显示自定义字段名。验证：别名不能为空字符串，最大 255 字符。仅 ready 状态可修改 | 200 + `{success:true}` / 400（空别名/超长/字段不存在） / 401 / 404 / 409 | `cargo test test_update_field_aliases_*` | Integration | P1 |
 | API-016 | 更新发布设置 | PATCH /api/files/:id/publish-settings 需要认证，更新已发布文件的设置。目前支持 useAliases（控制公开切片是否使用字段别名）。仅已发布文件可修改 | 200 + `{id,useAliases}` / 400（未发布） / 401 / 404 | `cargo test test_update_publish_settings_*` | Integration | P1 |
@@ -72,6 +72,7 @@
 | UI-010 | 缩放层级限制 | Preview 页面根据 API-003 返回的 minZoom/maxZoom 限制地图缩放。mbtiles 文件使用其元数据的缩放范围；动态表（非 mbtiles）不限制缩放（使用默认范围 0-22） | 地图缩放不超过允许范围 | `npm run test:e2e` | E2E | P1 |
 | UI-011 | Detail Sidebar 选项卡 | Detail Sidebar 包含三个选项卡：Basic Info（基本信息）、Fields（字段表格）、Publish（发布设置）。非 ready 状态时 Fields/Publish 显示提示信息 | 选项卡导航正常，内容切换正确 | `npm run test:e2e` | E2E | P2 |
 | UI-012 | 字段别名显示 | Preview 页面特征检查器显示字段别名。有别名的字段显示为：别名 + 灰色小字原始名；无别名时仅显示原始名。通过 API-005 获取 alias 字段 | 有别名正确显示别名+原始名，无别名仅显示原始名 | `npm run test:e2e` | E2E | P1 |
+| UI-013 | 瓦片文档页 | /tiles/:slug/docs **无需认证**，显示已发布瓦片服务的完整文档：服务URL（可复制）、配置信息、OpenLayers代码示例、实时地图预览。支持标准CRS和自定义CRS | 文档正确显示，代码可复制，地图预览正常加载 | 手动验证 | E2E | P2 |
 | E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
 | E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `frontend/tests/upload-formats.spec.js` | E2E | P0 |
