@@ -22,6 +22,10 @@ jobs:
       - name: Check spatial extension version sync
         run: bash scripts/ci/check_spatial_extension_version.sh
 
+      - name: Download spatial extension for build
+        run: |
+          bash scripts/release/spatial_extension_artifact.sh download linux_amd64 backend/extensions/spatial.duckdb_extension
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
