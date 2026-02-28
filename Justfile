@@ -22,8 +22,29 @@ dev-frontend:
   PORT={{PORT}} VITE_PORT={{VITE_PORT}} npm --prefix frontend run dev
 
 # Install dependencies (backend is automatic, frontend needs install)
-install:
-  npm --prefix frontend install
+install: install-frontend setup-dev
+
+# Setup dev environment: download DuckDB spatial extension for current platform
+setup-dev:
+  @set -euo pipefail; \
+    os="$(uname -s)"; \
+    arch="$(uname -m)"; \
+    if [ "$os" = "Linux" ] && [ "$arch" = "x86_64" ]; then \
+      duckdb_platform="linux_amd64"; \
+    elif [ "$os" = "Linux" ] && { [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; }; then \
+      duckdb_platform="linux_arm64"; \
+    elif [ "$os" = "Darwin" ] && [ "$arch" = "x86_64" ]; then \
+      duckdb_platform="osx_amd64"; \
+    elif [ "$os" = "Darwin" ] && [ "$arch" = "arm64" ]; then \
+      duckdb_platform="osx_arm64"; \
+    elif [[ "$os" == MINGW* || "$os" == MSYS* || "$os" == CYGWIN* ]] && [ "$arch" = "x86_64" ]; then \
+      duckdb_platform="windows_amd64"; \
+    else \
+      echo "unsupported host platform: os=$os arch=$arch" >&2; \
+      exit 1; \
+    fi; \
+    echo "Downloading DuckDB spatial extension for $$duckdb_platform..."; \
+    bash scripts/release/spatial_extension_artifact.sh download "$$duckdb_platform" "backend/extensions/spatial.duckdb_extension"
 
 # Check code quality
 check:
@@ -45,25 +66,8 @@ build:
 # Build release binary with embedded frontend dist + embedded DuckDB spatial extension
 build-embed:
   npm --prefix frontend run build
-  @set -euo pipefail; \
-    os="$(uname -s)"; \
-    arch="$(uname -m)"; \
-    if [ "$os" = "Linux" ] && [ "$arch" = "x86_64" ]; then \
-      duckdb_platform="linux_amd64"; \
-    elif [ "$os" = "Linux" ] && { [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; }; then \
-      duckdb_platform="linux_arm64"; \
-    elif [ "$os" = "Darwin" ] && [ "$arch" = "x86_64" ]; then \
-      duckdb_platform="osx_amd64"; \
-    elif [ "$os" = "Darwin" ] && [ "$arch" = "arm64" ]; then \
-      duckdb_platform="osx_arm64"; \
-    elif [[ "$os" == MINGW* || "$os" == MSYS* || "$os" == CYGWIN* ]] && [ "$arch" = "x86_64" ]; then \
-      duckdb_platform="windows_amd64"; \
-    else \
-      echo "unsupported host platform for embedded spatial extension: os=$os arch=$arch" >&2; \
-      exit 1; \
-    fi; \
-    bash scripts/release/spatial_extension_artifact.sh download "$duckdb_platform" "backend/extensions/spatial.duckdb_extension"
-  cargo build --release --manifest-path backend/Cargo.toml --features embed-web-dist,embed-spatial-extension
+  just setup-dev
+  cargo build --release --manifest-path backend/Cargo.toml --features embed-web-dist
 
 # --- Docker Operations (Explicit) ---
 

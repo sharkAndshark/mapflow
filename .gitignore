@@ -3,6 +3,10 @@
 **/*.rs.bk
 *.pdb
 
+# DuckDB spatial extension (downloaded via just setup-dev)
+backend/extensions/spatial.duckdb_extension
+backend/extensions/duckdb/
+
 
 # Database
 *.duckdb

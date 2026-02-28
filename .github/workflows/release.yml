@@ -164,7 +164,7 @@ jobs:
             "backend/extensions/spatial.duckdb_extension"
 
       - name: Build backend binary
-        run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist,embed-spatial-extension
+        run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist
 
       - name: Smoke test binary
         shell: bash
