@@ -137,7 +137,10 @@ publish_file() {
 
   smoke_log "publishing file ${file_id}"
   local resp
-  resp=$(curl -fsS -b "$cookie_jar" -X POST "${base_url}/api/files/${file_id}/publish")
+  resp=$(curl -fsS -b "$cookie_jar" -X POST \
+    -H "Content-Type: application/json" \
+    -d "{}" \
+    "${base_url}/api/files/${file_id}/publish")
 
   echo "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("slug",""))'
 }
