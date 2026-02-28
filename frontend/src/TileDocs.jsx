@@ -244,6 +244,7 @@ export default function TileDocs() {
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState(null);
   const [showCode, setShowCode] = useState(true);
+  const [mdCopied, setMdCopied] = useState(false);
 
   const origin = window.location.origin;
 
@@ -389,6 +390,16 @@ export default function TileDocs() {
           projection: customProjection,
           center: [centerX, centerY],
           zoom: 0,
+          minZoom: minZoom,
+          maxZoom: maxZoom,
+        }),
+      );
+    } else {
+      map.setView(
+        new View({
+          projection: 'EPSG:3857',
+          center: [0, 0],
+          zoom: 2,
           minZoom: minZoom,
           maxZoom: maxZoom,
         }),
@@ -682,7 +693,8 @@ export default function TileDocs() {
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(markdownDoc);
-                      alert('Documentation copied to clipboard!');
+                      setMdCopied(true);
+                      setTimeout(() => setMdCopied(false), 2000);
                     } catch (err) {
                       console.error('Failed to copy:', err);
                     }
@@ -690,7 +702,7 @@ export default function TileDocs() {
                   style={{
                     width: '100%',
                     padding: '12px',
-                    background: '#007bff',
+                    background: mdCopied ? '#28a745' : '#007bff',
                     color: '#fff',
                     border: 'none',
                     borderRadius: '6px',
@@ -699,7 +711,7 @@ export default function TileDocs() {
                     fontWeight: '500',
                   }}
                 >
-                  Copy Full Documentation (Markdown)
+                  {mdCopied ? 'Copied!' : 'Copy Full Documentation (Markdown)'}
                 </button>
               </section>
             </>
