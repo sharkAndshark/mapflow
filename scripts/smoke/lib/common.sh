@@ -6,7 +6,7 @@ SMOKE_USERNAME="${SMOKE_USERNAME:-smoke_admin}"
 SMOKE_PASSWORD="${SMOKE_PASSWORD:-SmokePass1!}"
 
 smoke_log() {
-  echo "[smoke] $*"
+  echo "[smoke] $*" >&2
 }
 
 smoke_fail() {
