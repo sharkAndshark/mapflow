@@ -54,6 +54,10 @@ export default function Settings() {
       setError('请输入有效的数值（最小 1 MB）');
       return;
     }
+    if (value > 102400) {
+      setError('最大值为 100 GB（102400 MB）');
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -75,7 +79,10 @@ export default function Settings() {
   }
 
   const hasChanges = parseInt(maxSizeMb, 10) !== originalValue;
-  const isValid = !isNaN(parseInt(maxSizeMb, 10));
+  const isValid =
+    !isNaN(parseInt(maxSizeMb, 10)) &&
+    parseInt(maxSizeMb, 10) >= 1 &&
+    parseInt(maxSizeMb, 10) <= 102400;
 
   if (!user || user.role !== 'admin') {
     return null;
