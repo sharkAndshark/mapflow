@@ -4,9 +4,12 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use axum_login::AuthSession;
 use duckdb::types::ValueRef;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use crate::config::{format_bytes, save_max_size_to_db, validate_upload_size_mb, BYTES_PER_MB};
 use crate::{
     crs::{normalize_crs, DataBounds, CRS_TYPE_CUSTOM},
     http_errors::{bad_request, internal_error},
@@ -1228,4 +1231,86 @@ pub async fn update_publish_settings(
         "id": id,
         "useAliases": use_aliases
     })))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SettingsResponse {
+    #[serde(rename = "maxSizeMb")]
+    pub upload_max_size_mb: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSettingsRequest {
+    #[serde(rename = "maxSizeMb")]
+    pub upload_max_size_mb: u64,
+}
+
+pub async fn get_settings(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let max_size = *state.max_size.read().await;
+    let max_size_mb = max_size / BYTES_PER_MB;
+
+    Ok(Json(SettingsResponse {
+        upload_max_size_mb: max_size_mb,
+    }))
+}
+
+pub async fn update_settings(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(state): State<AppState>,
+    Json(req): Json<UpdateSettingsRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let user = auth_session.user.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Not authenticated".to_string(),
+            }),
+        )
+    })?;
+
+    if user.role != "admin" {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Only administrators can update settings".to_string(),
+            }),
+        ));
+    }
+
+    if let Err(e) = validate_upload_size_mb(req.upload_max_size_mb) {
+        return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })));
+    }
+
+    let conn = state.db.lock().await;
+    if let Err(e) = save_max_size_to_db(&conn, req.upload_max_size_mb) {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to save settings: {}", e),
+            }),
+        ));
+    }
+    drop(conn);
+
+    let new_bytes = req.upload_max_size_mb.saturating_mul(BYTES_PER_MB);
+    let new_label = format_bytes(new_bytes);
+
+    {
+        let mut max_size = state.max_size.write().await;
+        let mut max_size_label = state.max_size_label.write().await;
+        *max_size = new_bytes;
+        *max_size_label = new_label;
+    }
+
+    info!(
+        upload_max_size_mb = req.upload_max_size_mb,
+        updated_by = %user.username,
+        "Upload size limit updated"
+    );
+
+    Ok(Json(SettingsResponse {
+        upload_max_size_mb: req.upload_max_size_mb,
+    }))
 }

@@ -3,7 +3,7 @@ use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
 #[cfg(not(windows))]
 use tokio::fs;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -244,7 +244,7 @@ async fn main() -> Result<()> {
         .canonicalize()
         .unwrap_or_else(|_| upload_dir.clone());
 
-    let (max_size, max_size_label) = backend::read_max_size_config();
+    let (max_size, max_size_label) = backend::init_max_size_config(&conn);
     tracing::info!(max_size, max_size_label, "Upload size limit configured");
 
     let db = Arc::new(Mutex::new(conn));
@@ -256,8 +256,8 @@ async fn main() -> Result<()> {
         upload_dir,
         upload_dir_canonical,
         db: db.clone(),
-        max_size,
-        max_size_label,
+        max_size: Arc::new(RwLock::new(max_size)),
+        max_size_label: Arc::new(RwLock::new(max_size_label)),
         auth_backend,
         session_store,
     };

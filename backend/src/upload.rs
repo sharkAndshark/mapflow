@@ -77,12 +77,14 @@ pub async fn upload_file(
     let mut file = BufWriter::new(fs::File::create(&file_path).await.map_err(internal_error)?);
 
     let mut size: u64 = 0;
+    let max_size = *state.max_size.read().await;
+    let max_size_label = state.max_size_label.read().await.clone();
     while let Some(chunk) = field.chunk().await.map_err(internal_error)? {
         size = size.saturating_add(chunk.len() as u64);
-        if size > state.max_size {
+        if size > max_size {
             drop(file);
             let _ = fs::remove_file(&file_path).await;
-            let message = format!("File too large (max {})", state.max_size_label);
+            let message = format!("File too large (max {})", max_size_label);
             return Err(payload_too_large(&message));
         }
         file.write_all(&chunk).await.map_err(internal_error)?;

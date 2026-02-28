@@ -1,15 +1,25 @@
 use axum::body::Body;
 use axum::http::Request;
 use backend::{
-    build_test_router, init_database, reconcile_processing_files, AppState, AuthBackend,
-    DuckDBStore, FileItem, PROCESSING_RECONCILIATION_ERROR,
+    build_api_router, build_test_router, init_database, reconcile_processing_files, AppState,
+    AuthBackend, DuckDBStore, FileItem, PROCESSING_RECONCILIATION_ERROR,
 };
 use http_body_util::BodyExt; // for collect()
 use mvt_reader::{feature::Value as MvtValue, Reader as MvtReader};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::sync::RwLock;
 use tower::ServiceExt; // for oneshot
+
+static TEST_MODE_SET: std::sync::Once = std::sync::Once::new();
+
+fn ensure_test_mode() {
+    TEST_MODE_SET.call_once(|| {
+        std::env::set_var("MAPFLOW_TEST_MODE", "1");
+    });
+}
 
 async fn wait_until_ready(app: &axum::Router, file_id: &str) -> FileItem {
     let mut last_status: Option<String> = None;
@@ -161,13 +171,39 @@ async fn setup_app() -> (axum::Router, TempDir) {
         upload_dir,
         upload_dir_canonical,
         db: db.clone(),
-        max_size: 10 * 1024 * 1024, // 10MB
-        max_size_label: "10MB".to_string(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
         auth_backend: AuthBackend::new(db.clone()),
         session_store: DuckDBStore::new(db),
     };
 
     let router = build_test_router(state);
+    (router, temp_dir)
+}
+
+async fn setup_app_with_auth() -> (axum::Router, TempDir) {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
+    };
+
+    let router = build_api_router(state);
     (router, temp_dir)
 }
 
@@ -187,10 +223,10 @@ async fn setup_app_with_large_max_size() -> (axum::Router, TempDir) {
         upload_dir,
         upload_dir_canonical,
         db: db.clone(),
-        max_size: 100 * 1024 * 1024, // 100MB for OSM datasets
-        max_size_label: "100MB".to_string(),
+        max_size: Arc::new(RwLock::new(100 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("100MB".to_string())),
         auth_backend: AuthBackend::new(db.clone()),
-        session_store: DuckDBStore::new(db),
+        session_store: DuckDBStore::new(db.clone()),
     };
 
     let router = build_test_router(state);
@@ -427,8 +463,8 @@ async fn test_upload_payload_too_large_returns_413() {
         upload_dir,
         upload_dir_canonical,
         db: db.clone(),
-        max_size: 1024, // 1KB
-        max_size_label: "1KB".to_string(),
+        max_size: Arc::new(RwLock::new(1024)),
+        max_size_label: Arc::new(RwLock::new("1KB".to_string())),
         auth_backend: AuthBackend::new(db.clone()),
         session_store: DuckDBStore::new(db),
     };
@@ -523,8 +559,8 @@ async fn test_startup_reconciliation_marks_processing_as_failed() {
         upload_dir,
         upload_dir_canonical,
         db: db.clone(),
-        max_size: 10 * 1024 * 1024,
-        max_size_label: "10MB".to_string(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
         auth_backend: AuthBackend::new(db.clone()),
         session_store: DuckDBStore::new(db),
     };
@@ -999,8 +1035,8 @@ async fn test_schema_endpoint_returns_409_for_non_ready_file() {
         upload_dir,
         upload_dir_canonical,
         db: db.clone(),
-        max_size: 10 * 1024 * 1024,
-        max_size_label: "10MB".to_string(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
         auth_backend: AuthBackend::new(db.clone()),
         session_store: DuckDBStore::new(db),
     };
@@ -1384,8 +1420,8 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
         upload_dir: upload_dir.clone(),
         upload_dir_canonical: upload_dir_canonical.clone(),
         db: db1.clone(),
-        max_size: 10 * 1024 * 1024,
-        max_size_label: "10MB".to_string(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
         auth_backend: AuthBackend::new(db1.clone()),
         session_store: DuckDBStore::new(db1),
     };
@@ -1425,8 +1461,8 @@ async fn test_persistence_across_restart_keeps_ready_dataset() {
         upload_dir,
         upload_dir_canonical,
         db: db2.clone(),
-        max_size: 10 * 1024 * 1024,
-        max_size_label: "10MB".to_string(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
         auth_backend: AuthBackend::new(db2.clone()),
         session_store: DuckDBStore::new(db2),
     };
@@ -5318,4 +5354,301 @@ async fn test_public_tile_uses_alias() {
         !has_alias_key2,
         "Tile should NOT have alias as property key when useAliases=false"
     );
+}
+
+async fn create_user_and_session(
+    app: &axum::Router,
+    db: Arc<tokio::sync::Mutex<duckdb::Connection>>,
+    user_id: &str,
+    username: &str,
+    role: &str,
+) -> String {
+    use time;
+    use tower_sessions::session::{Id, Record};
+
+    let password_hash = "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36IgQE0VrqQ6EJdNpO5mLY";
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET username = excluded.username, password_hash = excluded.password_hash, role = excluded.role",
+            duckdb::params![user_id, username, password_hash, role],
+        ).unwrap();
+    }
+
+    let id = Id::default();
+    let expiry_date = time::OffsetDateTime::now_utc() + time::Duration::hours(24);
+
+    let auth_hash = password_hash.as_bytes().to_vec();
+
+    let mut auth_data = HashMap::new();
+    auth_data.insert("user_id".to_string(), serde_json::json!(user_id));
+    auth_data.insert("auth_hash".to_string(), serde_json::json!(auth_hash));
+
+    let mut session_data = HashMap::new();
+    session_data.insert("axum-login.data".to_string(), serde_json::json!(auth_data));
+
+    let record = Record {
+        id,
+        data: session_data,
+        expiry_date,
+    };
+
+    let session_id = record.id.to_string();
+    let data_json = serde_json::to_string(&record.data).unwrap();
+    let expiry_date_str = chrono::DateTime::from_timestamp(record.expiry_date.unix_timestamp(), 0)
+        .unwrap()
+        .to_rfc3339();
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/test/session")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "session_id": session_id,
+                "data": data_json,
+                "expiry_date": expiry_date_str
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    format!("id={}", session_id)
+}
+
+#[tokio::test]
+async fn test_get_settings_returns_current_max_size() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let cookie = create_user_and_session(&app, db, "user-1", "testuser", "admin").await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/settings")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let settings: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(settings["maxSizeMb"], 10);
+}
+
+#[tokio::test]
+async fn test_get_settings_requires_auth() {
+    let (app, _temp) = setup_app_with_auth().await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/settings")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_update_settings_requires_admin() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let cookie = create_user_and_session(&app, db, "user-1", "testuser", "user").await;
+
+    let request = Request::builder()
+        .method("PATCH")
+        .uri("/api/settings")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"maxSizeMb": 20}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_update_settings_success() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state.clone());
+
+    let cookie = create_user_and_session(&app, db.clone(), "admin-1", "admin", "admin").await;
+
+    let request = Request::builder()
+        .method("PATCH")
+        .uri("/api/settings")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"maxSizeMb": 20}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let settings: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(settings["maxSizeMb"], 20);
+
+    assert_eq!(*state.max_size.read().await, 20 * 1024 * 1024);
+    assert_eq!(*state.max_size_label.read().await, "20MB");
+}
+
+#[tokio::test]
+async fn test_update_settings_rejects_zero() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
+
+    let request = Request::builder()
+        .method("PATCH")
+        .uri("/api/settings")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"maxSizeMb": 0}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let error: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(error["error"].as_str().unwrap().contains("at least"));
+}
+
+#[tokio::test]
+async fn test_settings_persisted_to_database() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("persist.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let cookie = create_user_and_session(&app, db.clone(), "admin-1", "admin", "admin").await;
+
+    let request = Request::builder()
+        .method("PATCH")
+        .uri("/api/settings")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"maxSizeMb": 50}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let conn = db.lock().await;
+    let value: String = conn
+        .query_row(
+            "SELECT value FROM system_settings WHERE key = 'upload_max_size_mb'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(value, "50");
 }
