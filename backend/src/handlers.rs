@@ -1246,8 +1246,18 @@ pub struct UpdateSettingsRequest {
 }
 
 pub async fn get_settings(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    if auth_session.user.is_none() {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Not authenticated".to_string(),
+            }),
+        ));
+    }
+
     let max_size = *state.max_size.read().await;
     let max_size_mb = max_size / BYTES_PER_MB;
 
