@@ -96,7 +96,7 @@ jobs:
           tags: mapflow-smoke:${{ github.ref_name }}
 
       - name: Smoke test container
-        run: SMOKE_IMAGE="mapflow-smoke:${{ github.ref_name }}" bash scripts/ci/smoke_test.sh
+        run: bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:${{ github.ref_name }}
 
   binaries:
     needs:
@@ -165,6 +165,12 @@ jobs:
 
       - name: Build backend binary
         run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist,embed-spatial-extension
+
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          bash scripts/smoke/smoke-binary.sh \
+            --binary "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
 
       - name: Package bundle
         id: package
