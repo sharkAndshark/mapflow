@@ -1293,21 +1293,23 @@ pub async fn update_settings(
         return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })));
     }
 
+    let conn = state.db.lock().await;
+    if let Err(e) = save_max_size_to_db(&conn, req.upload_max_size_mb) {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to save settings: {}", e),
+            }),
+        ));
+    }
+    drop(conn);
+
     let new_bytes = req.upload_max_size_mb.saturating_mul(BYTES_PER_MB);
     let new_label = format_bytes(new_bytes);
 
     {
         let mut max_size = state.max_size.write().await;
         let mut max_size_label = state.max_size_label.write().await;
-        let conn = state.db.lock().await;
-        if let Err(e) = save_max_size_to_db(&conn, req.upload_max_size_mb) {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Failed to save settings: {}", e),
-                }),
-            ));
-        }
         *max_size = new_bytes;
         *max_size_label = new_label;
     }

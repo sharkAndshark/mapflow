@@ -1,7 +1,7 @@
 const DEFAULT_MAX_SIZE_MB: u64 = 1024;
 pub const BYTES_PER_MB: u64 = 1024 * 1024;
 const MIN_UPLOAD_SIZE_MB: u64 = 1;
-const MAX_UPLOAD_SIZE_MB: u64 = 102400; // 100GB
+const MAX_UPLOAD_SIZE_MB: u64 = 102400;
 
 /// Read CORS allowed origins from environment variable
 /// Format: comma-separated list of origins (e.g., "http://localhost:5173,https://example.com")
