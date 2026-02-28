@@ -152,6 +152,14 @@ pub struct PublicTileMeta {
     pub tile_url: String,
     #[serde(rename = "viewerUrl")]
     pub viewer_url: String,
+    pub crs: Option<String>,
+    #[serde(rename = "crsType")]
+    pub crs_type: String,
+    pub bbox: Option<[f64; 4]>,
+    #[serde(rename = "dataBounds", skip_serializing_if = "Option::is_none")]
+    pub data_bounds: Option<[f64; 4]>,
+    #[serde(rename = "tileFormat", skip_serializing_if = "Option::is_none")]
+    pub tile_format: Option<String>,
     #[serde(rename = "minZoom", skip_serializing_if = "Option::is_none")]
     pub minzoom: Option<i32>,
     #[serde(rename = "maxZoom", skip_serializing_if = "Option::is_none")]
