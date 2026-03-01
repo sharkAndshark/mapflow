@@ -203,7 +203,11 @@ fn main() -> Result<()> {
         }
     };
 
-    rt.block_on(axum::serve(listener, app).with_graceful_shutdown(shutdown))?;
+    rt.block_on(async {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await
+    })?;
 
     Ok(())
 }
