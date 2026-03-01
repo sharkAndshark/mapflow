@@ -1,4 +1,5 @@
 #[cfg(windows)]
+#[allow(dead_code)]
 pub fn create_tray(
     shutdown_tx: tokio::sync::mpsc::UnboundedSender<()>,
     port: u16,
@@ -31,6 +32,7 @@ pub fn create_tray(
 }
 
 #[cfg(windows)]
+#[allow(dead_code)]
 fn open_browser(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     std::process::Command::new("cmd")
         .args(["/C", "start", url])
