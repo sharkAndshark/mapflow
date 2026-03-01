@@ -1,9 +1,8 @@
 #[cfg(windows)]
-#[allow(dead_code)]
 pub fn create_tray(
     shutdown_tx: tokio::sync::mpsc::UnboundedSender<()>,
     port: u16,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tray_item::{IconSource, TrayItem};
 
     let mut tray = TrayItem::new("MapFlow", IconSource::Resource("APP_ICON"))?;
@@ -32,8 +31,7 @@ pub fn create_tray(
 }
 
 #[cfg(windows)]
-#[allow(dead_code)]
-fn open_browser(url: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn open_browser(url: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     std::process::Command::new("cmd")
         .args(["/C", "start", url])
         .spawn()?;

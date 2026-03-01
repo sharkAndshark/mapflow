@@ -1,7 +1,10 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
-use tokio::{fs, sync::Mutex, sync::RwLock};
+#[cfg(not(windows))]
+use tokio::fs;
+use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -100,8 +103,8 @@ fn main() -> Result<()> {
         upload_dir,
         upload_dir_canonical,
         db: db.clone(),
-        max_size,
-        max_size_label,
+        max_size: Arc::new(RwLock::new(max_size)),
+        max_size_label: Arc::new(RwLock::new(max_size_label)),
         auth_backend,
         session_store,
     };
