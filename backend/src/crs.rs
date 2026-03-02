@@ -6,6 +6,7 @@ pub const CRS_TYPE_CUSTOM: &str = "custom";
 
 lazy_static! {
     static ref EPSG_PATTERN: Regex = Regex::new(r"(?i)^EPSG:(\d+)$").unwrap();
+    static ref EPSG_URN_PATTERN: Regex = Regex::new(r"(?i)^urn:ogc:def:crs:EPSG::(\d+)$").unwrap();
     static ref WGS84_ALIASES: Vec<&'static str> = vec![
         "WGS84",
         "WGS_1984",
@@ -45,6 +46,14 @@ pub fn normalize_crs(raw: Option<&str>) -> NormalizedCrs {
                 };
             }
 
+            if let Some(caps) = EPSG_URN_PATTERN.captures(trimmed) {
+                let code: &str = caps.get(1).unwrap().as_str();
+                return NormalizedCrs {
+                    crs: Some(format!("EPSG:{}", code)),
+                    crs_type: CRS_TYPE_STANDARD.to_string(),
+                };
+            }
+
             if WGS84_ALIASES
                 .iter()
                 .any(|alias| trimmed.eq_ignore_ascii_case(alias))
@@ -65,6 +74,29 @@ pub fn normalize_crs(raw: Option<&str>) -> NormalizedCrs {
             }
         }
     }
+}
+
+// Some geographic CRSs are effectively WGS84-compatible for our tile rendering path.
+// DuckDB spatial may not always resolve every EPSG code in all environments.
+pub fn resolve_transform_source_crs(crs: Option<&str>) -> String {
+    let normalized = normalize_crs(crs);
+    let Some(value) = normalized.crs else {
+        return "EPSG:4326".to_string();
+    };
+
+    if value.eq_ignore_ascii_case("EPSG:4490") {
+        return "EPSG:4326".to_string();
+    }
+
+    value
+}
+
+pub fn is_wgs84_compatible_crs(crs: Option<&str>) -> bool {
+    let normalized = normalize_crs(crs);
+    matches!(
+        normalized.crs.as_deref(),
+        Some("EPSG:4326") | Some("EPSG:4490")
+    )
 }
 
 fn parse_wkt(wkt: &str) -> NormalizedCrs {
@@ -170,6 +202,13 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_epsg_urn() {
+        let result = normalize_crs(Some("urn:ogc:def:crs:EPSG::4490"));
+        assert_eq!(result.crs, Some("EPSG:4490".to_string()));
+        assert_eq!(result.crs_type, CRS_TYPE_STANDARD);
+    }
+
+    #[test]
     fn test_normalize_none() {
         let result = normalize_crs(None);
         assert_eq!(result.crs, None);
@@ -197,6 +236,22 @@ mod tests {
         let result = normalize_crs(Some(wkt));
         assert_eq!(result.crs, Some(wkt.to_string()));
         assert_eq!(result.crs_type, CRS_TYPE_CUSTOM);
+    }
+
+    #[test]
+    fn test_resolve_transform_source_crs() {
+        assert_eq!(resolve_transform_source_crs(None), "EPSG:4326");
+        assert_eq!(resolve_transform_source_crs(Some("WGS84")), "EPSG:4326");
+        assert_eq!(resolve_transform_source_crs(Some("EPSG:4490")), "EPSG:4326");
+        assert_eq!(resolve_transform_source_crs(Some("EPSG:3857")), "EPSG:3857");
+    }
+
+    #[test]
+    fn test_is_wgs84_compatible_crs() {
+        assert!(is_wgs84_compatible_crs(Some("EPSG:4326")));
+        assert!(is_wgs84_compatible_crs(Some("WGS84")));
+        assert!(is_wgs84_compatible_crs(Some("EPSG:4490")));
+        assert!(!is_wgs84_compatible_crs(Some("EPSG:3857")));
     }
 
     #[test]

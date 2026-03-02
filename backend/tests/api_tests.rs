@@ -3655,7 +3655,7 @@ async fn test_pmtiles_meta_endpoint() {
         .body(Body::empty())
         .unwrap();
 
-    let meta_response = app.oneshot(meta_request).await.unwrap();
+    let meta_response = app.clone().oneshot(meta_request).await.unwrap();
     assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
 
     let meta_body = meta_response
@@ -3801,7 +3801,7 @@ async fn test_pmtiles_meta_for_duckdb_file() {
         .body(Body::empty())
         .unwrap();
 
-    let meta_response = app.oneshot(meta_request).await.unwrap();
+    let meta_response = app.clone().oneshot(meta_request).await.unwrap();
     assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
 
     let meta_body = meta_response
@@ -3814,6 +3814,7 @@ async fn test_pmtiles_meta_for_duckdb_file() {
 
     assert_eq!(meta_json["tileSource"], "duckdb");
     assert_eq!(meta_json["tileUrl"], "/tiles/duckdb-meta-test/{z}/{x}/{y}");
+    assert_eq!(meta_json["bbox"], serde_json::json!([0.0, 0.0, 0.1, 0.1]));
 }
 
 #[tokio::test]
@@ -3843,7 +3844,7 @@ async fn test_publish_dynamic_data_with_zoom() {
         .body(Body::empty())
         .unwrap();
 
-    let meta_response = app.oneshot(meta_request).await.unwrap();
+    let meta_response = app.clone().oneshot(meta_request).await.unwrap();
     assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
 
     let meta_body = meta_response
@@ -3951,7 +3952,7 @@ async fn test_update_tile_zoom_success() {
         .body(Body::empty())
         .unwrap();
 
-    let meta_response = app.oneshot(meta_request).await.unwrap();
+    let meta_response = app.clone().oneshot(meta_request).await.unwrap();
     assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
 
     let meta_body = meta_response
@@ -4548,6 +4549,133 @@ async fn test_update_crs_success() {
     let updated_file = files.iter().find(|f| f.id == file_id).unwrap();
     assert_eq!(updated_file.crs, Some("EPSG:3857".to_string()));
     assert_eq!(updated_file.crs_type, Some("standard".to_string()));
+}
+
+#[tokio::test]
+async fn test_update_crs_with_epsg_urn_normalizes_to_standard() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let update_crs_request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/files/{}/crs", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"crs": "urn:ogc:def:crs:EPSG::4490"}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(update_crs_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(result["id"], file_id);
+    assert_eq!(result["crs"], "EPSG:4490");
+    assert_eq!(result["crsType"], "standard");
+}
+
+#[tokio::test]
+async fn test_public_tile_meta_includes_bbox_for_epsg4490() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_bytes = read_fixture_bytes("frontend/tests/fixtures/sample.geojson");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"epsg4490_test.geojson\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&geojson_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id;
+    wait_until_ready(&app, &file_id).await;
+
+    let update_crs_request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/files/{}/crs", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"crs": "EPSG:4490"}"#))
+        .unwrap();
+
+    let update_response = app.clone().oneshot(update_crs_request).await.unwrap();
+    assert_eq!(update_response.status(), axum::http::StatusCode::OK);
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"epsg4490-docs-test"}"#))
+        .unwrap();
+
+    let publish_response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
+
+    let meta_request = Request::builder()
+        .method("GET")
+        .uri("/tiles/epsg4490-docs-test/meta")
+        .body(Body::empty())
+        .unwrap();
+
+    let meta_response = app.clone().oneshot(meta_request).await.unwrap();
+    assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
+
+    let meta_body = meta_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let meta_json: serde_json::Value = serde_json::from_slice(&meta_body).unwrap();
+
+    assert_eq!(meta_json["crs"], "EPSG:4490");
+    assert_eq!(meta_json["crsType"], "standard");
+
+    let bbox = meta_json["bbox"]
+        .as_array()
+        .expect("bbox should be an array");
+    assert_eq!(bbox.len(), 4);
+
+    let minx = bbox[0].as_f64().unwrap();
+    let miny = bbox[1].as_f64().unwrap();
+    let maxx = bbox[2].as_f64().unwrap();
+    let maxy = bbox[3].as_f64().unwrap();
+
+    assert!(maxx > minx);
+    assert!(maxy > miny);
+    assert!(minx >= -180.0 && maxx <= 180.0);
+    assert!(miny >= -90.0 && maxy <= 90.0);
+
+    let tile_request = Request::builder()
+        .method("GET")
+        .uri("/tiles/epsg4490-docs-test/0/0/0")
+        .body(Body::empty())
+        .unwrap();
+
+    let tile_response = app.clone().oneshot(tile_request).await.unwrap();
+    assert_eq!(tile_response.status(), axum::http::StatusCode::OK);
 }
 
 #[tokio::test]

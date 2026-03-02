@@ -12,6 +12,9 @@ export default defineConfig(() => {
       port: Number(frontendPort),
       proxy: {
         '/api': `http://127.0.0.1:${backendPort}`,
+        '^/tiles/[^/]+/meta$': `http://127.0.0.1:${backendPort}`,
+        '^/tiles/[^/]+/\\d+/\\d+/\\d+$': `http://127.0.0.1:${backendPort}`,
+        '^/tiles/[^/]+$': `http://127.0.0.1:${backendPort}`,
       },
     },
   };
