@@ -93,10 +93,10 @@ fn main() -> Result<()> {
         .canonicalize()
         .unwrap_or_else(|_| upload_dir.clone());
 
-    let db = Arc::new(Mutex::new(conn));
-
     let (max_size, max_size_label) = backend::init_max_size_config(&conn);
     tracing::info!(max_size, max_size_label, "Upload size limit configured");
+
+    let db = Arc::new(Mutex::new(conn));
 
     let auth_backend = backend::AuthBackend::new(db.clone());
     let session_store = backend::DuckDBStore::new(db.clone());
