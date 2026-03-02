@@ -771,14 +771,25 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         <div className="form-value code" style={{ fontSize: '12px' }}>
                           /tiles/{file.publicSlug}/{'{z}/{x}/{y}'}
                         </div>
-                        <button
-                          type="button"
-                          className="btn-text"
-                          style={{ fontSize: '12px', padding: 0, textAlign: 'left' }}
-                          onClick={() => copyPublicUrl(file.publicSlug)}
-                        >
-                          {copySuccess ? '已复制' : '复制地址'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            className="btn-text"
+                            style={{ fontSize: '12px', padding: 0, textAlign: 'left' }}
+                            onClick={() => copyPublicUrl(file.publicSlug)}
+                          >
+                            {copySuccess ? '已复制' : '复制地址'}
+                          </button>
+                          <a
+                            href={`/tiles/${file.publicSlug}/docs`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-text"
+                            style={{ fontSize: '12px', textDecoration: 'none' }}
+                          >
+                            查看文档
+                          </a>
+                        </div>
                       </div>
                     </div>
                   </div>

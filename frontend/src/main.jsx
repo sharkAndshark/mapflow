@@ -8,6 +8,7 @@ import Login from './Login.jsx';
 import Init from './Init.jsx';
 import Preview from './Preview.jsx';
 import Settings from './Settings.jsx';
+import TileDocs from './TileDocs.jsx';
 import './index.css';
 
 const root = createRoot(document.getElementById('root'));
@@ -41,6 +42,7 @@ root.render(
             </ProtectedRoute>
           }
         />
+        <Route path="/tiles/:slug/docs" element={<TileDocs />} />
       </Routes>
     </AuthProvider>
   </BrowserRouter>,

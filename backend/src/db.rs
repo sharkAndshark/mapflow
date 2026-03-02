@@ -1,5 +1,6 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     path::{Path, PathBuf},
@@ -10,11 +11,13 @@ use tokio::sync::Mutex;
 
 pub const DEFAULT_DB_PATH: &str = "./data/mapflow.duckdb";
 pub const PROCESSING_RECONCILIATION_ERROR: &str = "Server restarted during processing";
+
 const SPATIAL_EXTENSION_PATH_ENV: &str = "SPATIAL_EXTENSION_PATH";
 const SPATIAL_EXTENSION_DIR_ENV: &str = "SPATIAL_EXTENSION_DIR";
 const SPATIAL_EXTENSION_FILENAME: &str = "spatial.duckdb_extension";
 const DEFAULT_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "extensions/spatial.duckdb_extension";
 const DEV_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "backend/extensions/spatial.duckdb_extension";
+
 const SPATIAL_EXTENSION_CACHE_DIR_ENV: &str = "SPATIAL_EXTENSION_CACHE_DIR";
 
 static EMBEDDED_SPATIAL_EXTENSION: &[u8] = include_bytes!(concat!(
@@ -197,10 +200,19 @@ fn append_unique_path(candidates: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
-fn embedded_spatial_extension_checksum() -> u64 {
-    EMBEDDED_SPATIAL_EXTENSION.iter().fold(0u64, |acc, byte| {
+fn build_embedded_spatial_filename() -> String {
+    // DuckDB derives entrypoint function name from the extension filename.
+    // The filename MUST be "spatial.duckdb_extension" to match the expected
+    // entrypoint "spatial_duckdb_cpp_init". Use a versioned subdirectory
+    // for integrity checking and automatic invalidation on upgrades.
+    let checksum = EMBEDDED_SPATIAL_EXTENSION.iter().fold(0u64, |acc, byte| {
         acc.wrapping_mul(16777619).wrapping_add(u64::from(*byte))
-    })
+    });
+    format!(
+        "v{}-{:016x}/spatial.duckdb_extension",
+        EMBEDDED_SPATIAL_EXTENSION.len(),
+        checksum
+    )
 }
 
 fn embedded_spatial_extension_directories() -> Vec<PathBuf> {
@@ -262,76 +274,32 @@ fn embedded_spatial_extension_file_len(path: &Path) -> Option<u64> {
         .map(|metadata| metadata.len())
 }
 
-fn checksum_sidecar_path(extension_path: &Path) -> PathBuf {
-    let os_string = extension_path.as_os_str().to_os_string();
-    let mut os_string = os_string;
-    os_string.push(".checksum");
-    PathBuf::from(os_string)
-}
-
-fn read_checksum_sidecar(path: &Path) -> Option<u64> {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| u64::from_str_radix(s.trim(), 16).ok())
-}
-
-fn write_checksum_sidecar(path: &Path, checksum: u64) -> Result<(), String> {
-    std::fs::write(path, format!("{:016x}\n", checksum))
-        .map_err(|e| format!("Failed to write checksum file {}: {}", path.display(), e))
-}
-
 fn verify_materialized_embedded_spatial_extension(
     path: &Path,
     expected_len: u64,
-    expected_checksum: u64,
 ) -> Result<(), String> {
     match embedded_spatial_extension_file_len(path) {
-        Some(actual_len) if actual_len == expected_len => {}
-        Some(actual_len) => {
-            return Err(format!(
-                "Embedded spatial extension size mismatch at {}: expected {} bytes, got {} bytes",
-                path.display(),
-                expected_len,
-                actual_len
-            ))
-        }
-        None => {
-            return Err(format!(
-                "Embedded spatial extension missing after materialization at {}",
-                path.display()
-            ))
-        }
-    }
-
-    let checksum_path = checksum_sidecar_path(path);
-    match read_checksum_sidecar(&checksum_path) {
-        Some(stored_checksum) if stored_checksum == expected_checksum => Ok(()),
-        Some(stored_checksum) => Err(format!(
-            "Embedded spatial extension checksum mismatch at {}: expected {:016x}, got {:016x}",
+        Some(actual_len) if actual_len == expected_len => Ok(()),
+        Some(actual_len) => Err(format!(
+            "Embedded spatial extension size mismatch at {}: expected {} bytes, got {} bytes",
             path.display(),
-            expected_checksum,
-            stored_checksum
+            expected_len,
+            actual_len
         )),
         None => Err(format!(
-            "Embedded spatial extension checksum file missing at {}",
-            checksum_path.display()
+            "Embedded spatial extension missing after materialization at {}",
+            path.display()
         )),
     }
 }
 
 fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
     let expected_len = EMBEDDED_SPATIAL_EXTENSION.len() as u64;
-    let expected_checksum = embedded_spatial_extension_checksum();
-    let checksum_path = checksum_sidecar_path(path);
-
-    if embedded_spatial_extension_file_len(path) == Some(expected_len)
-        && read_checksum_sidecar(&checksum_path) == Some(expected_checksum)
-    {
+    if embedded_spatial_extension_file_len(path) == Some(expected_len) {
         tracing::debug!(
             path = %path.display(),
             size = expected_len,
-            checksum = format!("{:016x}", expected_checksum),
-            "Embedded spatial extension already exists with correct size and checksum"
+            "Embedded spatial extension already exists with correct size"
         );
         return Ok(());
     }
@@ -355,7 +323,6 @@ fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
     let tmp_path = parent.join(format!(".{SPATIAL_EXTENSION_FILENAME}.{nonce}.tmp"));
-    let tmp_checksum_path = checksum_sidecar_path(&tmp_path);
 
     std::fs::write(&tmp_path, EMBEDDED_SPATIAL_EXTENSION)
         .map_err(|e| format!("Failed to write {}: {}", tmp_path.display(), e))?;
@@ -363,55 +330,28 @@ fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
     std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600))
         .map_err(|e| format!("Failed to set permissions on {}: {}", tmp_path.display(), e))?;
 
-    write_checksum_sidecar(&tmp_checksum_path, expected_checksum)?;
-
-    let checksum_moved = std::fs::rename(&tmp_checksum_path, &checksum_path).is_ok();
     match std::fs::rename(&tmp_path, path) {
         Ok(_) => {
-            if !checksum_moved {
-                let _ = std::fs::remove_file(path);
-                return Err(format!(
-                    "Failed to move checksum file into place at {}",
-                    checksum_path.display()
-                ));
-            }
-            let verify_result = verify_materialized_embedded_spatial_extension(
-                path,
-                expected_len,
-                expected_checksum,
-            );
+            let verify_result = verify_materialized_embedded_spatial_extension(path, expected_len);
             if verify_result.is_err() {
                 let _ = std::fs::remove_file(path);
-                let _ = std::fs::remove_file(&checksum_path);
             }
             verify_result
         }
         Err(rename_err) => {
-            if embedded_spatial_extension_file_len(path) == Some(expected_len)
-                && read_checksum_sidecar(&checksum_path) == Some(expected_checksum)
-            {
+            if embedded_spatial_extension_file_len(path) == Some(expected_len) {
                 let _ = std::fs::remove_file(&tmp_path);
-                let _ = std::fs::remove_file(&tmp_checksum_path);
                 return Ok(());
             }
-            if std::fs::remove_file(path).is_ok()
-                && std::fs::remove_file(&checksum_path).is_ok()
-                && std::fs::rename(&tmp_checksum_path, &checksum_path).is_ok()
-                && std::fs::rename(&tmp_path, path).is_ok()
-            {
-                let verify_result = verify_materialized_embedded_spatial_extension(
-                    path,
-                    expected_len,
-                    expected_checksum,
-                );
+            if std::fs::remove_file(path).is_ok() && std::fs::rename(&tmp_path, path).is_ok() {
+                let verify_result =
+                    verify_materialized_embedded_spatial_extension(path, expected_len);
                 if verify_result.is_err() {
                     let _ = std::fs::remove_file(path);
-                    let _ = std::fs::remove_file(&checksum_path);
                 }
                 return verify_result;
             }
             let _ = std::fs::remove_file(&tmp_path);
-            let _ = std::fs::remove_file(&tmp_checksum_path);
             Err(format!(
                 "Failed to move embedded extension into place at {}: {}",
                 path.display(),
@@ -422,17 +362,18 @@ fn write_embedded_spatial_extension(path: &Path) -> Result<(), String> {
 }
 
 fn resolve_embedded_spatial_extension_candidate() -> Result<PathBuf, String> {
+    let file_name = build_embedded_spatial_filename();
     let base_dirs = embedded_spatial_extension_directories();
 
     tracing::info!(
-        filename = %SPATIAL_EXTENSION_FILENAME,
+        filename = %file_name,
         candidate_count = base_dirs.len(),
         "Attempting to materialize embedded spatial extension"
     );
 
     let mut errors = Vec::new();
     for base_dir in &base_dirs {
-        let target_path = base_dir.join("extensions").join(SPATIAL_EXTENSION_FILENAME);
+        let target_path = base_dir.join("extensions").join(&file_name);
         tracing::debug!(
             path = %target_path.display(),
             "Trying to write embedded extension to candidate directory"
@@ -519,12 +460,14 @@ fn resolve_local_spatial_extension_candidates(
 fn local_spatial_extension_candidates() -> Vec<PathBuf> {
     let env_path = std::env::var(SPATIAL_EXTENSION_PATH_ENV).ok();
     let env_dir = std::env::var(SPATIAL_EXTENSION_DIR_ENV).ok();
+
     let embedded_path = resolve_embedded_spatial_extension_candidate()
         .map_err(|error| {
             tracing::warn!(error = %error, "Embedded spatial extension unavailable");
             error
         })
         .ok();
+
     let cwd = std::env::current_dir().ok();
     let exe_dir = std::env::current_exe()
         .ok()
@@ -623,7 +566,6 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
             .join("\n")
     );
 }
-
 pub fn is_initialized(conn: &duckdb::Connection) -> Result<bool, duckdb::Error> {
     let mut stmt = conn.prepare(
         "SELECT COUNT(*) FROM system_settings WHERE key = 'initialized' AND value = '1'",
@@ -725,23 +667,6 @@ mod tests {
     }
 
     #[test]
-    fn checksum_sidecar_path_appends_checksum_suffix() {
-        let path = Path::new("/tmp/extensions/spatial.duckdb_extension");
-        let checksum_path = checksum_sidecar_path(path);
-        assert_eq!(
-            checksum_path,
-            PathBuf::from("/tmp/extensions/spatial.duckdb_extension.checksum")
-        );
-
-        let tmp_path = Path::new("/tmp/extensions/.spatial.duckdb_extension.12345.tmp");
-        let tmp_checksum_path = checksum_sidecar_path(tmp_path);
-        assert_eq!(
-            tmp_checksum_path,
-            PathBuf::from("/tmp/extensions/.spatial.duckdb_extension.12345.tmp.checksum")
-        );
-    }
-
-    #[test]
     fn open_with_wal_recovery_removes_corrupt_wal_and_succeeds() {
         let temp = tempfile::tempdir().expect("tempdir");
         let db_path = temp.path().join("test.duckdb");
@@ -808,30 +733,9 @@ mod tests {
         std::fs::write(&path, b"bad").expect("write bad file");
 
         let expected_len = EMBEDDED_SPATIAL_EXTENSION.len() as u64;
-        let expected_checksum = embedded_spatial_extension_checksum();
-        let error =
-            verify_materialized_embedded_spatial_extension(&path, expected_len, expected_checksum)
-                .expect_err("expected size mismatch");
+        let error = verify_materialized_embedded_spatial_extension(&path, expected_len)
+            .expect_err("expected size mismatch");
         assert!(error.contains("size mismatch"));
-    }
-
-    #[test]
-    fn verify_materialized_embedded_spatial_extension_rejects_checksum_mismatch() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let path = temp
-            .path()
-            .join("extensions")
-            .join("spatial.duckdb_extension");
-        let parent = path.parent().expect("parent");
-        std::fs::create_dir_all(parent).expect("create dir");
-        std::fs::write(&path, EMBEDDED_SPATIAL_EXTENSION).expect("write extension");
-
-        let expected_len = EMBEDDED_SPATIAL_EXTENSION.len() as u64;
-        let wrong_checksum = 0xDEADBEEF;
-        let error =
-            verify_materialized_embedded_spatial_extension(&path, expected_len, wrong_checksum)
-                .expect_err("expected checksum mismatch");
-        assert!(error.contains("checksum"));
     }
 
     #[cfg(unix)]

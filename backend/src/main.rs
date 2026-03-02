@@ -3,10 +3,12 @@ use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
 #[cfg(not(windows))]
 use tokio::fs;
-use tokio::sync::Mutex;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[cfg(windows)]
+mod tray;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -168,7 +170,7 @@ fn main() -> Result<()> {
     }
     tracing::info!("Listening on http://{}:{}", host, actual_port);
 
-    if let Err(e) = backend::tray::create_tray(shutdown_tx, actual_port) {
+    if let Err(e) = tray::create_tray(shutdown_tx, actual_port) {
         tracing::error!(error = ?e, "Failed to create system tray - cannot continue in GUI mode");
         return Err(e.into());
     }

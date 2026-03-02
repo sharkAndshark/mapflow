@@ -4310,6 +4310,51 @@ async fn test_public_tile_meta_includes_zoom() {
 }
 
 #[tokio::test]
+async fn test_public_tile_meta_includes_extended_fields() {
+    let (app, _temp) = setup_app().await;
+
+    let file_id = upload_geojson_file(&app).await;
+    wait_until_ready(&app, &file_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug": "meta-extended-test"}"#))
+        .unwrap();
+
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let meta_request = Request::builder()
+        .method("GET")
+        .uri("/tiles/meta-extended-test/meta")
+        .body(Body::empty())
+        .unwrap();
+
+    let meta_response = app.oneshot(meta_request).await.unwrap();
+    assert_eq!(meta_response.status(), axum::http::StatusCode::OK);
+
+    let meta_body = meta_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let meta_json: serde_json::Value = serde_json::from_slice(&meta_body).unwrap();
+
+    assert_eq!(meta_json["slug"], "meta-extended-test");
+    assert!(meta_json["name"].as_str().is_some());
+    assert_eq!(meta_json["tileSource"], "duckdb");
+    assert!(meta_json["tileUrl"]
+        .as_str()
+        .unwrap()
+        .contains("/tiles/meta-extended-test/"));
+    assert_eq!(meta_json["viewerUrl"], "/tiles/meta-extended-test");
+    assert_eq!(meta_json["crsType"], "standard");
+}
+
+#[tokio::test]
 async fn test_publish_zoom_below_range() {
     let (app, _temp) = setup_app().await;
 
@@ -5602,6 +5647,49 @@ async fn test_update_settings_rejects_zero() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let error: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert!(error["error"].as_str().unwrap().contains("at least"));
+}
+
+#[tokio::test]
+async fn test_update_settings_rejects_exceeds_max() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
+
+    let request = Request::builder()
+        .method("PATCH")
+        .uri("/api/settings")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"maxSizeMb": 200000}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let error: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(error["error"].as_str().unwrap().contains("at most"));
 }
 
 #[tokio::test]

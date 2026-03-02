@@ -40,6 +40,12 @@ jobs:
       - name: Install protobuf compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+      - name: Prepare spatial extension for binary embedding
+        run: |
+          mkdir -p backend/extensions
+          curl -L -o backend/extensions/spatial.duckdb_extension \
+            https://extensions.duckdb.org/v1.4.4/linux_amd64/spatial.duckdb_extension
+
       - name: Backend clippy
         run: cargo clippy --manifest-path backend/Cargo.toml -- -D warnings
 
@@ -59,6 +65,12 @@ jobs:
 
       - name: Install protobuf compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Prepare spatial extension for binary embedding
+        run: |
+          mkdir -p backend/extensions
+          curl -L -o backend/extensions/spatial.duckdb_extension \
+            https://extensions.duckdb.org/v1.4.4/linux_amd64/spatial.duckdb_extension
 
       - name: Backend tests
         run: cargo test --manifest-path backend/Cargo.toml -- --test-threads=1
@@ -105,6 +117,12 @@ jobs:
 
       - name: Install protobuf compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Prepare spatial extension for binary embedding
+        run: |
+          mkdir -p backend/extensions
+          curl -L -o backend/extensions/spatial.duckdb_extension \
+            https://extensions.duckdb.org/v1.4.4/linux_amd64/spatial.duckdb_extension
 
       - name: Cache Playwright browsers
         uses: actions/cache@v5
