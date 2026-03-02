@@ -44,7 +44,7 @@ tray-item = "0.10"
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile = "3"
-mvt-reader = "2.2.0"
+mvt-reader = "2.3.0"
 flate2 = "1"
 
 [target.'cfg(windows)'.build-dependencies]
