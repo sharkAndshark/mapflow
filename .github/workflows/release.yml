@@ -22,6 +22,10 @@ jobs:
       - name: Check spatial extension version sync
         run: bash scripts/ci/check_spatial_extension_version.sh
 
+      - name: Download spatial extension for build
+        run: |
+          bash scripts/release/spatial_extension_artifact.sh download linux_amd64 backend/extensions/spatial.duckdb_extension
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
@@ -96,7 +100,7 @@ jobs:
           tags: mapflow-smoke:${{ github.ref_name }}
 
       - name: Smoke test container
-        run: SMOKE_IMAGE="mapflow-smoke:${{ github.ref_name }}" bash scripts/ci/smoke_test.sh
+        run: bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:${{ github.ref_name }}
 
   binaries:
     needs:
@@ -168,7 +172,13 @@ jobs:
             "backend/extensions/spatial.duckdb_extension"
 
       - name: Build backend binary
-        run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist,embed-spatial-extension
+        run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist
+
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          bash scripts/smoke/smoke-binary.sh \
+            --binary "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
 
       - name: Package bundle
         id: package

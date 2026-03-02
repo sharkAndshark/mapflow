@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/common.sh"
+
+BINARY_PATH=""
+PORT="${SMOKE_PORT:-3000}"
+FIXTURE_PATH="${SMOKE_FIXTURE:-frontend/tests/fixtures/sample.geojson}"
+EXPECTED_B64_PATH="${SMOKE_EXPECTED_B64:-}"
+WORK_DIR="${SMOKE_WORK_DIR:-$(mktemp -d)}"
+KEEP_DATA="${SMOKE_KEEP_DATA:-false}"
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") --binary <path> [options]
+
+Options:
+  --binary <path>       Path to mapflow binary (required)
+  --port <port>         Port to use (default: 3000)
+  --fixture <path>      Test file to upload (default: frontend/tests/fixtures/sample.geojson)
+  --expected-b64 <path> Expected tile base64 file for verification
+  --keep-data           Keep test data after completion
+
+Environment:
+  SMOKE_PORT            Default port
+  SMOKE_FIXTURE         Default fixture path
+  SMOKE_EXPECTED_B64    Default expected tile file
+  SMOKE_WORK_DIR        Working directory (default: temp dir)
+  SMOKE_KEEP_DATA       Keep data if "true"
+EOF
+  exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --binary) BINARY_PATH="$2"; shift 2 ;;
+    --port) PORT="$2"; shift 2 ;;
+    --fixture) FIXTURE_PATH="$2"; shift 2 ;;
+    --expected-b64) EXPECTED_B64_PATH="$2"; shift 2 ;;
+    --keep-data) KEEP_DATA="true"; shift ;;
+    --help|-h) usage ;;
+    *) smoke_fail "unknown option: $1" ;;
+  esac
+done
+
+if [ -z "$BINARY_PATH" ]; then
+  smoke_fail "--binary is required"
+fi
+
+if [ ! -f "$BINARY_PATH" ]; then
+  smoke_fail "binary not found: ${BINARY_PATH}"
+fi
+
+if [ ! -f "$FIXTURE_PATH" ]; then
+  smoke_fail "fixture not found: ${FIXTURE_PATH}"
+fi
+
+BASE_URL="http://127.0.0.1:${PORT}"
+DATA_DIR="${WORK_DIR}/data"
+UPLOADS_DIR="${WORK_DIR}/uploads"
+COOKIE_JAR="${WORK_DIR}/cookies.txt"
+TILE_OUT="${WORK_DIR}/tile.mvt"
+PUBLIC_TILE_OUT="${WORK_DIR}/public_tile.mvt"
+
+mkdir -p "$DATA_DIR" "$UPLOADS_DIR"
+
+cleanup() {
+  local exit_code=$?
+  smoke_log "cleaning up..."
+  if [ -n "${PID:-}" ] && kill -0 "$PID" 2>/dev/null; then
+    kill "$PID" 2>/dev/null || true
+    wait "$PID" 2>/dev/null || true
+  fi
+  if [ "$KEEP_DATA" != "true" ] && [ -d "$WORK_DIR" ]; then
+    rm -rf "$WORK_DIR" || true
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT
+
+smoke_log "starting smoke test for binary: ${BINARY_PATH}"
+smoke_log "work dir: ${WORK_DIR}"
+
+DB_PATH="${DATA_DIR}/mapflow.duckdb" \
+UPLOAD_DIR="$UPLOADS_DIR" \
+LISTEN="127.0.0.1:${PORT}" \
+  "$BINARY_PATH" &
+PID=$!
+
+smoke_log "server PID: ${PID}"
+
+wait_for_ready "$BASE_URL"
+
+init_if_needed "$BASE_URL" "$COOKIE_JAR"
+login "$BASE_URL" "$COOKIE_JAR"
+
+FILE_ID=$(upload_file "$BASE_URL" "$COOKIE_JAR" "$FIXTURE_PATH")
+smoke_log "uploaded file: ${FILE_ID}"
+
+wait_for_status "$BASE_URL" "$COOKIE_JAR" "$FILE_ID" ready
+
+get_tile "$BASE_URL" "$COOKIE_JAR" "$FILE_ID" 0 0 0 "$TILE_OUT"
+verify_tile_content "$TILE_OUT" "$EXPECTED_B64_PATH"
+
+SLUG=$(publish_file "$BASE_URL" "$COOKIE_JAR" "$FILE_ID")
+smoke_log "published with slug: ${SLUG}"
+
+get_public_tile "$BASE_URL" "$SLUG" 0 0 0 "$PUBLIC_TILE_OUT"
+
+smoke_log "SUCCESS: all smoke tests passed"

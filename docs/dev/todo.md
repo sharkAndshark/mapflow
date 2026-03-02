@@ -276,3 +276,21 @@ function calculateResolutions(bounds, maxZoom = 20) {
 - [ ] 托盘菜单：打开日志文件
 - [ ] 托盘菜单：显示服务状态（运行中/已停止）
 - [ ] 托盘菜单：关于对话框
+
+## Smoke Test Expansion
+
+当前覆盖（scripts/smoke/）：
+- [x] 服务启动 + 健康检查
+- [x] 认证初始化 + 登录
+- [x] GeoJSON 上传 + 处理
+- [x] 私有瓦片获取
+- [x] 发布 + 公开瓦片
+
+待扩展：
+- [ ] Shapefile 上传测试
+- [ ] MBTiles 上传测试（MVT/PNG）
+- [ ] 错误场景：无效格式、超大文件
+- [ ] Schema 查询验证
+- [ ] 特征属性端点验证
+- [ ] CRS 更新验证
+- [ ] Windows 托盘功能（手动测试自动化）
