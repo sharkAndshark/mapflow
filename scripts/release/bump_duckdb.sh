@@ -58,6 +58,7 @@ for artifact in manifest.get("artifacts", []):
         f"http://extensions.duckdb.org/v{version}/{platform}/"
         f"{extension_name}.duckdb_extension.gz"
     )
+    artifact["archive_sha256"] = ""
     artifact["local_relpath"] = (
         f"backend/extensions/duckdb/v{version}/{platform}/"
         f"{extension_name}.duckdb_extension"

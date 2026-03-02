@@ -59,6 +59,8 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
 | `SMOKE_KEEP_DATA` | 保留测试数据 | false |
 | `SMOKE_USERNAME` | 测试用户名 | smoke_admin |
 | `SMOKE_PASSWORD` | 测试密码 | SmokePass1! |
+| `SMOKE_HTTP_RETRIES` | HTTP 请求重试次数（网络抖动缓解） | 3 |
+| `SMOKE_HTTP_RETRY_DELAY` | HTTP 请求重试间隔（秒） | 0.5 |
 
 ## 平台兼容性
 

@@ -68,8 +68,29 @@ jobs:
         run: |
           bash scripts/release/spatial_extension_artifact.sh download linux_amd64 backend/extensions/spatial.duckdb_extension
 
-      - name: Backend tests
-        run: cargo test --manifest-path backend/Cargo.toml -- --test-threads=1
+      - name: Lint behaviors references
+        run: bash scripts/ci/lint_behaviors_refs.sh
+
+      - name: Backend lib tests
+        env:
+          MALLOC_ARENA_MAX: "2"
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path backend/Cargo.toml --lib -- --test-threads=1
+
+      - name: Backend api tests
+        env:
+          MALLOC_ARENA_MAX: "2"
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path backend/Cargo.toml --test api_tests -- --test-threads=1
+
+      - name: Backend api tests (diagnostic rerun on failure)
+        if: failure()
+        env:
+          MALLOC_ARENA_MAX: "2"
+          RUST_BACKTRACE: "full"
+        run: |
+          echo "Previous backend test step failed; rerunning api_tests with --nocapture for diagnostics"
+          cargo test --manifest-path backend/Cargo.toml --test api_tests -- --test-threads=1 --nocapture || true
 
   frontend_unit:
     runs-on: ubuntu-latest

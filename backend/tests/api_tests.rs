@@ -181,6 +181,44 @@ async fn setup_app() -> (axum::Router, TempDir) {
     (router, temp_dir)
 }
 
+async fn setup_app_with_relative_upload_dir() -> (axum::Router, TempDir, TempDir) {
+    let temp_dir = TempDir::new().expect("temp dir");
+
+    std::fs::create_dir_all("tmp").expect("create tmp dir");
+    let upload_temp_dir = tempfile::Builder::new()
+        .prefix("test-uploads-")
+        .tempdir_in("tmp")
+        .expect("create upload temp dir");
+
+    let current_dir = std::env::current_dir().expect("current dir");
+    let upload_dir = upload_temp_dir
+        .path()
+        .strip_prefix(&current_dir)
+        .expect("relative upload dir")
+        .to_path_buf();
+    let upload_dir_canonical = upload_temp_dir
+        .path()
+        .canonicalize()
+        .unwrap_or_else(|_| upload_temp_dir.path().to_path_buf());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db),
+    };
+
+    let router = build_test_router(state);
+    (router, temp_dir, upload_temp_dir)
+}
+
 async fn setup_app_with_auth() -> (axum::Router, TempDir) {
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
@@ -2803,6 +2841,11 @@ async fn test_mbtiles_tile_returns_correct_format() {
         .get("content-type")
         .and_then(|v| v.to_str().ok());
     assert_eq!(content_type, Some("application/vnd.mapbox-vector-tile"));
+    let content_encoding = tile_response
+        .headers()
+        .get("content-encoding")
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(content_encoding, Some("gzip"));
 }
 
 #[tokio::test]
@@ -2870,6 +2913,7 @@ async fn test_public_mbtiles_png_returns_correct_content_type() {
         .get("content-type")
         .and_then(|v| v.to_str().ok());
     assert_eq!(content_type, Some("image/png"));
+    assert!(tile_response.headers().get("content-encoding").is_none());
 }
 
 #[tokio::test]
@@ -3602,6 +3646,75 @@ async fn test_pmtiles_upload_and_publish() {
 }
 
 #[tokio::test]
+async fn test_pmtiles_public_url_endpoint() {
+    let (app, temp) = setup_app().await;
+
+    let pmtiles_path = create_test_pmtiles(temp.path(), "public_url_pmtiles");
+    let pmtiles_bytes = std::fs::read(&pmtiles_path).expect("Failed to read test PMTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"public_url_pmtiles.pmtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&pmtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_item.id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"pmtiles-public-url"}"#))
+        .unwrap();
+
+    let publish_response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
+
+    let public_url_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/public-url", file_item.id))
+        .body(Body::empty())
+        .unwrap();
+
+    let public_url_response = app.oneshot(public_url_request).await.unwrap();
+    assert_eq!(public_url_response.status(), axum::http::StatusCode::OK);
+
+    let public_url_bytes = public_url_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let public_url_json: serde_json::Value = serde_json::from_slice(&public_url_bytes).unwrap();
+    assert_eq!(public_url_json["slug"], "pmtiles-public-url");
+    assert_eq!(public_url_json["url"], "/tiles/pmtiles-public-url");
+}
+
+#[tokio::test]
 async fn test_pmtiles_meta_endpoint() {
     let (app, temp) = setup_app().await;
 
@@ -3736,6 +3849,78 @@ async fn test_pmtiles_range_request() {
     let range_request = Request::builder()
         .method("GET")
         .uri("/tiles/range-test")
+        .header("range", "bytes=0-3")
+        .body(Body::empty())
+        .unwrap();
+
+    let range_response = app.oneshot(range_request).await.unwrap();
+    assert_eq!(
+        range_response.status(),
+        axum::http::StatusCode::PARTIAL_CONTENT
+    );
+    assert!(range_response.headers().contains_key("content-range"));
+}
+
+#[tokio::test]
+async fn test_pmtiles_range_request_with_relative_upload_dir() {
+    let (app, temp, _upload_temp) = setup_app_with_relative_upload_dir().await;
+
+    let pmtiles_path = create_test_pmtiles(temp.path(), "range_relative_test");
+    let pmtiles_bytes = std::fs::read(&pmtiles_path).expect("Failed to read test PMTiles");
+
+    let boundary = "------------------------boundaryXYZ";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"range_relative_test.pmtiles\"\r\n\r\n",
+    );
+
+    let mut body = body_data.into_bytes();
+    body.extend_from_slice(&pmtiles_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let body_bytes = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    wait_until_ready(&app, &file_item.id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_item.id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"range-relative-test"}"#))
+        .unwrap();
+
+    let _ = app.clone().oneshot(publish_request).await.unwrap();
+
+    let head_request = Request::builder()
+        .method("HEAD")
+        .uri("/tiles/range-relative-test")
+        .body(Body::empty())
+        .unwrap();
+
+    let head_response = app.clone().oneshot(head_request).await.unwrap();
+    assert_eq!(head_response.status(), axum::http::StatusCode::OK);
+    assert!(head_response.headers().contains_key("content-length"));
+    assert!(head_response.headers().contains_key("accept-ranges"));
+
+    let range_request = Request::builder()
+        .method("GET")
+        .uri("/tiles/range-relative-test")
         .header("range", "bytes=0-3")
         .body(Body::empty())
         .unwrap();

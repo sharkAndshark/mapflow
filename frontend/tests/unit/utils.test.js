@@ -62,6 +62,10 @@ describe('parseType', () => {
     expect(parseType('data.mbtiles')).toBe('mbtiles');
   });
 
+  it('recognizes pmtiles', () => {
+    expect(parseType('data.pmtiles')).toBe('pmtiles');
+  });
+
   it('returns unknown for unrecognized extensions', () => {
     expect(parseType('data.txt')).toBe('unknown');
     expect(parseType('data')).toBe('unknown');

@@ -4,6 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use std::path::PathBuf;
 use tokio::{
     fs,
     io::{AsyncReadExt, AsyncSeekExt},
@@ -31,6 +32,62 @@ struct PublicTileFileMeta {
     minzoom: Option<i32>,
     maxzoom: Option<i32>,
     use_aliases: bool,
+}
+
+fn strip_dot_prefix(path: &str) -> &str {
+    path.strip_prefix("./")
+        .or_else(|| path.strip_prefix(".\\"))
+        .unwrap_or(path)
+}
+
+fn candidate_uploaded_paths(state: &AppState, stored_path: &str) -> Vec<PathBuf> {
+    let raw_path = PathBuf::from(stored_path);
+    if raw_path.is_absolute() {
+        return vec![raw_path];
+    }
+
+    let normalized_relative = PathBuf::from(strip_dot_prefix(stored_path));
+    let mut candidates = vec![state.upload_dir.join(&normalized_relative)];
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join(normalized_relative));
+    }
+    candidates
+}
+
+fn resolve_uploaded_file_canonical_path(
+    state: &AppState,
+    stored_path: &str,
+    not_found_message: &str,
+) -> Result<PathBuf, (StatusCode, Json<ErrorResponse>)> {
+    let mut found_outside_upload_dir = false;
+
+    for candidate in candidate_uploaded_paths(state, stored_path) {
+        let Ok(canonical_path) = candidate.canonicalize() else {
+            continue;
+        };
+
+        if canonical_path.starts_with(&state.upload_dir_canonical) {
+            return Ok(canonical_path);
+        }
+
+        found_outside_upload_dir = true;
+    }
+
+    if found_outside_upload_dir {
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Access denied".to_string(),
+            }),
+        ))
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: not_found_message.to_string(),
+            }),
+        ))
+    }
 }
 
 pub async fn get_public_tile(
@@ -107,14 +164,27 @@ pub async fn get_public_tile(
                     "png" => "image/png",
                     _ => "application/octet-stream",
                 };
-                return Ok((
-                    [
-                        (header::CONTENT_TYPE, ct),
-                        (header::CACHE_CONTROL, "public, max-age=300"),
-                    ],
-                    data,
-                )
-                    .into_response());
+                let is_gzipped = data.starts_with(&[0x1f, 0x8b]);
+                if is_gzipped {
+                    return Ok((
+                        [
+                            (header::CONTENT_TYPE, ct),
+                            (header::CONTENT_ENCODING, "gzip"),
+                            (header::CACHE_CONTROL, "public, max-age=300"),
+                        ],
+                        data,
+                    )
+                        .into_response());
+                } else {
+                    return Ok((
+                        [
+                            (header::CONTENT_TYPE, ct),
+                            (header::CACHE_CONTROL, "public, max-age=300"),
+                        ],
+                        data,
+                    )
+                        .into_response());
+                }
             }
             Ok(None) => {
                 return Ok(StatusCode::NO_CONTENT.into_response());
@@ -229,26 +299,8 @@ pub async fn get_public_pmtiles(
         ));
     }
 
-    let file_path = state
-        .upload_dir
-        .join(file_path.strip_prefix("./").unwrap_or(&file_path));
-    let canonical_path = file_path.canonicalize().map_err(|_| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "PMTiles file not found".to_string(),
-            }),
-        )
-    })?;
-
-    if !canonical_path.starts_with(&state.upload_dir_canonical) {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ErrorResponse {
-                error: "Access denied".to_string(),
-            }),
-        ));
-    }
+    let canonical_path =
+        resolve_uploaded_file_canonical_path(&state, &file_path, "PMTiles file not found")?;
 
     let file = fs::File::open(&canonical_path).await.map_err(|e| {
         (
@@ -433,26 +485,8 @@ pub async fn head_public_pmtiles(
         ));
     }
 
-    let file_path = state
-        .upload_dir
-        .join(file_path.strip_prefix("./").unwrap_or(&file_path));
-    let canonical_path = file_path.canonicalize().map_err(|_| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "PMTiles file not found".to_string(),
-            }),
-        )
-    })?;
-
-    if !canonical_path.starts_with(&state.upload_dir_canonical) {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ErrorResponse {
-                error: "Access denied".to_string(),
-            }),
-        ));
-    }
+    let canonical_path =
+        resolve_uploaded_file_canonical_path(&state, &file_path, "PMTiles file not found")?;
 
     let metadata = fs::metadata(&canonical_path).await.map_err(|e| {
         (

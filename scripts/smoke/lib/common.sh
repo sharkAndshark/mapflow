@@ -4,6 +4,8 @@ set -euo pipefail
 
 SMOKE_USERNAME="${SMOKE_USERNAME:-smoke_admin}"
 SMOKE_PASSWORD="${SMOKE_PASSWORD:-SmokePass1!}"
+SMOKE_HTTP_RETRIES="${SMOKE_HTTP_RETRIES:-3}"
+SMOKE_HTTP_RETRY_DELAY="${SMOKE_HTTP_RETRY_DELAY:-0.5}"
 
 smoke_log() {
   echo "[smoke] $*" >&2
@@ -12,6 +14,29 @@ smoke_log() {
 smoke_fail() {
   echo "[smoke] ERROR: $*" >&2
   exit 1
+}
+
+curl_with_retry() {
+  local max_retries="$SMOKE_HTTP_RETRIES"
+  local delay="$SMOKE_HTTP_RETRY_DELAY"
+  local attempt=1
+  local exit_code=0
+
+  while true; do
+    if curl "$@"; then
+      return 0
+    else
+      exit_code=$?
+    fi
+
+    if [ "$attempt" -ge "$max_retries" ]; then
+      return "$exit_code"
+    fi
+
+    smoke_log "curl failed (attempt ${attempt}/${max_retries}, code=${exit_code}), retrying..."
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
 }
 
 wait_for_ready() {
@@ -35,12 +60,12 @@ init_if_needed() {
   local cookie_jar="$2"
 
   local init_state
-  init_state=$(curl -fsS "${base_url}/api/test/is-initialized" 2>/dev/null | \
+  init_state=$(curl_with_retry -fsS "${base_url}/api/test/is-initialized" 2>/dev/null | \
     python3 -c 'import json,sys; print("true" if json.load(sys.stdin).get("initialized") else "false")' 2>/dev/null || echo "false")
 
   if [ "$init_state" = "false" ]; then
     smoke_log "initializing admin user"
-    curl -fsS \
+    curl_with_retry -fsS \
       -H "Content-Type: application/json" \
       -d "{\"username\":\"${SMOKE_USERNAME}\",\"password\":\"${SMOKE_PASSWORD}\"}" \
       "${base_url}/api/auth/init" >/dev/null
@@ -52,7 +77,7 @@ login() {
   local cookie_jar="$2"
 
   smoke_log "logging in"
-  curl -fsS \
+  curl_with_retry -fsS \
     -c "$cookie_jar" \
     -H "Content-Type: application/json" \
     -d "{\"username\":\"${SMOKE_USERNAME}\",\"password\":\"${SMOKE_PASSWORD}\"}" \
@@ -66,7 +91,7 @@ upload_file() {
 
   smoke_log "uploading ${file_path}"
   local resp
-  resp=$(curl -fsS -b "$cookie_jar" -F "file=@${file_path}" "${base_url}/api/uploads")
+  resp=$(curl_with_retry -fsS -b "$cookie_jar" -F "file=@${file_path}" "${base_url}/api/uploads")
 
   echo "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'
 }
@@ -123,7 +148,7 @@ get_tile() {
   local out_path="$7"
 
   smoke_log "fetching tile ${z}/${x}/${y}"
-  curl -fsS -b "$cookie_jar" -o "$out_path" "${base_url}/api/files/${file_id}/tiles/${z}/${x}/${y}"
+  curl_with_retry -fsS -b "$cookie_jar" -o "$out_path" "${base_url}/api/files/${file_id}/tiles/${z}/${x}/${y}"
 
   local size
   size=$(wc -c < "$out_path" | tr -d ' ')
@@ -137,7 +162,7 @@ publish_file() {
 
   smoke_log "publishing file ${file_id}"
   local resp
-  resp=$(curl -fsS -b "$cookie_jar" -X POST \
+  resp=$(curl_with_retry -fsS -b "$cookie_jar" -X POST \
     -H "Content-Type: application/json" \
     -d "{}" \
     "${base_url}/api/files/${file_id}/publish")
@@ -154,7 +179,7 @@ get_public_tile() {
   local out_path="$6"
 
   smoke_log "fetching public tile ${slug}/${z}/${x}/${y}"
-  curl -fsS -o "$out_path" "${base_url}/tiles/${slug}/${z}/${x}/${y}"
+  curl_with_retry -fsS -o "$out_path" "${base_url}/tiles/${slug}/${z}/${x}/${y}"
 
   local size
   size=$(wc -c < "$out_path" | tr -d ' ')

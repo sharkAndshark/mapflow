@@ -1221,7 +1221,7 @@ export default function App() {
           <label className="upload-button">
             <input
               type="file"
-              accept=".zip,.geojson,.json,.geojsonl,.geojsons,.kml,.gpx,.topojson,.mbtiles"
+              accept=".zip,.geojson,.json,.geojsonl,.geojsons,.kml,.gpx,.topojson,.mbtiles,.pmtiles"
               onChange={handleFileChange}
               data-testid="file-input"
             />
@@ -1241,8 +1241,8 @@ export default function App() {
         <div className="panel-header">
           <h2>上传文件</h2>
           <span className="panel-meta">
-            支持 .zip / .geojson / .geojsonl / .kml / .gpx / .topojson / .mbtiles，单文件最大
-            1GB（可配置）
+            支持 .zip / .geojson / .geojsonl / .kml / .gpx / .topojson / .mbtiles /
+            .pmtiles，单文件最大 1GB（可配置）
           </span>
         </div>
 

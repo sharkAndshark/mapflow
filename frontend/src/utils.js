@@ -15,6 +15,7 @@ export function parseType(fileName) {
   if (lower.endsWith('.gpx')) return 'gpx';
   if (lower.endsWith('.topojson')) return 'topojson';
   if (lower.endsWith('.mbtiles')) return 'mbtiles';
+  if (lower.endsWith('.pmtiles')) return 'pmtiles';
   return 'unknown';
 }
 

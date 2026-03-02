@@ -1,11 +1,15 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use crate::crs::{normalize_crs, DataBounds, CRS_TYPE_CUSTOM};
 use crate::db::escape_sql_string;
+
+const ST_READ_CREATE_MAX_ATTEMPTS: usize = 3;
 
 pub async fn import_spatial_data(
     db: &Arc<Mutex<duckdb::Connection>>,
@@ -55,8 +59,7 @@ pub async fn import_spatial_data(
         "CREATE TABLE \"{safe_table_name}\" AS\n         SELECT row_number() OVER ()::BIGINT AS fid, *\n         FROM ST_Read('{escaped_path}')"
     );
 
-    conn.execute(&create_sql, [])
-        .map_err(|e| format!("Spatial import failed: {}", e))?;
+    execute_create_with_retry(&conn, &create_sql, source_id)?;
 
     // Calculate data_bounds (extent of all geometries)
     let bounds_query = format!(
@@ -279,6 +282,50 @@ pub async fn import_spatial_data(
     Ok(())
 }
 
+fn execute_create_with_retry(
+    conn: &duckdb::Connection,
+    create_sql: &str,
+    source_id: &str,
+) -> Result<(), String> {
+    let mut last_error = String::new();
+
+    for attempt in 1..=ST_READ_CREATE_MAX_ATTEMPTS {
+        match conn.execute(create_sql, []) {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                last_error = e.to_string();
+                let should_retry = attempt < ST_READ_CREATE_MAX_ATTEMPTS
+                    && is_retryable_st_read_error(&last_error);
+                if should_retry {
+                    let backoff_ms = 50_u64 * attempt as u64;
+                    warn!(
+                        source_id = %source_id,
+                        attempt = attempt,
+                        max_attempts = ST_READ_CREATE_MAX_ATTEMPTS,
+                        backoff_ms = backoff_ms,
+                        error = %last_error,
+                        "Transient ST_Read failure, retrying spatial import"
+                    );
+                    std::thread::sleep(Duration::from_millis(backoff_ms));
+                    continue;
+                }
+                break;
+            }
+        }
+    }
+
+    Err(format!("Spatial import failed: {}", last_error))
+}
+
+fn is_retryable_st_read_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    let has_file_open_signal = lower.contains("no such file or directory")
+        || lower.contains("cannot open")
+        || lower.contains("gdal error (4)");
+    let is_read_path = lower.contains("st_read") || lower.contains("gdal");
+    has_file_open_signal && is_read_path
+}
+
 fn normalize_column_name(name: &str) -> Option<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -320,4 +367,21 @@ fn normalize_column_name(name: &str) -> Option<String> {
     }
 
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_retryable_st_read_error;
+
+    #[test]
+    fn test_retryable_st_read_error_true_for_missing_file() {
+        let err = "IO Error: GDAL Error (4): /tmp/a.geojson: No such file or directory";
+        assert!(is_retryable_st_read_error(err));
+    }
+
+    #[test]
+    fn test_retryable_st_read_error_false_for_sql_error() {
+        let err = "Binder Error: Referenced column \"geomx\" not found in FROM clause";
+        assert!(!is_retryable_st_read_error(err));
+    }
 }
