@@ -35,3 +35,39 @@ test('upload file and verify status auto-updates from processing to ready', asyn
   const previewLink = row.getByRole('link', { name: '查看' });
   await expect(previewLink).toBeVisible();
 });
+
+test('preview action is hidden before ready and shown after ready', async ({ page, request }) => {
+  test.setTimeout(120000);
+
+  const fixturesDir = path.join(__dirname, 'fixtures');
+  const shapefileZip = path.join(fixturesDir, 'roads.zip');
+
+  await page.goto('/');
+  const input = page.getByTestId('file-input');
+  await input.setInputFiles(shapefileZip);
+
+  const row = page.locator('.row', { hasText: 'roads' });
+  await expect(row).toBeVisible();
+
+  const previewLink = row.getByRole('link', { name: '查看' });
+  await expect(previewLink).toHaveCount(0);
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/files');
+        if (!response.ok()) return null;
+        const files = await response.json();
+        const roads = files.find((f) => f.name === 'roads');
+        return roads?.status;
+      },
+      {
+        message: 'wait for roads file to be ready',
+        timeout: 60000,
+      },
+    )
+    .toBe('ready');
+
+  await expect(row.getByText('已就绪')).toBeVisible();
+  await expect(previewLink).toBeVisible();
+});

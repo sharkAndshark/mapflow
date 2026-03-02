@@ -5,6 +5,71 @@ import { loginUser, setupTestUser } from './auth-helper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+async function enablePreviewE2EHooks(page) {
+  await page.context().addInitScript(() => {
+    window.__MAPFLOW_E2E__ = true;
+  });
+}
+
+async function waitForTileRequests(newPage) {
+  await expect
+    .poll(
+      async () => {
+        const tileRequests = await newPage.evaluate(() => {
+          return performance
+            .getEntriesByType('resource')
+            .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
+            .map((r) => ({ url: r.name, status: r.responseStatus }));
+        });
+        return tileRequests.length;
+      },
+      { message: 'wait for tile requests', timeout: 10000 },
+    )
+    .toBeGreaterThan(0);
+}
+
+async function getPreviewZoomState(newPage) {
+  return await newPage.evaluate(() => window.__MAPFLOW_PREVIEW_TEST__?.getZoomState?.() ?? null);
+}
+
+async function clickZoomButtonUntilDisabled(newPage, selector, maxClicks = 30) {
+  const button = newPage.locator(selector);
+  await expect(button).toBeVisible();
+
+  for (let i = 0; i < maxClicks; i += 1) {
+    const disabled = await button.evaluate((el) => el.classList.contains('ol-disabled'));
+    if (disabled) {
+      return;
+    }
+    await button.click();
+  }
+}
+
+async function getTileZoomStats(newPage, fileId) {
+  return await newPage.evaluate((fid) => {
+    const marker = `/api/files/${fid}/tiles/`;
+    const zooms = performance
+      .getEntriesByType('resource')
+      .map((entry) => entry.name)
+      .filter((url) => url.includes(marker))
+      .map((url) => {
+        const rest = url.slice(url.indexOf(marker) + marker.length);
+        const z = Number.parseInt(rest.split('/')[0], 10);
+        return Number.isFinite(z) ? z : null;
+      })
+      .filter((z) => z != null);
+
+    if (zooms.length === 0) {
+      return { count: 0, min: null, max: null };
+    }
+    return {
+      count: zooms.length,
+      min: Math.min(...zooms),
+      max: Math.max(...zooms),
+    };
+  }, fileId);
+}
+
 test.beforeEach(async ({ workerServer, request }) => {
   await workerServer.reset();
   // Initialize and login test user
@@ -14,6 +79,7 @@ test.beforeEach(async ({ workerServer, request }) => {
 
 test('mbtiles file has zoom limits', async ({ page, workerServer, request }) => {
   test.setTimeout(120000); // Increase timeout to 120s for this test
+  await enablePreviewE2EHooks(page);
 
   // Upload mbtiles file
   const mbtilesPath = path.join(__dirname, '..', '..', 'testdata', 'sample_mvt.mbtiles');
@@ -77,30 +143,37 @@ test('mbtiles file has zoom limits', async ({ page, workerServer, request }) => 
   // Verify URL and Content on new page
   expect(newPage.url()).toContain('/preview/');
 
-  // Poll for tile requests (confirm map loaded)
-  await expect
-    .poll(
-      async () => {
-        const tileRequests = await newPage.evaluate(() => {
-          return performance
-            .getEntriesByType('resource')
-            .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
-            .map((r) => ({ url: r.name, status: r.responseStatus }));
-        });
-        return tileRequests.length;
-      },
-      { message: 'wait for tile requests', timeout: 10000 },
-    )
-    .toBeGreaterThan(0);
+  await waitForTileRequests(newPage);
 
-  // Note: The actual zoom limits are enforced in the frontend code.
-  // We verify that the API returns the correct zoom limits above.
-  // The frontend uses these to set minZoom and maxZoom on the map view.
-  // Manual testing can verify that users cannot zoom beyond these limits.
+  // Wait until preview test hook is available and assert view limits match metadata.
+  await expect
+    .poll(() => getPreviewZoomState(newPage), {
+      message: 'wait for preview zoom hook',
+      timeout: 5000,
+    })
+    .not.toBeNull();
+  const zoomState = await getPreviewZoomState(newPage);
+  expect(zoomState.minZoom).toBe(previewData.minZoom);
+  expect(zoomState.maxZoom).toBe(previewData.maxZoom);
+
+  const initialTileStats = await getTileZoomStats(newPage, fileId);
+  expect(initialTileStats.count).toBeGreaterThan(0);
+
+  // Verify actual UI zoom interactions are bounded by frontend min/max via observed tile z.
+  await clickZoomButtonUntilDisabled(newPage, '.ol-zoom-in', 10);
+  const highTileStats = await getTileZoomStats(newPage, fileId);
+  expect(highTileStats.count).toBeGreaterThanOrEqual(initialTileStats.count);
+  expect(highTileStats.max).toBeLessThanOrEqual(previewData.maxZoom);
+
+  await clickZoomButtonUntilDisabled(newPage, '.ol-zoom-out', 20);
+  const lowTileStats = await getTileZoomStats(newPage, fileId);
+  expect(lowTileStats.count).toBeGreaterThanOrEqual(highTileStats.count);
+  expect(lowTileStats.min).toBeGreaterThanOrEqual(previewData.minZoom);
 });
 
 test('dynamic table has no zoom limits', async ({ page, workerServer, request }) => {
   test.setTimeout(120000); // Increase timeout to 120s for this test
+  await enablePreviewE2EHooks(page);
 
   // Upload GeoJSON file
   const fixturesDir = path.join(__dirname, 'fixtures');
@@ -163,24 +236,28 @@ test('dynamic table has no zoom limits', async ({ page, workerServer, request })
   // Verify URL and Content on new page
   expect(newPage.url()).toContain('/preview/');
 
-  // Poll for tile requests (confirm map loaded)
-  await expect
-    .poll(
-      async () => {
-        const tileRequests = await newPage.evaluate(() => {
-          return performance
-            .getEntriesByType('resource')
-            .filter((r) => r.name.includes('/api/files/') && r.name.includes('/tiles/'))
-            .map((r) => ({ url: r.name, status: r.responseStatus }));
-        });
-        return tileRequests.length;
-      },
-      { message: 'wait for tile requests', timeout: 10000 },
-    )
-    .toBeGreaterThan(0);
+  await waitForTileRequests(newPage);
 
-  // Note: For dynamic tables, the frontend uses default zoom limits (0-22).
-  // We verify that the API returns null for minzoom and maxzoom above.
-  // The frontend will then use the default values.
-  // Manual testing can verify that users can freely zoom.
+  await expect
+    .poll(() => getPreviewZoomState(newPage), {
+      message: 'wait for preview zoom hook',
+      timeout: 5000,
+    })
+    .not.toBeNull();
+  const zoomState = await getPreviewZoomState(newPage);
+  expect(zoomState.minZoom).toBe(0);
+  expect(zoomState.maxZoom).toBe(22);
+
+  const initialTileStats = await getTileZoomStats(newPage, fileId);
+  expect(initialTileStats.count).toBeGreaterThan(0);
+
+  await clickZoomButtonUntilDisabled(newPage, '.ol-zoom-in', 30);
+  const highTileStats = await getTileZoomStats(newPage, fileId);
+  expect(highTileStats.count).toBeGreaterThanOrEqual(initialTileStats.count);
+  expect(highTileStats.max).toBeLessThanOrEqual(22);
+
+  await clickZoomButtonUntilDisabled(newPage, '.ol-zoom-out', 40);
+  const lowTileStats = await getTileZoomStats(newPage, fileId);
+  expect(lowTileStats.count).toBeGreaterThanOrEqual(highTileStats.count);
+  expect(lowTileStats.min).toBeGreaterThanOrEqual(0);
 });

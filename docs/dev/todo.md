@@ -333,9 +333,9 @@ function calculateResolutions(bounds, maxZoom = 20) {
 
 | 契约 | 缺失验证 |
 |------|---------|
-| UI-001 | 非 ready 状态预览按钮禁用的显式测试 |
+| UI-001 | ✅ 已补充（2026-03-02）：`frontend/tests/polling.spec.js` 新增 `preview action is hidden before ready and shown after ready` |
 | UI-003 | 特征高亮样式 (rgba(255,200,0,0.7)) 的 E2E 验证 |
-| UI-010 | 前端缩放限制实际行为（非仅 API 返回值） |
+| UI-010 | ✅ 已补充（2026-03-02）：`frontend/tests/zoom-limit.spec.js` 新增基于真实缩放交互 + tile z 观测的约束验证 |
 
 ### CI/CD 改进 (P2)
 

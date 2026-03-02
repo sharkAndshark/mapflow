@@ -410,6 +410,45 @@ export default function Preview() {
     tileGridLayerRef.current?.setVisible(showTileGrid);
   }, [showTileGrid]);
 
+  // Expose limited map view hooks in E2E mode so tests can assert zoom constraints directly.
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.__MAPFLOW_E2E__ !== true) {
+      return undefined;
+    }
+
+    const getZoomState = () => {
+      const map = mapRef.current;
+      if (!map) return null;
+      const view = map.getView();
+      if (!view) return null;
+      return {
+        zoom: view.getZoom(),
+        minZoom: view.getMinZoom(),
+        maxZoom: view.getMaxZoom(),
+      };
+    };
+
+    const previewTestApi = {
+      getZoomState,
+      setZoom: (zoom) => {
+        const map = mapRef.current;
+        if (!map) return null;
+        const view = map.getView();
+        view.setZoom(zoom);
+        view.resolveConstraints(0);
+        return getZoomState();
+      },
+    };
+
+    window.__MAPFLOW_PREVIEW_TEST__ = previewTestApi;
+
+    return () => {
+      if (window.__MAPFLOW_PREVIEW_TEST__ === previewTestApi) {
+        delete window.__MAPFLOW_PREVIEW_TEST__;
+      }
+    };
+  }, []);
+
   return (
     <div
       className="preview-page"
