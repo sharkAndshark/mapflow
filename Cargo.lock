@@ -457,7 +457,7 @@ dependencies = [
  "tracing-subscriber",
  "tray-item",
  "uuid",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
  "zip 8.1.0",
 ]
 
