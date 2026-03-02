@@ -212,7 +212,7 @@ jobs:
             "release-assets"
 
       - name: Upload binary bundle
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.artifact_id }}
           path: |
@@ -285,7 +285,7 @@ jobs:
           echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.arch }}.txt"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: docker-digest-${{ matrix.arch }}
           path: /tmp/digests/${{ matrix.arch }}.txt
