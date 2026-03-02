@@ -339,7 +339,8 @@ function calculateResolutions(bounds, maxZoom = 20) {
 
 ### CI/CD 改进 (P2)
 
-1. **DRY**: `nightly.yml` 与 `release.yml` 约 70% 重复代码 → 考虑提取 reusable workflow
+1. **CI 触发降噪**: ✅ 已完成（2026-03-02）  
+   `ci.yml` 调整为 `push` 仅 `main` 触发，开发分支通过 `pull_request` 触发；并增加 workflow `concurrency` 自动取消旧 run，减少 PR 期间重复计算
 2. **供应链安全**: DuckDB extension 下载缺少 SHA256 校验
 3. **冒烟测试健壮性**: ✅ 已完成（2026-03-02）  
    `scripts/smoke/lib/common.sh` 已为关键 HTTP 调用增加可配置重试（`SMOKE_HTTP_RETRIES` / `SMOKE_HTTP_RETRY_DELAY`），降低网络抖动导致的误报
