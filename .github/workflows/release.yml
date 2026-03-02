@@ -282,7 +282,7 @@ jobs:
           echo "name=ghcr.io/${owner_lc}/mapflow" >> "$GITHUB_OUTPUT"
 
       - name: Download digests
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: docker-digest-*
           path: /tmp/digests
@@ -332,7 +332,7 @@ jobs:
       - binaries
     steps:
       - name: Download binary artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: binary-*
           path: release-assets
