@@ -11,7 +11,10 @@ use tracing::{info, warn};
 
 use crate::config::{format_bytes, save_max_size_to_db, validate_upload_size_mb, BYTES_PER_MB};
 use crate::{
-    crs::{normalize_crs, DataBounds, CRS_TYPE_CUSTOM},
+    crs::{
+        is_wgs84_compatible_crs, normalize_crs, resolve_transform_source_crs, DataBounds,
+        CRS_TYPE_CUSTOM,
+    },
     http_errors::{bad_request, internal_error},
     mbtiles,
     models::{
@@ -172,34 +175,51 @@ pub async fn get_preview_meta(
 
     let bbox_values = if let Some(bounds_json) = tile_bounds {
         serde_json::from_str::<[f64; 4]>(&bounds_json).ok()
-    } else if crs_type == CRS_TYPE_CUSTOM {
-        data_bounds_array
-    } else if let Some(tbl) = &table_name {
-        let bbox_components_query = format!(
-            "SELECT ST_XMin(b), ST_YMin(b), ST_XMax(b), ST_YMax(b) FROM (
-                SELECT ST_Extent(ST_Transform(geom, '{}', 'EPSG:4326', always_xy := true)) as b
-                FROM \"{tbl}\"
-            )",
-            crs.as_deref().unwrap_or("EPSG:4326")
-        );
-
-        conn.query_row(&bbox_components_query, [], |row| {
-            let minx: Option<f64> = row.get(0).ok();
-            let miny: Option<f64> = row.get(1).ok();
-            let maxx: Option<f64> = row.get(2).ok();
-            let maxy: Option<f64> = row.get(3).ok();
-
-            if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (minx, miny, maxx, maxy) {
-                Ok([x1, y1, x2, y2])
-            } else {
-                Ok([0.0, 0.0, 0.0, 0.0])
-            }
-        })
-        .ok()
-        .filter(|b| b != &[0.0, 0.0, 0.0, 0.0])
     } else {
-        data_bounds_array
-    };
+        None
+    }
+    .or_else(|| {
+        if crs_type == CRS_TYPE_CUSTOM {
+            return data_bounds_array;
+        }
+
+        if let Some(tbl) = &table_name {
+            let transform_source_crs = resolve_transform_source_crs(crs.as_deref());
+            let bbox_components_query = format!(
+                "SELECT ST_XMin(b), ST_YMin(b), ST_XMax(b), ST_YMax(b) FROM (
+                    SELECT ST_Extent(ST_Transform(geom, '{}', 'EPSG:4326', always_xy := true)) as b
+                    FROM \"{tbl}\"
+                )",
+                transform_source_crs
+            );
+
+            let transformed_bbox = conn
+                .query_row(&bbox_components_query, [], |row| {
+                    let minx: Option<f64> = row.get(0).ok();
+                    let miny: Option<f64> = row.get(1).ok();
+                    let maxx: Option<f64> = row.get(2).ok();
+                    let maxy: Option<f64> = row.get(3).ok();
+
+                    if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (minx, miny, maxx, maxy) {
+                        Ok([x1, y1, x2, y2])
+                    } else {
+                        Ok([0.0, 0.0, 0.0, 0.0])
+                    }
+                })
+                .ok()
+                .filter(|b| b != &[0.0, 0.0, 0.0, 0.0]);
+
+            if transformed_bbox.is_some() {
+                return transformed_bbox;
+            }
+        }
+
+        if is_wgs84_compatible_crs(crs.as_deref()) {
+            return data_bounds_array;
+        }
+
+        None
+    });
 
     // For preview: tile files use file metadata zoom, dynamic data uses fixed range
     let (preview_minzoom, preview_maxzoom) = if tile_format.is_some() {
@@ -314,7 +334,7 @@ pub async fn get_tile(
     })?;
 
     let tile_params = TileParams {
-        source_crs: crs.clone().unwrap_or_else(|| "EPSG:4326".to_string()),
+        source_crs: resolve_transform_source_crs(crs.as_deref()),
         crs_type: crs_type.clone().unwrap_or_else(|| "standard".to_string()),
         data_bounds: data_bounds_json
             .as_ref()

@@ -12,6 +12,7 @@
 | `sf_buildings_custom_wkt.zip` | Shapefile | Polygon | WKT 无 EPSG AUTHORITY | `crs=null, crs_type=custom` |
 | `sf_parks_named_crs.geojson` | GeoJSON | Point, LineString, Polygon | 自定义 CRS 名称 | `crs=null, crs_type=custom` (GDAL 忽略 GeoJSON CRS 字段) |
 | `negative_coords_test.geojson` | GeoJSON | Point, Polygon | 无 CRS + 负坐标 | `crs=null, crs_type=custom`, 测试负坐标边界 |
+| `epsg4490_urn.geojson` | GeoJSON | Point, LineString | GeoJSON `crs` 字段使用 `urn:ogc:def:crs:EPSG::4490` | 上传后通常仍为 `custom`（GDAL 忽略），配合 API `PUT /api/files/:id/crs` 可验证 URN 归一化为 `EPSG:4490` |
 
 ## 数据说明
 
@@ -19,6 +20,7 @@
 - **Shapefile**：包含自定义投影 WKT（Transverse Mercator，无 EPSG AUTHORITY）
 - **sf_parks_named_crs**：混合几何类型（Point, LineString, Polygon），测试自定义 CRS 名称场景
 - **negative_coords_test**：边界测试用例，验证负坐标 bbox 计算
+- **epsg4490_urn**：最小 4490 样本；用于测试 `update_crs` 接口对 EPSG URN 字符串的归一化能力
 
 ## CRS 分类规则
 
@@ -30,6 +32,7 @@
 | WKT + AUTHORITY["EPSG"] | EPSG:XXXX | standard |
 | WKT 无 EPSG AUTHORITY | NULL (GDAL 不返回 WKT) | custom |
 | GeoJSON crs 字段 | NULL (GDAL 忽略，RFC 7946) | custom |
+| `urn:ogc:def:crs:EPSG::4490`（通过 API 提交） | `EPSG:4490` | standard |
 | 其他字符串 | 原值 | custom |
 
 **注意**：RFC 7946 (GeoJSON 2016) 废弃了 `crs` 字段，GDAL 自 2.0 版本起忽略此字段。

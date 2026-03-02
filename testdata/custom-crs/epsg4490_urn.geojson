@@ -1,0 +1,34 @@
+{
+  "type": "FeatureCollection",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:EPSG::4490"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "beijing-center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [116.3974, 39.9093]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "beijing-axis"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [116.3600, 39.8800],
+          [116.4400, 39.9400]
+        ]
+      }
+    }
+  ]
+}

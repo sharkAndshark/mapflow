@@ -4,7 +4,13 @@ import {
   hasActiveJobs as computeHasActiveJobs,
   mergeServerFilesWithOptimistic,
 } from './polling.js';
-import { publishFile, unpublishFile, updateTileZoom, updateFieldAliases } from './api.js';
+import {
+  publishFile,
+  unpublishFile,
+  updateTileZoom,
+  updateFieldAliases,
+  updatePublishSettings,
+} from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 
 const STATUS_LABELS = {

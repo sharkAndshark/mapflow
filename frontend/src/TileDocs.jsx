@@ -29,7 +29,7 @@ function calculateCustomResolutions(dataBounds, maxZoom = 20) {
 
 function generateOpenLayersCode(meta, origin) {
   const {
-    slug,
+    tileSource,
     crsType,
     dataBounds,
     tileFormat,
@@ -39,8 +39,16 @@ function generateOpenLayersCode(meta, origin) {
     crs,
   } = meta;
   const tileUrl = `${origin}${tileUrlPath}`;
+  const isPmtiles = tileSource === 'pmtiles';
   const isCustomCRS = crsType === 'custom' && dataBounds;
   const isRaster = tileFormat === 'png';
+
+  if (isPmtiles) {
+    return `// PMTiles requires a PMTiles-aware client (e.g. maplibre + pmtiles protocol).
+// The /tiles/{slug} endpoint is a byte-range endpoint, not XYZ tiles.
+// See: https://docs.protomaps.com/pmtiles/
+`;
+  }
 
   let code = '';
 
@@ -313,6 +321,7 @@ export default function TileDocs() {
 
     const map = mapRef.current;
     const view = map.getView();
+    const isPmtiles = meta.tileSource === 'pmtiles';
 
     const isCustomCRS = meta.crsType === 'custom' && meta.dataBounds;
     const tileFormat = meta.tileFormat || 'mvt';
@@ -330,6 +339,19 @@ export default function TileDocs() {
     if (existingLayer) {
       map.removeLayer(existingLayer);
       vectorLayerRef.current = null;
+    }
+
+    if (isPmtiles) {
+      map.setView(
+        new View({
+          projection: 'EPSG:3857',
+          center: [0, 0],
+          zoom: 2,
+          minZoom: 0,
+          maxZoom: 22,
+        }),
+      );
+      return;
     }
 
     const tileUrl = `${origin}${meta.tileUrl}`;
@@ -426,6 +448,7 @@ export default function TileDocs() {
 
   const openLayersCode = meta ? generateOpenLayersCode(meta, origin) : '';
   const markdownDoc = meta ? generateMarkdownDoc(meta, origin) : '';
+  const isPmtiles = meta?.tileSource === 'pmtiles';
 
   return (
     <div
@@ -737,6 +760,30 @@ export default function TileDocs() {
             >
               <div className="spinner"></div>
               <p>Loading Map...</p>
+            </div>
+          )}
+
+          {isPmtiles && !error && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'rgba(255,255,255,0.92)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                textAlign: 'center',
+                padding: '24px',
+                zIndex: 15,
+              }}
+            >
+              <div style={{ maxWidth: '440px', color: '#444' }}>
+                <strong>PMTiles live preview is not available in this panel.</strong>
+                <p style={{ marginTop: '8px', marginBottom: 0, lineHeight: 1.5 }}>
+                  This endpoint serves PMTiles byte ranges, not XYZ tile URLs. Use a PMTiles-aware
+                  client to preview.
+                </p>
+              </div>
             </div>
           )}
 

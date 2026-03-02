@@ -11,7 +11,7 @@ use tokio::{
 use tracing::error;
 
 use crate::{
-    crs::DataBounds,
+    crs::{is_wgs84_compatible_crs, resolve_transform_source_crs, DataBounds},
     handlers::validate_tile_coords,
     http_errors::internal_error,
     mbtiles,
@@ -140,7 +140,7 @@ pub async fn get_public_tile(
     })?;
 
     let tile_params = TileParams {
-        source_crs: meta.crs.clone().unwrap_or_else(|| "EPSG:4326".to_string()),
+        source_crs: resolve_transform_source_crs(meta.crs.as_deref()),
         crs_type: meta
             .crs_type
             .clone()
@@ -482,6 +482,7 @@ struct PublicMetaRow {
     crs: Option<String>,
     crs_type: Option<String>,
     data_bounds_json: Option<String>,
+    table_name: Option<String>,
     tile_format: Option<String>,
     tile_bounds_json: Option<String>,
     minzoom: Option<i32>,
@@ -497,7 +498,7 @@ pub async fn get_public_tile_meta(
     let row: PublicMetaRow = conn
         .query_row(
             "SELECT f.name, COALESCE(pf.tile_source, f.tile_source, 'duckdb'),
-                    f.crs, f.crs_type, f.data_bounds, f.tile_format, f.tile_bounds,
+                    f.crs, f.crs_type, f.data_bounds, f.table_name, f.tile_format, f.tile_bounds,
                     COALESCE(pf.minzoom, f.minzoom) as minzoom,
                     COALESCE(pf.maxzoom, f.maxzoom) as maxzoom
              FROM files f
@@ -511,10 +512,11 @@ pub async fn get_public_tile_meta(
                     crs: row.get(2)?,
                     crs_type: row.get(3)?,
                     data_bounds_json: row.get(4)?,
-                    tile_format: row.get(5)?,
-                    tile_bounds_json: row.get(6)?,
-                    minzoom: row.get(7)?,
-                    maxzoom: row.get(8)?,
+                    table_name: row.get(5)?,
+                    tile_format: row.get(6)?,
+                    tile_bounds_json: row.get(7)?,
+                    minzoom: row.get(8)?,
+                    maxzoom: row.get(9)?,
                 })
             },
         )
@@ -543,11 +545,51 @@ pub async fn get_public_tile_meta(
 
     let bbox_values = if let Some(bounds_json) = row.tile_bounds_json {
         serde_json::from_str::<[f64; 4]>(&bounds_json).ok()
-    } else if crs_type == "custom" {
-        data_bounds_array
     } else {
         None
-    };
+    }
+    .or_else(|| {
+        if crs_type == "custom" {
+            return data_bounds_array;
+        }
+
+        if let Some(tbl) = row.table_name {
+            let transform_source_crs = resolve_transform_source_crs(row.crs.as_deref());
+            let bbox_components_query = format!(
+                "SELECT ST_XMin(b), ST_YMin(b), ST_XMax(b), ST_YMax(b) FROM (
+                    SELECT ST_Extent(ST_Transform(geom, '{}', 'EPSG:4326', always_xy := true)) as b
+                    FROM \"{tbl}\"
+                )",
+                transform_source_crs
+            );
+
+            let transformed_bbox = conn
+                .query_row(&bbox_components_query, [], |bbox_row| {
+                    let minx: Option<f64> = bbox_row.get(0).ok();
+                    let miny: Option<f64> = bbox_row.get(1).ok();
+                    let maxx: Option<f64> = bbox_row.get(2).ok();
+                    let maxy: Option<f64> = bbox_row.get(3).ok();
+
+                    if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (minx, miny, maxx, maxy) {
+                        Ok([x1, y1, x2, y2])
+                    } else {
+                        Ok([0.0, 0.0, 0.0, 0.0])
+                    }
+                })
+                .ok()
+                .filter(|b| b != &[0.0, 0.0, 0.0, 0.0]);
+
+            if transformed_bbox.is_some() {
+                return transformed_bbox;
+            }
+        }
+
+        if is_wgs84_compatible_crs(row.crs.as_deref()) {
+            return data_bounds_array;
+        }
+
+        None
+    });
 
     Ok(Json(PublicTileMeta {
         slug: slug.clone(),
