@@ -170,19 +170,11 @@ verify_tile_content() {
   fi
 
   local sha
-  sha=$(python3 -c "import hashlib; print(hashlib.sha256(open('${tile_path}','rb').read()).hexdigest())")
+  sha=$(python3 -c "import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())" < "$tile_path")
   smoke_log "tile sha256: ${sha}"
 
   if [ -n "$expected_b64_path" ] && [ -f "$expected_b64_path" ]; then
-    python3 - "${tile_path}" "${expected_b64_path}" <<'PY'
-import base64, hashlib, sys
-tile_path, b64_path = sys.argv[1], sys.argv[2]
-expected = base64.b64decode(open(b64_path).read().strip())
-got = open(tile_path, 'rb').read()
-if got != expected:
-    print(f"tile mismatch: expected {hashlib.sha256(expected).hexdigest()}, got {hashlib.sha256(got).hexdigest()}")
-    sys.exit(1)
-print(f"tile verified: {hashlib.sha256(got).hexdigest()}")
-PY
+    python3 -c "import base64,hashlib,sys; expected=base64.b64decode(open(sys.argv[1],'rb').read().strip()); got=sys.stdin.buffer.read(); mismatch=(got!=expected); print(f'tile mismatch: expected {hashlib.sha256(expected).hexdigest()}, got {hashlib.sha256(got).hexdigest()}' if mismatch else f'tile verified: {hashlib.sha256(got).hexdigest()}'); sys.exit(1 if mismatch else 0)" \
+      "$expected_b64_path" < "$tile_path"
   fi
 }
