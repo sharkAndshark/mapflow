@@ -74,6 +74,7 @@
 | UI-011 | Detail Sidebar 选项卡 | Detail Sidebar 包含三个选项卡：Basic Info（基本信息）、Fields（字段表格）、Publish（发布设置）。非 ready 状态时 Fields/Publish 显示提示信息 | 选项卡导航正常，内容切换正确 | `frontend/tests/field-alias.spec.js frontend/tests/publish.spec.js` | E2E | P2 |
 | UI-012 | 字段别名显示 | Preview 页面特征检查器显示字段别名。有别名的字段显示为：别名 + 灰色小字原始名；无别名时仅显示原始名。通过 API-005 获取 alias 字段 | 有别名正确显示别名+原始名，无别名仅显示原始名 | `frontend/tests/field-alias.spec.js` | E2E | P1 |
 | UI-013 | 瓦片文档页 | /tiles/:slug/docs **无需认证**，显示已发布瓦片服务的完整文档：服务URL（可复制）、配置信息、OpenLayers代码示例、实时地图预览。支持标准CRS和自定义CRS | 文档正确显示，代码可复制，地图预览正常加载 | 手动验证 | E2E | P2 |
+| UI-014 | OSM 底图叠加开关 | Preview 页面在 `crsType=standard` 时显示 `Show OSM Basemap` 开关（默认关闭）。开启后 OSM 底图显示在数据图层下方；关闭后隐藏。切换不改变当前视角和已选中特征。`crsType=custom` 时不显示开关且不请求 OSM 瓦片 | standard 数据可切换 OSM 底图；custom 数据无开关且无 OSM 请求 | `frontend/tests/preview.spec.js` + `frontend/tests/custom-crs.spec.js` | E2E | P1 |
 | E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `frontend/tests/upload.spec.js frontend/tests/preview.spec.js` | E2E | P0 |
 | E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `frontend/tests/upload.spec.js` | E2E | P0 |
 | E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `frontend/tests/upload-formats.spec.js` | E2E | P0 |

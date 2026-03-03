@@ -282,4 +282,49 @@ test.describe('Custom CRS', () => {
 
     await publicContext.close();
   });
+
+  test('custom CRS preview hides OSM basemap toggle and does not request OSM tiles', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120000);
+
+    const testFile = path.join(customCrsDir, 'sf_buildings_no_crs.geojson');
+
+    await page.goto('/');
+    await page.getByTestId('file-input').setInputFiles(testFile);
+
+    await expect(
+      page.locator('.row', { hasText: 'sf_buildings_no_crs' }).getByText(/已就绪|等待处理/),
+    ).toBeVisible();
+
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get('/api/files');
+          if (!response.ok()) return null;
+          const files = await response.json();
+          const file = files.find((f) => f.name === 'sf_buildings_no_crs');
+          return file?.status;
+        },
+        { message: 'wait for file to be ready', timeout: 60000 },
+      )
+      .toBe('ready');
+
+    const row = page.locator('.row', { hasText: 'sf_buildings_no_crs' });
+    const previewLink = row.getByRole('link', { name: '查看' });
+
+    let osmRequestCount = 0;
+    await page.context().route('https://tile.openstreetmap.org/**', async (route) => {
+      osmRequestCount += 1;
+      await route.abort();
+    });
+
+    const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
+    await newPage.waitForLoadState('networkidle');
+
+    await expect(newPage.getByLabel('Show OSM Basemap')).toHaveCount(0);
+    await newPage.waitForTimeout(1500);
+    expect(osmRequestCount).toBe(0);
+  });
 });
