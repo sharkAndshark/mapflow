@@ -48,7 +48,7 @@ RUN set -eu; \
 
 # Build actual backend (locked)
 COPY backend/src ./backend/src
-RUN cargo build --release --locked --manifest-path backend/Cargo.toml
+RUN cargo build --release --locked --manifest-path backend/Cargo.toml --features embed-spatial-extension
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim

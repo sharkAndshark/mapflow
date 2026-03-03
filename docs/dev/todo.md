@@ -116,6 +116,12 @@
     - `cargo test --manifest-path backend/Cargo.toml resolve_candidates_prefers_explicit_env_path -- --nocapture`
     - `cargo test --manifest-path backend/Cargo.toml --features embed-spatial-extension write_embedded_spatial_extension_materializes_file -- --nocapture`
   - 备注：CI 新增 clean-check job（无预下载 extension）用于防止同类回归
+- [x] S20: 修复 review 回归（Docker 自包含 + spatial 加载 fallback）
+  - 验证：Docker 构建启用 `embed-spatial-extension`；本地 extension 加载失败不再提前 panic，优先尝试 `LOAD spatial` fallback
+  - 结果（2026-03-03）：✅ 通过
+    - `docker build -t mapflow-smoke:ci-fix .`
+    - `bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:ci-fix --port 3322 --fixture frontend/tests/fixtures/roads.zip --expected-b64 /tmp/nonexistent-smoke-expected.b64`
+    - 关键日志：`Attempting to materialize embedded spatial extension` / `Spatial extension loaded successfully` / `SUCCESS: all smoke tests passed`
 
 ## Known Issues
 

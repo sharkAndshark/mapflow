@@ -529,6 +529,7 @@ fn try_load_spatial_from_path(conn: &duckdb::Connection, path: &Path) -> Result<
 
 pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String> {
     let local_candidates = local_spatial_extension_candidates();
+    let mut local_load_error: Option<String> = None;
 
     tracing::info!(
         candidates = ?local_candidates,
@@ -546,20 +547,13 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
                 return Ok(());
             }
             Err(error) => {
-                panic!(
-                    "Failed to load embedded spatial extension from '{}': {}\n\
-                     \n\
-                     The embedded extension file may be corrupted or incompatible with this DuckDB version.\n\
-                     \n\
-                     To fix this issue:\n\
-                     1. Delete the file at the path above\n\
-                     2. Restart MapFlow to re-extract the embedded extension\n\
-                     \n\
-                     If the problem persists, the release bundle may be corrupted. \
-                     Please re-download or report an issue.",
+                let formatted = format!(
+                    "Failed to load local spatial extension from '{}': {}",
                     local_path.display(),
                     error
                 );
+                tracing::warn!(error = %formatted, "Local spatial extension load failed");
+                local_load_error = Some(formatted);
             }
         }
     }
@@ -572,12 +566,15 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
 
     #[cfg(feature = "embed-spatial-extension")]
     panic!(
-        "Embedded spatial extension feature is enabled but no extension file was found.\n\
+        "Embedded spatial extension feature is enabled but no usable extension could be loaded.\n\
+         \n\
+         Local load error: {}\n\
          \n\
          Searched paths:\n{}\n\
          \n\
          This indicates a build or packaging error in the release bundle.\n\
          Please report this issue if you downloaded an official release.",
+        local_load_error.unwrap_or_else(|| "none".to_string()),
         local_candidates
             .iter()
             .map(|p| format!("  - {}", p.display()))
@@ -590,10 +587,13 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
         Err(format!(
             "Unable to load DuckDB spatial extension from local paths and LOAD spatial failed.\n\
              \n\
+             Local load error: {}\n\
+             \n\
              Searched paths:\n{}\n\
              \n\
              For local development, run `just setup-dev` to download the extension for your platform.\n\
              For release/self-contained builds, compile with `--features embed-spatial-extension` after preparing backend/extensions/spatial.duckdb_extension.",
+            local_load_error.unwrap_or_else(|| "none".to_string()),
             local_candidates
                 .iter()
                 .map(|p| format!("  - {}", p.display()))
