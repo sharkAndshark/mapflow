@@ -82,6 +82,18 @@
     - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
     - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `schema endpoint verified`）
     - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
+- [x] S15: Smoke 覆盖补齐特征属性端点验证
+  - 验证：`smoke-binary` 新增 `/api/files/:id/features/:fid` 结构断言（fid/properties）
+  - 结果（2026-03-03）：✅ 通过
+    - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
+    - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `feature properties endpoint verified`）
+    - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
+- [x] S16: Smoke 覆盖补齐 CRS 更新验证
+  - 验证：`smoke-binary` 新增 `PUT /api/files/:id/crs` + preview 元数据回读断言（归一化 + crsType）
+  - 结果（2026-03-03）：✅ 通过
+    - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
+    - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `CRS update verified`）
+    - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
 
 ## Known Issues
 
@@ -398,6 +410,6 @@ function calculateResolutions(bounds, maxZoom = 20) {
 - [x] 错误场景：无效格式上传返回 400（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [x] 错误场景：超大文件（413）（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [x] Schema 查询验证（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
-- [ ] 特征属性端点验证
-- [ ] CRS 更新验证
+- [x] 特征属性端点验证（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
+- [x] CRS 更新验证（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [ ] Windows 托盘功能（手动测试自动化）

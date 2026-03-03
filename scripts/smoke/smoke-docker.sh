@@ -10,6 +10,9 @@ PORT="${SMOKE_PORT:-3000}"
 FIXTURE_PATH="${SMOKE_FIXTURE:-frontend/tests/fixtures/sample.geojson}"
 OVERSIZE_FIXTURE_PATH="${SMOKE_OVERSIZE_FIXTURE:-frontend/tests/fixtures/roads.zip}"
 OVERSIZE_LIMIT_MB="${SMOKE_OVERSIZE_LIMIT_MB:-1}"
+CRS_UPDATE_INPUT="${SMOKE_CRS_UPDATE_INPUT:-urn:ogc:def:crs:EPSG::4490}"
+CRS_UPDATE_EXPECTED="${SMOKE_CRS_UPDATE_EXPECTED:-EPSG:4490}"
+CRS_UPDATE_EXPECTED_TYPE="${SMOKE_CRS_UPDATE_EXPECTED_TYPE:-standard}"
 EXPECTED_B64_PATH="${SMOKE_EXPECTED_B64:-testdata/smoke/expected_sample_z0_x0_y0.mvt.base64}"
 WORK_DIR="${SMOKE_WORK_DIR:-$(mktemp -d)}"
 KEEP_DATA="${SMOKE_KEEP_DATA:-false}"
@@ -24,6 +27,9 @@ Options:
   --fixture <path>      Test file to upload (default: frontend/tests/fixtures/sample.geojson)
   --oversize-fixture <path>  Oversize test file (default: frontend/tests/fixtures/roads.zip)
   --oversize-limit-mb <n>    Temporary upload size limit for oversize check (default: 1)
+  --crs-update-input <value> CRS value sent to PUT /api/files/:id/crs
+  --crs-update-expected <value> Expected normalized CRS in response/meta
+  --crs-update-type <value>  Expected crsType in response/meta
   --expected-b64 <path> Expected tile base64 file for verification
   --keep-data           Keep test data after completion
 
@@ -32,6 +38,9 @@ Environment:
   SMOKE_FIXTURE         Default fixture path
   SMOKE_OVERSIZE_FIXTURE Oversize test file path
   SMOKE_OVERSIZE_LIMIT_MB Temporary upload size limit for oversize check
+  SMOKE_CRS_UPDATE_INPUT CRS value sent to PUT /api/files/:id/crs
+  SMOKE_CRS_UPDATE_EXPECTED Expected normalized CRS in response/meta
+  SMOKE_CRS_UPDATE_EXPECTED_TYPE Expected crsType in response/meta
   SMOKE_EXPECTED_B64    Default expected tile file
   SMOKE_WORK_DIR        Working directory (default: temp dir)
   SMOKE_KEEP_DATA       Keep data if "true"
@@ -46,6 +55,9 @@ while [[ $# -gt 0 ]]; do
     --fixture) FIXTURE_PATH="$2"; shift 2 ;;
     --oversize-fixture) OVERSIZE_FIXTURE_PATH="$2"; shift 2 ;;
     --oversize-limit-mb) OVERSIZE_LIMIT_MB="$2"; shift 2 ;;
+    --crs-update-input) CRS_UPDATE_INPUT="$2"; shift 2 ;;
+    --crs-update-expected) CRS_UPDATE_EXPECTED="$2"; shift 2 ;;
+    --crs-update-type) CRS_UPDATE_EXPECTED_TYPE="$2"; shift 2 ;;
     --expected-b64) EXPECTED_B64_PATH="$2"; shift 2 ;;
     --keep-data) KEEP_DATA="true"; shift ;;
     --help|-h) usage ;;
@@ -119,6 +131,8 @@ smoke_log "uploaded file: ${FILE_ID}"
 wait_for_status "$BASE_URL" "$COOKIE_JAR" "$FILE_ID" ready
 
 verify_schema_endpoint "$BASE_URL" "$COOKIE_JAR" "$FILE_ID"
+verify_feature_properties_endpoint "$BASE_URL" "$COOKIE_JAR" "$FILE_ID" 1
+verify_crs_update "$BASE_URL" "$COOKIE_JAR" "$FILE_ID" "$CRS_UPDATE_INPUT" "$CRS_UPDATE_EXPECTED" "$CRS_UPDATE_EXPECTED_TYPE"
 
 get_tile "$BASE_URL" "$COOKIE_JAR" "$FILE_ID" 0 0 0 "$TILE_OUT"
 verify_tile_content "$TILE_OUT" "$EXPECTED_B64_PATH"

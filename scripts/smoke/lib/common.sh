@@ -323,6 +323,132 @@ PY
   smoke_log "schema endpoint verified"
 }
 
+verify_feature_properties_endpoint() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_id="$3"
+  local fid="${4:-1}"
+
+  smoke_log "verifying feature properties endpoint for file ${file_id}, fid=${fid}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+    "${base_url}/api/files/${file_id}/features/${fid}" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected feature properties status 200, got ${http_code}, body=${body}"
+  fi
+
+  python3 - "$response_file" "$fid" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+expected_fid = int(sys.argv[2])
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+if data.get("fid") != expected_fid:
+    raise SystemExit(f"feature properties validation failed: fid mismatch ({data.get('fid')} != {expected_fid})")
+
+props = data.get("properties")
+if not isinstance(props, list):
+    raise SystemExit("feature properties validation failed: properties is not an array")
+
+if len(props) == 0:
+    raise SystemExit("feature properties validation failed: properties is empty")
+
+first = props[0]
+if not isinstance(first, dict) or "key" not in first or "value" not in first:
+    raise SystemExit("feature properties validation failed: first property missing key/value")
+PY
+
+  rm -f "$response_file"
+  smoke_log "feature properties endpoint verified"
+}
+
+verify_crs_update() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_id="$3"
+  local request_crs="$4"
+  local expected_crs="$5"
+  local expected_crs_type="$6"
+
+  smoke_log "verifying CRS update for file ${file_id}: ${request_crs} -> ${expected_crs} (${expected_crs_type})"
+
+  local update_file
+  update_file="$(mktemp)"
+
+  local update_code
+  update_code=$(curl -sS -o "$update_file" -w "%{http_code}" -b "$cookie_jar" -X PUT \
+    -H "Content-Type: application/json" \
+    -d "{\"crs\":\"${request_crs}\"}" \
+    "${base_url}/api/files/${file_id}/crs" || true)
+
+  if [ "$update_code" != "200" ]; then
+    local body
+    body="$(cat "$update_file" 2>/dev/null || true)"
+    rm -f "$update_file"
+    smoke_fail "expected update CRS status 200, got ${update_code}, body=${body}"
+  fi
+
+  python3 - "$update_file" "$file_id" "$expected_crs" "$expected_crs_type" <<'PY'
+import json
+import sys
+
+path, file_id, expected_crs, expected_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+if data.get("id") != file_id:
+    raise SystemExit(f"crs update validation failed: id mismatch ({data.get('id')} != {file_id})")
+if data.get("crs") != expected_crs:
+    raise SystemExit(f"crs update validation failed: crs mismatch ({data.get('crs')} != {expected_crs})")
+if data.get("crsType") != expected_type:
+    raise SystemExit(f"crs update validation failed: crsType mismatch ({data.get('crsType')} != {expected_type})")
+PY
+
+  rm -f "$update_file"
+
+  local preview_file
+  preview_file="$(mktemp)"
+
+  local preview_code
+  preview_code=$(curl -sS -o "$preview_file" -w "%{http_code}" -b "$cookie_jar" \
+    "${base_url}/api/files/${file_id}/preview" || true)
+
+  if [ "$preview_code" != "200" ]; then
+    local body
+    body="$(cat "$preview_file" 2>/dev/null || true)"
+    rm -f "$preview_file"
+    smoke_fail "expected preview status 200 after CRS update, got ${preview_code}, body=${body}"
+  fi
+
+  python3 - "$preview_file" "$expected_crs" "$expected_crs_type" <<'PY'
+import json
+import sys
+
+path, expected_crs, expected_type = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+if data.get("crs") != expected_crs:
+    raise SystemExit(f"preview crs validation failed: {data.get('crs')} != {expected_crs}")
+if data.get("crsType") != expected_type:
+    raise SystemExit(f"preview crsType validation failed: {data.get('crsType')} != {expected_type}")
+PY
+
+  rm -f "$preview_file"
+  smoke_log "CRS update verified"
+}
+
 verify_oversize_upload_rejected() {
   local base_url="$1"
   local cookie_jar="$2"

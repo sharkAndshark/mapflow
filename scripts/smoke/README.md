@@ -13,10 +13,12 @@
 | 5. 上传文件 | GeoJSON 上传成功 |
 | 6. 状态轮询 | 文件处理完成 (ready) |
 | 7. Schema 查询 | `/api/files/:id/schema` 返回有效图层与字段 |
-| 8. 获取瓦片 | 私有瓦片返回 MVT |
-| 9. 发布文件 | 公开 slug 分配成功 |
-| 10. 公开瓦片 | 无需认证访问瓦片 |
-| 11. 错误场景 | 超大文件上传返回 413（File too large） |
+| 8. 特征属性查询 | `/api/files/:id/features/:fid` 返回可观测属性 |
+| 9. CRS 更新 | `PUT /api/files/:id/crs` 生效并在 preview 元数据可观测 |
+| 10. 获取瓦片 | 私有瓦片返回 MVT |
+| 11. 发布文件 | 公开 slug 分配成功 |
+| 12. 公开瓦片 | 无需认证访问瓦片 |
+| 13. 错误场景 | 超大文件上传返回 413（File too large） |
 
 ## 使用方法
 
@@ -59,6 +61,9 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
 | `SMOKE_FIXTURE` | 测试文件路径 | `frontend/tests/fixtures/sample.geojson` |
 | `SMOKE_OVERSIZE_FIXTURE` | 超大文件测试路径（需大于限制） | `frontend/tests/fixtures/roads.zip` |
 | `SMOKE_OVERSIZE_LIMIT_MB` | 超大文件测试时临时限制（通过 `/api/settings` 下调） | 1 |
+| `SMOKE_CRS_UPDATE_INPUT` | CRS 更新请求值（PUT `/api/files/:id/crs`） | `urn:ogc:def:crs:EPSG::4490` |
+| `SMOKE_CRS_UPDATE_EXPECTED` | 期望归一化 CRS | `EPSG:4490` |
+| `SMOKE_CRS_UPDATE_EXPECTED_TYPE` | 期望 crsType | `standard` |
 | `SMOKE_EXPECTED_B64` | 期望瓦片 base64 | (Docker: `testdata/smoke/...`) |
 | `SMOKE_WORK_DIR` | 工作目录 | 临时目录 |
 | `SMOKE_KEEP_DATA` | 保留测试数据 | false |
