@@ -449,6 +449,157 @@ PY
   smoke_log "CRS update verified"
 }
 
+verify_mbtiles_preview_meta() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_id="$3"
+  local expected_format="${4:-mvt}"
+
+  smoke_log "verifying MBTiles preview meta for file ${file_id}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+    "${base_url}/api/files/${file_id}/preview" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected MBTiles preview status 200, got ${http_code}, body=${body}"
+  fi
+
+  python3 - "$response_file" "$expected_format" <<'PY'
+import json
+import sys
+
+path, expected_format = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+if data.get("tileFormat") != expected_format:
+    raise SystemExit(
+        f"mbtiles preview validation failed: tileFormat {data.get('tileFormat')} != {expected_format}"
+    )
+PY
+
+  rm -f "$response_file"
+  smoke_log "MBTiles preview meta verified"
+}
+
+verify_mbtiles_schema_endpoint() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_id="$3"
+
+  smoke_log "verifying MBTiles schema endpoint for file ${file_id}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+    "${base_url}/api/files/${file_id}/schema" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected MBTiles schema status 200, got ${http_code}, body=${body}"
+  fi
+
+  python3 - "$response_file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+layers = data.get("layers")
+if not isinstance(layers, list):
+    raise SystemExit("mbtiles schema validation failed: layers is not an array")
+if len(layers) == 0:
+    raise SystemExit("mbtiles schema validation failed: layers is empty")
+PY
+
+  rm -f "$response_file"
+  smoke_log "MBTiles schema endpoint verified"
+}
+
+verify_mbtiles_feature_properties_rejected() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_id="$3"
+
+  smoke_log "verifying MBTiles feature properties are rejected for file ${file_id}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+    "${base_url}/api/files/${file_id}/features/1" || true)
+
+  if [ "$http_code" != "400" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected MBTiles feature properties status 400, got ${http_code}, body=${body}"
+  fi
+
+  if ! grep -q "Feature properties not available for MBTiles files" "$response_file"; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "MBTiles feature properties rejection mismatch: ${body}"
+  fi
+
+  rm -f "$response_file"
+  smoke_log "MBTiles feature properties rejection verified"
+}
+
+verify_public_tile_meta_format() {
+  local base_url="$1"
+  local slug="$2"
+  local expected_format="${3:-mvt}"
+
+  smoke_log "verifying public tile meta for slug ${slug}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" \
+    "${base_url}/tiles/${slug}/meta" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected public meta status 200, got ${http_code}, body=${body}"
+  fi
+
+  python3 - "$response_file" "$expected_format" <<'PY'
+import json
+import sys
+
+path, expected_format = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+if data.get("tileFormat") != expected_format:
+    raise SystemExit(
+        f"public meta validation failed: tileFormat {data.get('tileFormat')} != {expected_format}"
+    )
+PY
+
+  rm -f "$response_file"
+  smoke_log "public tile meta verified"
+}
+
 verify_oversize_upload_rejected() {
   local base_url="$1"
   local cookie_jar="$2"

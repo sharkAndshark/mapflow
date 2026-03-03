@@ -75,25 +75,38 @@
   - 结果（2026-03-03）：✅ 通过
     - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
     - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `upload max size to 1 MB` 与 `oversize upload rejected as expected`）
-    - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
+    - 备注：`smoke-docker.sh` 已实测通过（见 S17）
 - [x] S14: Smoke 覆盖补齐 Schema 查询验证
   - 验证：`smoke-binary` 新增 `/api/files/:id/schema` 结构断言（layers/fields）
   - 结果（2026-03-03）：✅ 通过
     - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
     - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `schema endpoint verified`）
-    - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
+    - 备注：`smoke-docker.sh` 已实测通过（见 S17）
 - [x] S15: Smoke 覆盖补齐特征属性端点验证
   - 验证：`smoke-binary` 新增 `/api/files/:id/features/:fid` 结构断言（fid/properties）
   - 结果（2026-03-03）：✅ 通过
     - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
     - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `feature properties endpoint verified`）
-    - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
+    - 备注：`smoke-docker.sh` 已实测通过（见 S17）
 - [x] S16: Smoke 覆盖补齐 CRS 更新验证
   - 验证：`smoke-binary` 新增 `PUT /api/files/:id/crs` + preview 元数据回读断言（归一化 + crsType）
   - 结果（2026-03-03）：✅ 通过
     - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
     - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `CRS update verified`）
-    - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
+    - 备注：`smoke-docker.sh` 已实测通过（见 S17）
+- [x] S17: smoke-docker 实测 Shapefile 场景
+  - 验证：Docker service 启动后，针对 `roads.zip` 运行完整容器冒烟链路
+  - 结果（2026-03-03）：✅ 通过
+    - `docker build -t mapflow-smoke:ci .`
+    - `bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:ci --port 3320 --fixture frontend/tests/fixtures/roads.zip --expected-b64 /tmp/nonexistent-smoke-expected.b64`
+    - 关键日志：`status=ready` / `schema endpoint verified` / `feature properties endpoint verified` / `CRS update verified` / `oversize upload rejected as expected`
+- [x] S18: Smoke 覆盖补齐 MBTiles(MVT) 元数据/Schema/错误语义
+  - 验证：`smoke-binary` 与 `smoke-docker` 新增 MBTiles 场景（preview/public `tileFormat`、schema 非空、feature-properties=400）
+  - 结果（2026-03-03）：✅ 通过
+    - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
+    - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`
+    - `bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:ci --port 3321 --fixture frontend/tests/fixtures/roads.zip --expected-b64 /tmp/nonexistent-smoke-expected.b64`
+    - 关键日志：`MBTiles preview meta verified` / `MBTiles schema endpoint verified` / `MBTiles feature properties rejection verified` / `public tile meta verified`
 
 ## Known Issues
 
@@ -405,8 +418,9 @@ function calculateResolutions(bounds, maxZoom = 20) {
 - [x] 发布 + 公开瓦片
 
 待扩展：
-- [ ] Shapefile 上传测试
-- [ ] MBTiles 上传测试（MVT/PNG）
+- [x] Shapefile 上传测试（`scripts/smoke/smoke-docker.sh --fixture frontend/tests/fixtures/roads.zip`）
+- [x] MBTiles 上传测试（MVT）（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh` 默认覆盖）
+- [ ] MBTiles 上传测试（PNG）
 - [x] 错误场景：无效格式上传返回 400（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [x] 错误场景：超大文件（413）（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [x] Schema 查询验证（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）

@@ -10,15 +10,20 @@
 | 2. 认证初始化 | 创建管理员用户 |
 | 3. 登录 | 会话 cookie 生效 |
 | 4. 错误场景 | 无效格式上传返回 400（Unsupported file type） |
-| 5. 上传文件 | GeoJSON 上传成功 |
-| 6. 状态轮询 | 文件处理完成 (ready) |
+| 5. 上传矢量文件 | GeoJSON/Shapefile 上传成功 |
+| 6. 状态轮询 | 矢量文件处理完成 (ready) |
 | 7. Schema 查询 | `/api/files/:id/schema` 返回有效图层与字段 |
 | 8. 特征属性查询 | `/api/files/:id/features/:fid` 返回可观测属性 |
 | 9. CRS 更新 | `PUT /api/files/:id/crs` 生效并在 preview 元数据可观测 |
 | 10. 获取瓦片 | 私有瓦片返回 MVT |
 | 11. 发布文件 | 公开 slug 分配成功 |
 | 12. 公开瓦片 | 无需认证访问瓦片 |
-| 13. 错误场景 | 超大文件上传返回 413（File too large） |
+| 13. 上传 MBTiles | MBTiles 上传成功 |
+| 14. MBTiles 元数据 | preview/meta 返回期望 `tileFormat` |
+| 15. MBTiles Schema 查询 | `/api/files/:id/schema` 返回有效图层 |
+| 16. MBTiles 特征属性 | `/api/files/:id/features/:fid` 返回 400（不支持） |
+| 17. MBTiles 发布 | 发布后 `tiles/:slug/meta` 返回期望 `tileFormat` |
+| 18. 错误场景 | 超大文件上传返回 413（File too large） |
 
 ## 使用方法
 
@@ -33,6 +38,8 @@
   --binary ./target/release/backend \
   --port 3000 \
   --fixture frontend/tests/fixtures/sample.geojson \
+  --mbtiles-fixture testdata/monaco_roads.mbtiles \
+  --mbtiles-format mvt \
   --expected-b64 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64
 
 # 保留测试数据（调试用）
@@ -50,6 +57,8 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
   --image ghcr.io/owner/mapflow:nightly \
   --port 3000 \
   --fixture frontend/tests/fixtures/sample.geojson \
+  --mbtiles-fixture testdata/monaco_roads.mbtiles \
+  --mbtiles-format mvt \
   --expected-b64 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64
 ```
 
@@ -59,6 +68,8 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
 |------|------|--------|
 | `SMOKE_PORT` | 服务端口 | 3000 |
 | `SMOKE_FIXTURE` | 测试文件路径 | `frontend/tests/fixtures/sample.geojson` |
+| `SMOKE_MBTILES_FIXTURE` | MBTiles 测试文件路径 | `testdata/monaco_roads.mbtiles` |
+| `SMOKE_MBTILES_EXPECTED_FORMAT` | MBTiles 期望 tileFormat | `mvt` |
 | `SMOKE_OVERSIZE_FIXTURE` | 超大文件测试路径（需大于限制） | `frontend/tests/fixtures/roads.zip` |
 | `SMOKE_OVERSIZE_LIMIT_MB` | 超大文件测试时临时限制（通过 `/api/settings` 下调） | 1 |
 | `SMOKE_CRS_UPDATE_INPUT` | CRS 更新请求值（PUT `/api/files/:id/crs`） | `urn:ogc:def:crs:EPSG::4490` |

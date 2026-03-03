@@ -8,6 +8,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 IMAGE=""
 PORT="${SMOKE_PORT:-3000}"
 FIXTURE_PATH="${SMOKE_FIXTURE:-frontend/tests/fixtures/sample.geojson}"
+MBTILES_FIXTURE_PATH="${SMOKE_MBTILES_FIXTURE:-testdata/monaco_roads.mbtiles}"
+MBTILES_EXPECTED_FORMAT="${SMOKE_MBTILES_EXPECTED_FORMAT:-mvt}"
 OVERSIZE_FIXTURE_PATH="${SMOKE_OVERSIZE_FIXTURE:-frontend/tests/fixtures/roads.zip}"
 OVERSIZE_LIMIT_MB="${SMOKE_OVERSIZE_LIMIT_MB:-1}"
 CRS_UPDATE_INPUT="${SMOKE_CRS_UPDATE_INPUT:-urn:ogc:def:crs:EPSG::4490}"
@@ -25,6 +27,8 @@ Options:
   --image <name:tag>    Docker image to test (required)
   --port <port>         Host port to use (default: 3000)
   --fixture <path>      Test file to upload (default: frontend/tests/fixtures/sample.geojson)
+  --mbtiles-fixture <path> MBTiles test file (default: testdata/monaco_roads.mbtiles)
+  --mbtiles-format <value> Expected MBTiles tileFormat (default: mvt)
   --oversize-fixture <path>  Oversize test file (default: frontend/tests/fixtures/roads.zip)
   --oversize-limit-mb <n>    Temporary upload size limit for oversize check (default: 1)
   --crs-update-input <value> CRS value sent to PUT /api/files/:id/crs
@@ -36,6 +40,8 @@ Options:
 Environment:
   SMOKE_PORT            Default port
   SMOKE_FIXTURE         Default fixture path
+  SMOKE_MBTILES_FIXTURE MBTiles test file path
+  SMOKE_MBTILES_EXPECTED_FORMAT Expected MBTiles tileFormat
   SMOKE_OVERSIZE_FIXTURE Oversize test file path
   SMOKE_OVERSIZE_LIMIT_MB Temporary upload size limit for oversize check
   SMOKE_CRS_UPDATE_INPUT CRS value sent to PUT /api/files/:id/crs
@@ -53,6 +59,8 @@ while [[ $# -gt 0 ]]; do
     --image) IMAGE="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --fixture) FIXTURE_PATH="$2"; shift 2 ;;
+    --mbtiles-fixture) MBTILES_FIXTURE_PATH="$2"; shift 2 ;;
+    --mbtiles-format) MBTILES_EXPECTED_FORMAT="$2"; shift 2 ;;
     --oversize-fixture) OVERSIZE_FIXTURE_PATH="$2"; shift 2 ;;
     --oversize-limit-mb) OVERSIZE_LIMIT_MB="$2"; shift 2 ;;
     --crs-update-input) CRS_UPDATE_INPUT="$2"; shift 2 ;;
@@ -71,6 +79,10 @@ fi
 
 if [ ! -f "$FIXTURE_PATH" ]; then
   smoke_fail "fixture not found: ${FIXTURE_PATH}"
+fi
+
+if [ ! -f "$MBTILES_FIXTURE_PATH" ]; then
+  smoke_fail "mbtiles fixture not found: ${MBTILES_FIXTURE_PATH}"
 fi
 
 if [ ! -f "$OVERSIZE_FIXTURE_PATH" ]; then
@@ -141,6 +153,18 @@ SLUG=$(publish_file "$BASE_URL" "$COOKIE_JAR" "$FILE_ID")
 smoke_log "published with slug: ${SLUG}"
 
 get_public_tile "$BASE_URL" "$SLUG" 0 0 0 "$PUBLIC_TILE_OUT"
+
+MBTILES_FILE_ID=$(upload_file "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FIXTURE_PATH")
+smoke_log "uploaded MBTiles file: ${MBTILES_FILE_ID}"
+
+wait_for_status "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID" ready
+verify_mbtiles_preview_meta "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID" "$MBTILES_EXPECTED_FORMAT"
+verify_mbtiles_schema_endpoint "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID"
+verify_mbtiles_feature_properties_rejected "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID"
+
+MBTILES_SLUG=$(publish_file "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID")
+smoke_log "published MBTiles with slug: ${MBTILES_SLUG}"
+verify_public_tile_meta_format "$BASE_URL" "$MBTILES_SLUG" "$MBTILES_EXPECTED_FORMAT"
 
 oversize_bytes=$(wc -c < "$OVERSIZE_FIXTURE_PATH" | tr -d ' ')
 oversize_limit_bytes=$((OVERSIZE_LIMIT_MB * 1024 * 1024))
