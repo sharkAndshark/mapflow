@@ -5,6 +5,70 @@ import { loginUser, setupTestUser } from './auth-helper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const customCrsDir = path.join(__dirname, '..', '..', 'testdata', 'custom-crs');
+const fixturesDir = path.join(__dirname, 'fixtures');
+
+async function waitForFileReady(request, name) {
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/files');
+        if (!response.ok()) return null;
+        const files = await response.json();
+        const file = files.find((item) => item.name === name);
+        return file?.status;
+      },
+      { message: `wait for ${name} to be ready`, timeout: 60000 },
+    )
+    .toBe('ready');
+}
+
+async function getFileByName(request, name) {
+  const response = await request.get('/api/files');
+  expect(response.ok()).toBeTruthy();
+  const files = await response.json();
+  return files.find((item) => item.name === name);
+}
+
+async function readTileGridDebugState(previewPage) {
+  return previewPage.evaluate(() => {
+    const mapElement =
+      document.querySelector('[data-testid="preview-map-canvas"]') ||
+      document.querySelector('[data-testid="preview-map"]');
+    const map = mapElement?.__mapflowPreviewMap || window.__mapflowPreviewMap;
+    if (!map) {
+      return { hasMap: false, hasDebugLayer: false };
+    }
+
+    const layers = map.getLayers().getArray();
+    const debugLayer = layers.find((layer) => layer?.get?.('mapflowRole') === 'tile-grid-debug');
+    if (!debugLayer) {
+      return { hasMap: true, hasDebugLayer: false };
+    }
+
+    const source = debugLayer.getSource();
+    const tileGrid = source?.getTileGrid?.();
+    const projection = source?.getProjection?.();
+    const projectionCode =
+      projection && typeof projection.getCode === 'function' ? projection.getCode() : projection;
+    const extent =
+      tileGrid && typeof tileGrid.getExtent === 'function' ? tileGrid.getExtent() : null;
+    const origin =
+      tileGrid && typeof tileGrid.getOrigin === 'function' ? tileGrid.getOrigin(0) : null;
+    const resolutions =
+      tileGrid && typeof tileGrid.getResolutions === 'function' ? tileGrid.getResolutions() : null;
+
+    return {
+      hasMap: true,
+      hasDebugLayer: true,
+      visible: debugLayer.getVisible(),
+      hasTileGrid: !!tileGrid,
+      extent,
+      origin,
+      resolutionCount: Array.isArray(resolutions) ? resolutions.length : null,
+      projectionCode,
+    };
+  });
+}
 
 test.describe('Custom CRS', () => {
   test.beforeEach(async ({ workerServer, request }) => {
@@ -188,6 +252,118 @@ test.describe('Custom CRS', () => {
 
     expect(previewData.bbox[0]).toBeLessThan(0);
     expect(previewData.bbox[1]).toBeLessThan(0);
+  });
+
+  test('custom CRS preview tile grid uses custom tile grid configuration', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120000);
+
+    const testFile = path.join(customCrsDir, 'sf_buildings_no_crs.geojson');
+
+    await page.goto('/');
+    await page.getByTestId('file-input').setInputFiles(testFile);
+
+    await expect(
+      page.locator('.row', { hasText: 'sf_buildings_no_crs' }).getByText(/已就绪|等待处理/),
+    ).toBeVisible();
+
+    await waitForFileReady(request, 'sf_buildings_no_crs');
+
+    const fileData = await getFileByName(request, 'sf_buildings_no_crs');
+    expect(fileData).toBeDefined();
+
+    const previewMetaResponse = await request.get(`/api/files/${fileData.id}/preview`);
+    expect(previewMetaResponse.ok()).toBeTruthy();
+    const previewMeta = await previewMetaResponse.json();
+    expect(previewMeta.crsType).toBe('custom');
+    expect(previewMeta.dataBounds).toHaveLength(4);
+
+    const row = page.locator('.row', { hasText: 'sf_buildings_no_crs' });
+    const previewLink = row.getByRole('link', { name: '查看' });
+    await expect(previewLink).toBeVisible();
+
+    const [previewPage] = await Promise.all([
+      page.context().waitForEvent('page'),
+      previewLink.click(),
+    ]);
+    await previewPage.waitForLoadState('networkidle');
+    await expect(previewPage.getByText('sf_buildings_no_crs')).toBeVisible();
+
+    await previewPage.getByLabel('Show Tile Grid').check();
+
+    await expect
+      .poll(
+        async () => {
+          const state = await readTileGridDebugState(previewPage);
+          return state.visible;
+        },
+        { message: 'wait for tile grid debug layer to become visible', timeout: 10000 },
+      )
+      .toBe(true);
+
+    const state = await readTileGridDebugState(previewPage);
+    expect(state.hasMap).toBe(true);
+    expect(state.hasDebugLayer).toBe(true);
+    expect(state.hasTileGrid).toBe(true);
+    expect(state.resolutionCount).toBe(21);
+    expect(state.projectionCode).toBe(previewMeta.crs || 'CUSTOM_CRS');
+
+    const [minx, miny, maxx, maxy] = previewMeta.dataBounds;
+    expect(state.extent[0]).toBeCloseTo(minx, 6);
+    expect(state.extent[1]).toBeCloseTo(miny, 6);
+    expect(state.extent[2]).toBeCloseTo(maxx, 6);
+    expect(state.extent[3]).toBeCloseTo(maxy, 6);
+    expect(state.origin[0]).toBeCloseTo(minx, 6);
+    expect(state.origin[1]).toBeCloseTo(maxy, 6);
+
+    await previewPage.close();
+  });
+
+  test('standard CRS preview tile grid toggle still works', async ({ page, request }) => {
+    test.setTimeout(120000);
+
+    const testFile = path.join(fixturesDir, 'sample.geojson');
+
+    await page.goto('/');
+    await page.getByTestId('file-input').setInputFiles(testFile);
+
+    await expect(
+      page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/),
+    ).toBeVisible();
+    await waitForFileReady(request, 'sample');
+
+    const row = page.locator('.row', { hasText: 'sample' });
+    const previewLink = row.getByRole('link', { name: '查看' });
+    await expect(previewLink).toBeVisible();
+
+    const [previewPage] = await Promise.all([
+      page.context().waitForEvent('page'),
+      previewLink.click(),
+    ]);
+    await previewPage.waitForLoadState('networkidle');
+    await expect(previewPage.getByText('sample')).toBeVisible();
+
+    await previewPage.getByLabel('Show Tile Grid').check();
+    await expect
+      .poll(
+        async () => {
+          const state = await readTileGridDebugState(previewPage);
+          return state.visible;
+        },
+        {
+          message: 'wait for standard CRS tile grid debug layer to become visible',
+          timeout: 10000,
+        },
+      )
+      .toBe(true);
+
+    const state = await readTileGridDebugState(previewPage);
+    expect(state.hasMap).toBe(true);
+    expect(state.hasDebugLayer).toBe(true);
+
+    await previewPage.close();
   });
 
   test('update CRS with EPSG URN (4490) and verify docs tile requests', async ({
