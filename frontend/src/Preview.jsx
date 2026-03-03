@@ -15,6 +15,7 @@ import VectorTileLayer from 'ol/layer/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
 import TileLayer from 'ol/layer/Tile';
 import TileSource from 'ol/source/Tile';
+import OSM from 'ol/source/OSM';
 import TileDebug from 'ol/source/TileDebug';
 import MVT from 'ol/format/MVT';
 import Projection from 'ol/proj/Projection';
@@ -53,7 +54,9 @@ export default function Preview() {
   const tileFormatRef = useRef(null);
   const loadFeaturePropertiesRef = useRef(async () => {});
   const [showTileGrid, setShowTileGrid] = useState(false);
+  const [showOsmBasemap, setShowOsmBasemap] = useState(false);
   const tileGridLayerRef = useRef(null);
+  const osmLayerRef = useRef(null);
   const [tileFormat, setTileFormat] = useState(null);
 
   const cancelPopup = useCallback(() => {
@@ -274,6 +277,7 @@ export default function Preview() {
       }),
       visible: false,
     });
+    tileGridLayer.setZIndex(20);
     tileGridLayerRef.current = tileGridLayer;
     olMap.addLayer(tileGridLayer);
 
@@ -281,6 +285,7 @@ export default function Preview() {
       olMap.setTarget(null);
       mapRef.current = null;
       vectorLayerRef.current = null;
+      osmLayerRef.current = null;
       tileGridLayerRef.current = null;
     };
   }, [cancelPopup]);
@@ -362,10 +367,10 @@ export default function Preview() {
         style: styleFunction,
       });
     }
+    tileLayer.setZIndex(10);
 
     vectorLayerRef.current = tileLayer;
-    // Insert vector layer at index 0, tile grid stays on top
-    map.getLayers().insertAt(0, tileLayer);
+    map.addLayer(tileLayer);
 
     // 2. Update View projection for custom CRS
     if (isCustomCRS && customProjection) {
@@ -404,6 +409,39 @@ export default function Preview() {
       });
     }
   }, [meta, id, styleFunction, tileFormat]);
+
+  // Toggle OSM basemap visibility for standard CRS only.
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const map = mapRef.current;
+    const canOverlayOsm = meta?.crsType === 'standard';
+
+    if (!canOverlayOsm) {
+      const existingOsmLayer = osmLayerRef.current;
+      if (existingOsmLayer) {
+        map.removeLayer(existingOsmLayer);
+        osmLayerRef.current = null;
+      }
+      return;
+    }
+
+    if (!showOsmBasemap) {
+      osmLayerRef.current?.setVisible(false);
+      return;
+    }
+
+    if (!osmLayerRef.current) {
+      const osmLayer = new TileLayer({
+        source: new OSM(),
+      });
+      osmLayer.setZIndex(0);
+      map.addLayer(osmLayer);
+      osmLayerRef.current = osmLayer;
+    }
+
+    osmLayerRef.current.setVisible(true);
+  }, [meta, showOsmBasemap]);
 
   // Toggle tile grid visibility
   useEffect(() => {
@@ -500,25 +538,46 @@ export default function Preview() {
           </div>
         )}
 
-        {/* Tile Grid Toggle */}
-        <label
-          style={{
-            marginLeft: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '13px',
-            cursor: 'pointer',
-            userSelect: 'none',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={showTileGrid}
-            onChange={(e) => setShowTileGrid(e.target.checked)}
-          />
-          Show Tile Grid
-        </label>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {meta?.crsType === 'standard' && (
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '13px',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showOsmBasemap}
+                onChange={(e) => setShowOsmBasemap(e.target.checked)}
+              />
+              Show OSM Basemap
+            </label>
+          )}
+
+          {/* Tile Grid Toggle */}
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '13px',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showTileGrid}
+              onChange={(e) => setShowTileGrid(e.target.checked)}
+            />
+            Show Tile Grid
+          </label>
+        </div>
       </header>
 
       <div style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden' }}>

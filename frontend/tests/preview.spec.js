@@ -189,3 +189,55 @@ test('click feature switches highlight style immediately', async ({ page, reques
   expect(normalizeColor(nonSelectedStyle.strokeColor)).toBe('#0080ff');
   expect(nonSelectedStyle.strokeWidth).toBe(2);
 });
+
+test('standard CRS preview shows OSM basemap toggle and requests OSM tiles when enabled', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120000);
+
+  const fixturesDir = path.join(__dirname, 'fixtures');
+  const geojsonPath = path.join(fixturesDir, 'sample.geojson');
+
+  await page.goto('/');
+  await page.getByTestId('file-input').setInputFiles(geojsonPath);
+
+  await expect(
+    page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/),
+  ).toBeVisible();
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/files');
+        if (!response.ok()) return null;
+        const files = await response.json();
+        return files.find((f) => f.name === 'sample')?.status ?? null;
+      },
+      { message: 'wait for file to be ready', timeout: 60000 },
+    )
+    .toBe('ready');
+
+  const row = page.locator('.row', { hasText: 'sample' });
+  const previewLink = row.getByRole('link', { name: '查看' });
+  await expect(previewLink).toBeVisible();
+
+  let osmRequestCount = 0;
+  await page.context().route('https://tile.openstreetmap.org/**', async (route) => {
+    osmRequestCount += 1;
+    await route.abort();
+  });
+
+  const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
+  await newPage.waitForLoadState('networkidle');
+
+  const osmToggle = newPage.getByLabel('Show OSM Basemap');
+  await expect(osmToggle).toBeVisible();
+  await expect(osmToggle).not.toBeChecked();
+
+  await osmToggle.check();
+
+  await expect
+    .poll(() => osmRequestCount, { message: 'wait for OSM tile requests', timeout: 10000 })
+    .toBeGreaterThan(0);
+});
