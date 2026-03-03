@@ -184,6 +184,15 @@
 
 **Scope**: 单文件预览，不支持发布公开瓦片
 
+### Preview Tile Grid Alignment (2026-03-03)
+
+- **Issue**: Preview 页 `TileDebug` 图层在初始化时使用默认 source，custom CRS 场景未绑定 custom `tileGrid`，导致网格显示错位或不显示。
+- **Root Cause**: `Show Tile Grid` 仅切换图层可见性，但没有在 `meta` 变化后同步 `TileDebug` 的 projection/tileGrid。
+- **Fix**:
+  - 在 `Preview.jsx` 中复用 custom CRS 数据图层的 `Projection` + `TileGrid` 配置更新 `TileDebug` source
+  - 保持 `Show Tile Grid` 手动开关默认关闭，不改 UX
+  - 新增 E2E 可观测断言验证 `TileDebug` 图层对 custom CRS 的 `extent/origin/resolutions`
+
 ### User Story
 
 1. 用户上传本地坐标系数据（无 EPSG code）
@@ -258,6 +267,7 @@ ST_Read_Meta 结果 → 归一化 + 分类
   - resolutions = 计算 z=0 到 z=20
 - [x] 创建 Projection: code, units='m', extent
 - [x] 显示 custom CRS 标签（橙色样式）
+- [x] TileDebug 图层复用 custom `tileGrid`，确保 Preview 勾选 `Show Tile Grid` 后网格与 custom CRS 瓦片对齐
 
 #### 4. Test Data
 
@@ -277,6 +287,7 @@ ST_Read_Meta 结果 → 归一化 + 分类
 - [x] E2E: 自定义 CRS 上传流程 (custom-crs.spec.js)
 - [x] E2E: 自定义 CRS 瓦片请求
 - [x] E2E: 预览页正常显示
+- [x] E2E: `Show Tile Grid` 在 custom CRS 下使用正确的 `extent/origin/resolutions`
 - [x] Integration: PUT /api/files/:id/crs (6 tests)
 
 #### 6. Future Test Data (Optional)

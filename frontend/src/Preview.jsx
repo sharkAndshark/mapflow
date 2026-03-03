@@ -36,6 +36,20 @@ function calculateCustomResolutions(dataBounds, maxZoom = 20) {
   return Array.from({ length: maxZoom + 1 }, (_, z) => maxDim / (256 * Math.pow(2, z)));
 }
 
+function createTileDebugSource(projection = 'EPSG:3857', tileGrid = null) {
+  const options = {
+    template: 'z:{z} x:{x} y:{y}',
+    zDirection: 1,
+    projection,
+  };
+
+  if (tileGrid) {
+    options.tileGrid = tileGrid;
+  }
+
+  return new TileDebug(options);
+}
+
 export default function Preview() {
   const { id } = useParams();
   const mapElement = useRef(null);
@@ -207,8 +221,9 @@ export default function Preview() {
   useEffect(() => {
     if (!mapElement.current || mapRef.current) return;
 
+    const targetElement = mapElement.current;
     const olMap = new OLMap({
-      target: mapElement.current,
+      target: targetElement,
       view: new View({
         center: fromLonLat([0, 0]),
         zoom: 2,
@@ -219,6 +234,8 @@ export default function Preview() {
     });
 
     mapRef.current = olMap;
+    targetElement.__mapflowPreviewMap = olMap;
+    window.__mapflowPreviewMap = olMap;
 
     // Click handler for features
     olMap.on('click', (evt) => {
@@ -271,13 +288,11 @@ export default function Preview() {
 
     // Add Tile Grid debug layer (initially hidden)
     const tileGridLayer = new TileLayer({
-      source: new TileDebug({
-        template: 'z:{z} x:{x} y:{y}',
-        zDirection: 1,
-      }),
+      source: createTileDebugSource(),
       visible: false,
     });
     tileGridLayer.setZIndex(20);
+    tileGridLayer.set('mapflowRole', 'tile-grid-debug');
     tileGridLayerRef.current = tileGridLayer;
     olMap.addLayer(tileGridLayer);
 
@@ -287,6 +302,10 @@ export default function Preview() {
       vectorLayerRef.current = null;
       osmLayerRef.current = null;
       tileGridLayerRef.current = null;
+      delete targetElement.__mapflowPreviewMap;
+      if (window.__mapflowPreviewMap === olMap) {
+        delete window.__mapflowPreviewMap;
+      }
     };
   }, [cancelPopup]);
 
@@ -372,7 +391,12 @@ export default function Preview() {
     vectorLayerRef.current = tileLayer;
     map.addLayer(tileLayer);
 
-    // 2. Update View projection for custom CRS
+    // Keep TileDebug source aligned with the same tile scheme as data tiles.
+    tileGridLayerRef.current?.setSource(
+      createTileDebugSource(customProjection || 'EPSG:3857', customTileGrid),
+    );
+
+    // 2. Update View projection
     if (isCustomCRS && customProjection) {
       const [minx, miny, maxx, maxy] = meta.dataBounds;
       const centerX = (minx + maxx) / 2;
@@ -383,6 +407,16 @@ export default function Preview() {
           projection: customProjection,
           center: [centerX, centerY],
           zoom: 0,
+          minZoom: minZoom,
+          maxZoom: maxZoom,
+        }),
+      );
+    } else {
+      map.setView(
+        new View({
+          projection: 'EPSG:3857',
+          center: fromLonLat([0, 0]),
+          zoom: 2,
           minZoom: minZoom,
           maxZoom: maxZoom,
         }),
