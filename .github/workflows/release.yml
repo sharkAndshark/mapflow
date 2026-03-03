@@ -180,6 +180,13 @@ jobs:
           bash scripts/smoke/smoke-binary.sh \
             --binary "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
 
+      - name: Smoke test crash recovery
+        shell: bash
+        run: |
+          bash scripts/smoke/smoke-crash-recovery.sh \
+            --binary "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}" \
+            --port 3010
+
       - name: Package bundle
         id: package
         shell: bash

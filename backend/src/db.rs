@@ -1,11 +1,11 @@
 #[cfg(all(unix, feature = "embed-spatial-extension"))]
 use std::os::unix::fs::PermissionsExt;
 
-#[cfg(feature = "embed-spatial-extension")]
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use tokio::sync::Mutex;
@@ -18,6 +18,7 @@ const SPATIAL_EXTENSION_DIR_ENV: &str = "SPATIAL_EXTENSION_DIR";
 const SPATIAL_EXTENSION_FILENAME: &str = "spatial.duckdb_extension";
 const DEFAULT_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "extensions/spatial.duckdb_extension";
 const DEV_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "backend/extensions/spatial.duckdb_extension";
+const WAL_RECOVERY_STRICT_ENV: &str = "WAL_RECOVERY_STRICT";
 
 #[cfg(feature = "embed-spatial-extension")]
 const SPATIAL_EXTENSION_CACHE_DIR_ENV: &str = "SPATIAL_EXTENSION_CACHE_DIR";
@@ -28,30 +29,29 @@ static EMBEDDED_SPATIAL_EXTENSION: &[u8] = include_bytes!(concat!(
     "/extensions/spatial.duckdb_extension"
 ));
 
-fn open_with_wal_recovery(db_path: &Path) -> duckdb::Connection {
+fn open_with_wal_recovery(db_path: &Path) -> Result<duckdb::Connection, String> {
     match duckdb::Connection::open(db_path) {
-        Ok(conn) => conn,
+        Ok(conn) => Ok(conn),
         Err(e) => {
             let err_str = e.to_string();
-            if err_str.contains("replaying WAL") || err_str.contains("WAL file") {
-                let wal_path = db_path.with_extension("duckdb.wal");
-                tracing::warn!(
-                    wal_path = %wal_path.display(),
-                    error = %err_str,
-                    "Corrupt WAL detected, removing and retrying"
-                );
-                if let Err(remove_err) = std::fs::remove_file(&wal_path) {
-                    tracing::error!(
-                        wal_path = %wal_path.display(),
-                        error = %remove_err,
-                        "Failed to remove corrupt WAL file"
-                    );
-                }
-                duckdb::Connection::open(db_path)
-                    .expect("Failed to open database after WAL cleanup")
-            } else {
-                panic!("Failed to open database: {}", e);
+            if !is_wal_related_open_error(&err_str) {
+                return Err(format!(
+                    "DB open failed with non-WAL error: {}; db_path={}",
+                    err_str,
+                    db_path.display()
+                ));
             }
+
+            if wal_recovery_strict_mode() {
+                return Err(format!(
+                    "WAL recovery strict mode enabled; refusing automatic WAL isolation. \
+                     db_path={}, error={}",
+                    db_path.display(),
+                    err_str
+                ));
+            }
+
+            recover_after_wal_open_error(db_path, &err_str)
         }
     }
 }
@@ -71,7 +71,13 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         std::fs::create_dir_all(parent).expect("Failed to create database directory");
     }
 
-    let conn = open_with_wal_recovery(db_path);
+    let conn = open_with_wal_recovery(db_path).unwrap_or_else(|e| {
+        panic!(
+            "Failed to open database with WAL recovery. db_path={}, error={}",
+            db_path.display(),
+            e
+        )
+    });
 
     ensure_spatial_extension(&conn).expect("Failed to install and load spatial extension");
 
@@ -201,6 +207,144 @@ fn append_unique_path(candidates: &mut Vec<PathBuf>, path: PathBuf) {
     if !candidates.iter().any(|existing| existing == &path) {
         candidates.push(path);
     }
+}
+
+fn wal_recovery_strict_mode() -> bool {
+    std::env::var(WAL_RECOVERY_STRICT_ENV)
+        .ok()
+        .map(|raw| {
+            matches!(
+                raw.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn build_appended_wal_path(db_path: &Path) -> PathBuf {
+    let mut wal_name = OsString::from(db_path.as_os_str());
+    wal_name.push(".wal");
+    PathBuf::from(wal_name)
+}
+
+fn candidate_wal_paths(db_path: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    append_unique_path(&mut candidates, build_appended_wal_path(db_path));
+    append_unique_path(&mut candidates, db_path.with_extension("duckdb.wal"));
+    candidates
+}
+
+fn find_existing_wal_path(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates.iter().find(|path| path.exists()).cloned()
+}
+
+fn recover_after_wal_open_error(
+    db_path: &Path,
+    err_str: &str,
+) -> Result<duckdb::Connection, String> {
+    let wal_candidates = candidate_wal_paths(db_path);
+    let wal_candidates_for_log = wal_candidates
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    tracing::warn!(
+        db_path = %db_path.display(),
+        error = %err_str,
+        wal_candidates = ?wal_candidates_for_log,
+        "WAL-related database open failure detected"
+    );
+
+    let wal_path = find_existing_wal_path(&wal_candidates).ok_or_else(|| {
+        format!(
+            "WAL-related error but no WAL file found in candidates. db_path={}, \
+             candidates={:?}, error={}",
+            db_path.display(),
+            wal_candidates_for_log,
+            err_str
+        )
+    })?;
+
+    let backup_path = isolate_wal_file(&wal_path).map_err(|isolate_err| {
+        format!(
+            "Failed to isolate WAL file before retry. db_path={}, wal_path={}, error={}",
+            db_path.display(),
+            wal_path.display(),
+            isolate_err
+        )
+    })?;
+
+    tracing::warn!(
+        db_path = %db_path.display(),
+        wal_path = %wal_path.display(),
+        wal_backup_path = %backup_path.display(),
+        "Isolated WAL file; retrying database open"
+    );
+
+    duckdb::Connection::open(db_path).map_err(|retry_err| {
+        format!(
+            "Database open still failed after WAL isolation. db_path={}, wal_path={}, \
+             wal_backup_path={}, original_error={}, retry_error={}",
+            db_path.display(),
+            wal_path.display(),
+            backup_path.display(),
+            err_str,
+            retry_err
+        )
+    })
+}
+
+fn build_wal_backup_path(wal_path: &Path) -> PathBuf {
+    let timestamp_millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let mut backup_name = OsString::from(wal_path.as_os_str());
+    backup_name.push(format!(".bak.{}", timestamp_millis));
+    PathBuf::from(backup_name)
+}
+
+fn isolate_wal_file(wal_path: &Path) -> Result<PathBuf, String> {
+    let backup_path = build_wal_backup_path(wal_path);
+    match std::fs::rename(wal_path, &backup_path) {
+        Ok(_) => return Ok(backup_path),
+        Err(rename_err) => {
+            tracing::warn!(
+                wal_path = %wal_path.display(),
+                wal_backup_path = %backup_path.display(),
+                error = %rename_err,
+                "Failed to rename WAL file, falling back to copy+remove"
+            );
+        }
+    }
+
+    std::fs::copy(wal_path, &backup_path).map_err(|copy_err| {
+        format!(
+            "copy failed from {} to {}: {}",
+            wal_path.display(),
+            backup_path.display(),
+            copy_err
+        )
+    })?;
+
+    std::fs::remove_file(wal_path).map_err(|remove_err| {
+        format!(
+            "remove failed for {} after copy to {}: {}",
+            wal_path.display(),
+            backup_path.display(),
+            remove_err
+        )
+    })?;
+
+    Ok(backup_path)
+}
+
+fn is_wal_related_open_error(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("wal file")
+        || normalized.contains("replaying wal")
+        || (normalized.contains("replay") && normalized.contains("wal"))
+        || normalized.contains("failure while replaying wal file")
+        || normalized.contains("write-ahead log")
 }
 
 #[cfg(feature = "embed-spatial-extension")]
@@ -710,7 +854,89 @@ mod tests {
     }
 
     #[test]
-    fn open_with_wal_recovery_removes_corrupt_wal_and_succeeds() {
+    fn candidate_wal_paths_support_multiple_db_suffixes() {
+        let duckdb_path = Path::new("/tmp/mapflow.duckdb");
+        let duckdb_candidates = candidate_wal_paths(duckdb_path);
+        assert_eq!(
+            duckdb_candidates,
+            vec![PathBuf::from("/tmp/mapflow.duckdb.wal")]
+        );
+
+        let db_path = Path::new("/tmp/mapflow.db");
+        let db_candidates = candidate_wal_paths(db_path);
+        assert_eq!(
+            db_candidates,
+            vec![
+                PathBuf::from("/tmp/mapflow.db.wal"),
+                PathBuf::from("/tmp/mapflow.duckdb.wal"),
+            ]
+        );
+
+        let no_ext_path = Path::new("/tmp/mapflow");
+        let no_ext_candidates = candidate_wal_paths(no_ext_path);
+        assert_eq!(
+            no_ext_candidates,
+            vec![
+                PathBuf::from("/tmp/mapflow.wal"),
+                PathBuf::from("/tmp/mapflow.duckdb.wal"),
+            ]
+        );
+    }
+
+    #[test]
+    fn is_wal_related_open_error_matches_common_variants() {
+        assert!(is_wal_related_open_error(
+            "IO Error: Failure while replaying WAL file \"/tmp/mapflow.duckdb.wal\": Duplicate key"
+        ));
+        assert!(is_wal_related_open_error(
+            "duckdb error: WAL file \"C:\\\\data\\\\mapflow.duckdb.wal\" is corrupted"
+        ));
+        assert!(!is_wal_related_open_error(
+            "IO Error: Permission denied opening main database file"
+        ));
+    }
+
+    #[test]
+    fn recover_after_wal_open_error_supports_non_duckdb_db_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("test.db");
+
+        let conn = duckdb::Connection::open(&db_path).expect("open");
+        conn.execute("CREATE TABLE test (id INTEGER)", [])
+            .expect("create table");
+        conn.execute("INSERT INTO test VALUES (1)", [])
+            .expect("insert");
+        conn.execute("CHECKPOINT", []).expect("checkpoint");
+        drop(conn);
+
+        let wal_path = build_appended_wal_path(&db_path);
+        std::fs::write(&wal_path, b"corrupted wal data").expect("write corrupt wal");
+
+        let conn = recover_after_wal_open_error(
+            &db_path,
+            "IO Error: Failure while replaying WAL file: corrupted input",
+        )
+        .expect("recover open");
+        let one: i64 = conn.query_row("SELECT 1", [], |r| r.get(0)).expect("query");
+        assert_eq!(one, 1);
+
+        let backup_candidates = std::fs::read_dir(temp.path())
+            .expect("read temp dir")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with("test.db.wal.bak."))
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(backup_candidates.len(), 1);
+        assert!(!wal_path.exists());
+    }
+
+    #[test]
+    fn recover_after_wal_open_error_isolates_wal_and_succeeds() {
         let temp = tempfile::tempdir().expect("tempdir");
         let db_path = temp.path().join("test.duckdb");
 
@@ -719,16 +945,33 @@ mod tests {
             .expect("create table");
         conn.execute("INSERT INTO test VALUES (1)", [])
             .expect("insert");
+        conn.execute("CHECKPOINT", []).expect("checkpoint");
         drop(conn);
 
         let wal_path = db_path.with_extension("duckdb.wal");
         std::fs::write(&wal_path, b"corrupted wal data").expect("write corrupt wal");
 
-        let conn = open_with_wal_recovery(&db_path);
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM test", [], |r| r.get(0))
-            .expect("query");
-        assert_eq!(count, 1);
+        let conn = recover_after_wal_open_error(
+            &db_path,
+            "IO Error: Failure while replaying WAL file: corrupted input",
+        )
+        .expect("recover open");
+        let one: i64 = conn.query_row("SELECT 1", [], |r| r.get(0)).expect("query");
+        assert_eq!(one, 1);
+
+        let backup_candidates = std::fs::read_dir(temp.path())
+            .expect("read temp dir")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with("test.duckdb.wal.bak."))
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(backup_candidates.len(), 1);
+        assert!(!wal_path.exists());
     }
 
     #[test]
