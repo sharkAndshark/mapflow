@@ -416,6 +416,12 @@ export default function Preview() {
       return undefined;
     }
 
+    const describeStyle = (style) => ({
+      fill: style?.getFill?.()?.getColor?.() ?? null,
+      strokeColor: style?.getStroke?.()?.getColor?.() ?? null,
+      strokeWidth: style?.getStroke?.()?.getWidth?.() ?? null,
+    });
+
     const getZoomState = () => {
       const map = mapRef.current;
       if (!map) return null;
@@ -437,6 +443,19 @@ export default function Preview() {
         view.setZoom(zoom);
         view.resolveConstraints(0);
         return getZoomState();
+      },
+      getHighlightDebug: () => ({
+        selectedFid: selectedFidRef.current,
+        selectedStyle: describeStyle(selectedStyle),
+        defaultStyle: describeStyle(defaultStyle),
+      }),
+      getStyleForFid: (fid) => {
+        const style = styleFunction({
+          getId: () => fid,
+          get: () => undefined,
+          getProperties: () => ({}),
+        });
+        return describeStyle(style);
       },
     };
 
@@ -503,7 +522,11 @@ export default function Preview() {
       </header>
 
       <div style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden' }}>
-        <div ref={mapElement} style={{ width: '100%', height: '100%', background: '#f5f4f2' }} />
+        <div
+          ref={mapElement}
+          data-testid="preview-map-canvas"
+          style={{ width: '100%', height: '100%', background: '#f5f4f2' }}
+        />
 
         {/* Loading Overlay */}
         {!meta && !error && (
@@ -545,6 +568,7 @@ export default function Preview() {
         {/* Simple Property Inspector Overlay */}
         {tileFormat !== 'png' && (popupContent || popupLoading || popupError) && (
           <div
+            data-testid="feature-inspector"
             style={{
               position: 'absolute',
               top: '20px',

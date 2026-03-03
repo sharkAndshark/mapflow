@@ -203,3 +203,35 @@ verify_tile_content() {
       "$expected_b64_path" < "$tile_path"
   fi
 }
+
+verify_invalid_upload_rejected() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_path="$3"
+
+  smoke_log "verifying invalid upload is rejected: ${file_path}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+    -F "file=@${file_path}" "${base_url}/api/uploads" || true)
+
+  if [ "$http_code" != "400" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected invalid upload status 400, got ${http_code}, body=${body}"
+  fi
+
+  if ! grep -q "Unsupported file type" "$response_file"; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "invalid upload error mismatch: ${body}"
+  fi
+
+  rm -f "$response_file"
+  smoke_log "invalid upload rejected as expected"
+}

@@ -97,6 +97,10 @@ wait_for_ready "$BASE_URL"
 init_if_needed "$BASE_URL" "$COOKIE_JAR"
 login "$BASE_URL" "$COOKIE_JAR"
 
+INVALID_FIXTURE_PATH="${WORK_DIR}/invalid-upload.txt"
+echo "not-a-geospatial-format" > "$INVALID_FIXTURE_PATH"
+verify_invalid_upload_rejected "$BASE_URL" "$COOKIE_JAR" "$INVALID_FIXTURE_PATH"
+
 FILE_ID=$(upload_file "$BASE_URL" "$COOKIE_JAR" "$FIXTURE_PATH")
 smoke_log "uploaded file: ${FILE_ID}"
 

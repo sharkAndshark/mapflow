@@ -326,7 +326,7 @@ function calculateResolutions(bounds, maxZoom = 20) {
 | 文件 | 行号 | 当前实现 | 建议改为 |
 |------|------|---------|---------|
 | `preview.spec.js` | - | ✅ 已移除固定等待 | 使用 `expect.poll()` + 可观测条件 |
-| `zoom-limit.spec.js` | - | ✅ 已移除固定等待 | 使用 `expect.poll()` + API 状态轮询 |
+| `zoom-limit.spec.js` | - | ✅ 已移除固定等待并补齐真实缩放约束验证 | 使用可观测交互 + tile z 层级断言 |
 | `publish.spec.js` | - | ✅ 已移除固定等待 | 使用可观测 UI/接口状态断言 |
 
 ### 缺失的 E2E 测试覆盖 (P2)
@@ -334,14 +334,15 @@ function calculateResolutions(bounds, maxZoom = 20) {
 | 契约 | 缺失验证 |
 |------|---------|
 | UI-001 | ✅ 已补充（2026-03-02）：`frontend/tests/polling.spec.js` 新增 `preview action is hidden before ready and shown after ready` |
-| UI-003 | 特征高亮样式 (rgba(255,200,0,0.7)) 的 E2E 验证 |
+| UI-003 | ✅ 已补充（2026-03-02）：`frontend/tests/preview.spec.js` 新增 `click feature switches highlight style immediately`（点击要素后验证 selected/default 样式切换） |
 | UI-010 | ✅ 已补充（2026-03-02）：`frontend/tests/zoom-limit.spec.js` 新增基于真实缩放交互 + tile z 观测的约束验证 |
 
 ### CI/CD 改进 (P2)
 
 1. **CI 触发降噪**: ✅ 已完成（2026-03-02）  
    `ci.yml` 调整为 `push` 仅 `main` 触发，开发分支通过 `pull_request` 触发；并增加 workflow `concurrency` 自动取消旧 run，减少 PR 期间重复计算
-2. **供应链安全**: DuckDB extension 下载缺少 SHA256 校验
+2. **供应链安全**: ✅ 已完成（2026-03-02）  
+   DuckDB spatial extension 下载链路已增加 archive SHA256 校验（manifest + release 脚本）
 3. **冒烟测试健壮性**: ✅ 已完成（2026-03-02）  
    `scripts/smoke/lib/common.sh` 已为关键 HTTP 调用增加可配置重试（`SMOKE_HTTP_RETRIES` / `SMOKE_HTTP_RETRY_DELAY`），降低网络抖动导致的误报
 
@@ -382,7 +383,8 @@ function calculateResolutions(bounds, maxZoom = 20) {
 待扩展：
 - [ ] Shapefile 上传测试
 - [ ] MBTiles 上传测试（MVT/PNG）
-- [ ] 错误场景：无效格式、超大文件
+- [x] 错误场景：无效格式上传返回 400（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
+- [ ] 错误场景：超大文件（413）
 - [ ] Schema 查询验证
 - [ ] 特征属性端点验证
 - [ ] CRS 更新验证
