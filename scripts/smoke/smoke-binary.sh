@@ -8,6 +8,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 BINARY_PATH=""
 PORT="${SMOKE_PORT:-3000}"
 FIXTURE_PATH="${SMOKE_FIXTURE:-frontend/tests/fixtures/sample.geojson}"
+OVERSIZE_FIXTURE_PATH="${SMOKE_OVERSIZE_FIXTURE:-frontend/tests/fixtures/roads.zip}"
+OVERSIZE_LIMIT_MB="${SMOKE_OVERSIZE_LIMIT_MB:-1}"
 EXPECTED_B64_PATH="${SMOKE_EXPECTED_B64:-}"
 WORK_DIR="${SMOKE_WORK_DIR:-$(mktemp -d)}"
 KEEP_DATA="${SMOKE_KEEP_DATA:-false}"
@@ -20,12 +22,16 @@ Options:
   --binary <path>       Path to mapflow binary (required)
   --port <port>         Port to use (default: 3000)
   --fixture <path>      Test file to upload (default: frontend/tests/fixtures/sample.geojson)
+  --oversize-fixture <path>  Oversize test file (default: frontend/tests/fixtures/roads.zip)
+  --oversize-limit-mb <n>    Temporary upload size limit for oversize check (default: 1)
   --expected-b64 <path> Expected tile base64 file for verification
   --keep-data           Keep test data after completion
 
 Environment:
   SMOKE_PORT            Default port
   SMOKE_FIXTURE         Default fixture path
+  SMOKE_OVERSIZE_FIXTURE Oversize test file path
+  SMOKE_OVERSIZE_LIMIT_MB Temporary upload size limit for oversize check
   SMOKE_EXPECTED_B64    Default expected tile file
   SMOKE_WORK_DIR        Working directory (default: temp dir)
   SMOKE_KEEP_DATA       Keep data if "true"
@@ -38,6 +44,8 @@ while [[ $# -gt 0 ]]; do
     --binary) BINARY_PATH="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --fixture) FIXTURE_PATH="$2"; shift 2 ;;
+    --oversize-fixture) OVERSIZE_FIXTURE_PATH="$2"; shift 2 ;;
+    --oversize-limit-mb) OVERSIZE_LIMIT_MB="$2"; shift 2 ;;
     --expected-b64) EXPECTED_B64_PATH="$2"; shift 2 ;;
     --keep-data) KEEP_DATA="true"; shift ;;
     --help|-h) usage ;;
@@ -55,6 +63,10 @@ fi
 
 if [ ! -f "$FIXTURE_PATH" ]; then
   smoke_fail "fixture not found: ${FIXTURE_PATH}"
+fi
+
+if [ ! -f "$OVERSIZE_FIXTURE_PATH" ]; then
+  smoke_fail "oversize fixture not found: ${OVERSIZE_FIXTURE_PATH}"
 fi
 
 BASE_URL="http://127.0.0.1:${PORT}"
@@ -112,5 +124,14 @@ SLUG=$(publish_file "$BASE_URL" "$COOKIE_JAR" "$FILE_ID")
 smoke_log "published with slug: ${SLUG}"
 
 get_public_tile "$BASE_URL" "$SLUG" 0 0 0 "$PUBLIC_TILE_OUT"
+
+oversize_bytes=$(wc -c < "$OVERSIZE_FIXTURE_PATH" | tr -d ' ')
+oversize_limit_bytes=$((OVERSIZE_LIMIT_MB * 1024 * 1024))
+if [ "$oversize_bytes" -le "$oversize_limit_bytes" ]; then
+  smoke_fail "oversize fixture is not larger than limit (${oversize_bytes} <= ${oversize_limit_bytes})"
+fi
+
+set_upload_max_size_mb "$BASE_URL" "$COOKIE_JAR" "$OVERSIZE_LIMIT_MB"
+verify_oversize_upload_rejected "$BASE_URL" "$COOKIE_JAR" "$OVERSIZE_FIXTURE_PATH"
 
 smoke_log "SUCCESS: all smoke tests passed"

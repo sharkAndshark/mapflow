@@ -15,6 +15,7 @@
 | 7. 获取瓦片 | 私有瓦片返回 MVT |
 | 8. 发布文件 | 公开 slug 分配成功 |
 | 9. 公开瓦片 | 无需认证访问瓦片 |
+| 10. 错误场景 | 超大文件上传返回 413（File too large） |
 
 ## 使用方法
 
@@ -55,6 +56,8 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
 |------|------|--------|
 | `SMOKE_PORT` | 服务端口 | 3000 |
 | `SMOKE_FIXTURE` | 测试文件路径 | `frontend/tests/fixtures/sample.geojson` |
+| `SMOKE_OVERSIZE_FIXTURE` | 超大文件测试路径（需大于限制） | `frontend/tests/fixtures/roads.zip` |
+| `SMOKE_OVERSIZE_LIMIT_MB` | 超大文件测试时临时限制（通过 `/api/settings` 下调） | 1 |
 | `SMOKE_EXPECTED_B64` | 期望瓦片 base64 | (Docker: `testdata/smoke/...`) |
 | `SMOKE_WORK_DIR` | 工作目录 | 临时目录 |
 | `SMOKE_KEEP_DATA` | 保留测试数据 | false |

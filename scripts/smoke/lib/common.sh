@@ -235,3 +235,70 @@ verify_invalid_upload_rejected() {
   rm -f "$response_file"
   smoke_log "invalid upload rejected as expected"
 }
+
+set_upload_max_size_mb() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local max_size_mb="$3"
+
+  smoke_log "setting upload max size to ${max_size_mb} MB"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" -X PATCH \
+    -H "Content-Type: application/json" \
+    -d "{\"maxSizeMb\":${max_size_mb}}" \
+    "${base_url}/api/settings" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "failed to update upload max size, status=${http_code}, body=${body}"
+  fi
+
+  local returned_mb
+  returned_mb=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("maxSizeMb",""))' < "$response_file" 2>/dev/null || true)
+
+  rm -f "$response_file"
+
+  if [ "$returned_mb" != "$max_size_mb" ]; then
+    smoke_fail "upload max size mismatch after update: expected ${max_size_mb}, got ${returned_mb}"
+  fi
+
+  smoke_log "upload max size updated"
+}
+
+verify_oversize_upload_rejected() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_path="$3"
+
+  smoke_log "verifying oversize upload is rejected: ${file_path}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+    -F "file=@${file_path}" "${base_url}/api/uploads" || true)
+
+  if [ "$http_code" != "413" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected oversize upload status 413, got ${http_code}, body=${body}"
+  fi
+
+  if ! grep -q "File too large" "$response_file"; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "oversize upload error mismatch: ${body}"
+  fi
+
+  rm -f "$response_file"
+  smoke_log "oversize upload rejected as expected"
+}

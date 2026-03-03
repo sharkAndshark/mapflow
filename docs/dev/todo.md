@@ -1,6 +1,6 @@
 # Known Issues & TODOs
 
-**Last Updated**: 2026-03-02
+**Last Updated**: 2026-03-03
 
 ## Agent 接管执行清单（2026-03-02）
 
@@ -70,6 +70,12 @@
   - 结果（2026-03-02）：✅ 通过
     - `.github/workflows/ci.yml` 已生效（`lib/api` 分步 + failure rerun）
     - `cargo test --manifest-path backend/Cargo.toml --lib --test api_tests -- --test-threads=1` 全通过（57 + 114）
+- [x] S13: Smoke 覆盖补齐超大文件错误场景（413）
+  - 验证：`smoke-binary` 增加 `/api/settings` 下调上限 + 超限上传断言
+  - 结果（2026-03-03）：✅ 通过
+    - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
+    - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `upload max size to 1 MB` 与 `oversize upload rejected as expected`）
+    - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
 
 ## Known Issues
 
@@ -384,7 +390,7 @@ function calculateResolutions(bounds, maxZoom = 20) {
 - [ ] Shapefile 上传测试
 - [ ] MBTiles 上传测试（MVT/PNG）
 - [x] 错误场景：无效格式上传返回 400（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
-- [ ] 错误场景：超大文件（413）
+- [x] 错误场景：超大文件（413）（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [ ] Schema 查询验证
 - [ ] 特征属性端点验证
 - [ ] CRS 更新验证
