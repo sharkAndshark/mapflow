@@ -885,7 +885,10 @@ pub async fn get_public_url(
 
     let result: Option<(String, String)> = conn
         .query_row(
-            "SELECT pf.slug, pf.published_at FROM published_files pf JOIN files f ON pf.file_id = f.id WHERE f.id = ? AND f.is_public = TRUE",
+            "SELECT pf.slug, COALESCE(pf.tile_source, f.tile_source, 'duckdb')
+             FROM published_files pf
+             JOIN files f ON pf.file_id = f.id
+             WHERE f.id = ? AND f.is_public = TRUE",
             duckdb::params![&id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -894,9 +897,13 @@ pub async fn get_public_url(
     drop(conn);
 
     match result {
-        Some((slug, _published_at)) => Ok(Json(crate::models::PublicTileUrl {
+        Some((slug, tile_source)) => Ok(Json(crate::models::PublicTileUrl {
             slug: slug.clone(),
-            url: format!("/tiles/{slug}/{{z}}/{{x}}/{{y}}"),
+            url: if tile_source == "pmtiles" {
+                format!("/tiles/{slug}")
+            } else {
+                format!("/tiles/{slug}/{{z}}/{{x}}/{{y}}")
+            },
         })),
         None => Err((
             StatusCode::NOT_FOUND,

@@ -67,7 +67,7 @@ build:
 build-embed:
   npm --prefix frontend run build
   just setup-dev
-  cargo build --release --manifest-path backend/Cargo.toml --features embed-web-dist
+  cargo build --release --manifest-path backend/Cargo.toml --features embed-web-dist,embed-spatial-extension
 
 # --- Docker Operations (Explicit) ---
 

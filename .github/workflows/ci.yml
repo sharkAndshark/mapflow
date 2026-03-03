@@ -2,9 +2,32 @@ name: ci
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  backend_compile_clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Backend compile from clean checkout (no pre-downloaded spatial artifact)
+        run: cargo check --manifest-path backend/Cargo.toml --all-targets
+
   backend_fmt:
     runs-on: ubuntu-latest
     steps:
@@ -68,8 +91,29 @@ jobs:
         run: |
           bash scripts/release/spatial_extension_artifact.sh download linux_amd64 backend/extensions/spatial.duckdb_extension
 
-      - name: Backend tests
-        run: cargo test --manifest-path backend/Cargo.toml -- --test-threads=1
+      - name: Lint behaviors references
+        run: bash scripts/ci/lint_behaviors_refs.sh
+
+      - name: Backend lib tests
+        env:
+          MALLOC_ARENA_MAX: "2"
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path backend/Cargo.toml --lib -- --test-threads=1
+
+      - name: Backend api tests
+        env:
+          MALLOC_ARENA_MAX: "2"
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path backend/Cargo.toml --test api_tests -- --test-threads=1
+
+      - name: Backend api tests (diagnostic rerun on failure)
+        if: failure()
+        env:
+          MALLOC_ARENA_MAX: "2"
+          RUST_BACKTRACE: "full"
+        run: |
+          echo "Previous backend test step failed; rerunning api_tests with --nocapture for diagnostics"
+          cargo test --manifest-path backend/Cargo.toml --test api_tests -- --test-threads=1 --nocapture || true
 
   frontend_unit:
     runs-on: ubuntu-latest

@@ -410,6 +410,64 @@ export default function Preview() {
     tileGridLayerRef.current?.setVisible(showTileGrid);
   }, [showTileGrid]);
 
+  // Expose limited map view hooks in E2E mode so tests can assert zoom constraints directly.
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.__MAPFLOW_E2E__ !== true) {
+      return undefined;
+    }
+
+    const describeStyle = (style) => ({
+      fill: style?.getFill?.()?.getColor?.() ?? null,
+      strokeColor: style?.getStroke?.()?.getColor?.() ?? null,
+      strokeWidth: style?.getStroke?.()?.getWidth?.() ?? null,
+    });
+
+    const getZoomState = () => {
+      const map = mapRef.current;
+      if (!map) return null;
+      const view = map.getView();
+      if (!view) return null;
+      return {
+        zoom: view.getZoom(),
+        minZoom: view.getMinZoom(),
+        maxZoom: view.getMaxZoom(),
+      };
+    };
+
+    const previewTestApi = {
+      getZoomState,
+      setZoom: (zoom) => {
+        const map = mapRef.current;
+        if (!map) return null;
+        const view = map.getView();
+        view.setZoom(zoom);
+        view.resolveConstraints(0);
+        return getZoomState();
+      },
+      getHighlightDebug: () => ({
+        selectedFid: selectedFidRef.current,
+        selectedStyle: describeStyle(selectedStyle),
+        defaultStyle: describeStyle(defaultStyle),
+      }),
+      getStyleForFid: (fid) => {
+        const style = styleFunction({
+          getId: () => fid,
+          get: () => undefined,
+          getProperties: () => ({}),
+        });
+        return describeStyle(style);
+      },
+    };
+
+    window.__MAPFLOW_PREVIEW_TEST__ = previewTestApi;
+
+    return () => {
+      if (window.__MAPFLOW_PREVIEW_TEST__ === previewTestApi) {
+        delete window.__MAPFLOW_PREVIEW_TEST__;
+      }
+    };
+  }, []);
+
   return (
     <div
       className="preview-page"
@@ -464,7 +522,11 @@ export default function Preview() {
       </header>
 
       <div style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden' }}>
-        <div ref={mapElement} style={{ width: '100%', height: '100%', background: '#f5f4f2' }} />
+        <div
+          ref={mapElement}
+          data-testid="preview-map-canvas"
+          style={{ width: '100%', height: '100%', background: '#f5f4f2' }}
+        />
 
         {/* Loading Overlay */}
         {!meta && !error && (
@@ -506,6 +568,7 @@ export default function Preview() {
         {/* Simple Property Inspector Overlay */}
         {tileFormat !== 'png' && (popupContent || popupLoading || popupError) && (
           <div
+            data-testid="feature-inspector"
             style={{
               position: 'absolute',
               top: '20px',

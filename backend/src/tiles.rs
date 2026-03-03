@@ -1,6 +1,8 @@
 use duckdb::Connection;
 
-use crate::crs::{calculate_custom_tile_bbox, DataBounds, CRS_TYPE_CUSTOM};
+use crate::crs::{
+    calculate_custom_tile_bbox, normalize_crs, DataBounds, CRS_TYPE_CUSTOM, CRS_TYPE_STANDARD,
+};
 
 pub struct TileParams {
     pub source_crs: String,
@@ -25,6 +27,22 @@ impl From<duckdb::Error> for TileError {
     }
 }
 
+fn validated_transform_source_crs(source_crs: &str) -> Result<String, TileError> {
+    let normalized = normalize_crs(Some(source_crs));
+    if normalized.crs_type != CRS_TYPE_STANDARD {
+        return Err(TileError(format!(
+            "Invalid standard CRS for tile transform: {}",
+            source_crs
+        )));
+    }
+    normalized.crs.ok_or_else(|| {
+        TileError(format!(
+            "Invalid standard CRS for tile transform: {}",
+            source_crs
+        ))
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_mvt_select_sql(
     conn: &Connection,
@@ -36,6 +54,12 @@ pub fn build_mvt_select_sql(
     y: i32,
     use_aliases: bool,
 ) -> Result<String, TileError> {
+    let standard_source_crs = if params.crs_type == CRS_TYPE_CUSTOM {
+        None
+    } else {
+        Some(validated_transform_source_crs(&params.source_crs)?)
+    };
+
     if params.crs_type == CRS_TYPE_CUSTOM {
         match &params.data_bounds {
             None => {
@@ -76,7 +100,7 @@ pub fn build_mvt_select_sql(
             "geom := ST_AsMVTGeom(\n                    geom,\n                    ST_MakeBox2D(ST_Point({minx}, {miny}), ST_Point({maxx}, {maxy})),\n                    4096, 256, true\n                )"
         ));
     } else {
-        let source_crs = &params.source_crs;
+        let source_crs = standard_source_crs.as_ref().unwrap();
         struct_fields.push(format!(
             "geom := ST_AsMVTGeom(\n                    ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),\n                    ST_Extent(ST_TileEnvelope(?, ?, ?)),\n                    4096, 256, true\n                )"
         ));
@@ -105,7 +129,7 @@ pub fn build_mvt_select_sql(
             "SELECT ST_AsMVT(feature, 'layer', 4096, 'geom', 'fid') FROM (\n                SELECT {struct_expr} as feature\n                FROM \"{table_name}\"\n                WHERE ST_Intersects(\n                    geom,\n                    ST_MakeEnvelope(?, ?, ?, ?)\n                )\n            )"
         ))
     } else {
-        let source_crs = &params.source_crs;
+        let source_crs = standard_source_crs.as_ref().unwrap();
         Ok(format!(
             "SELECT ST_AsMVT(feature, 'layer', 4096, 'geom', 'fid') FROM (\n                SELECT {struct_expr} as feature\n                FROM \"{table_name}\"\n                WHERE ST_Intersects(\n                    ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),\n                    ST_TileEnvelope(?, ?, ?)\n                )\n            )"
         ))
@@ -139,5 +163,58 @@ pub fn build_mvt_query_params(
             Box::new(x),
             Box::new(y),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_conn_for_sql_build() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE dataset_columns (
+                source_id VARCHAR,
+                normalized_name VARCHAR,
+                original_name VARCHAR,
+                alias VARCHAR,
+                ordinal INTEGER
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO dataset_columns (source_id, normalized_name, original_name, alias, ordinal)
+             VALUES ('src_1', 'name', 'name', NULL, 1)",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_build_mvt_select_sql_normalizes_standard_crs() {
+        let conn = setup_conn_for_sql_build();
+        let params = TileParams {
+            source_crs: "epsg:4326".to_string(),
+            crs_type: "standard".to_string(),
+            data_bounds: None,
+        };
+
+        let sql = build_mvt_select_sql(&conn, "src_1", "table_a", &params, 0, 0, 0, false).unwrap();
+        assert!(sql.contains("ST_Transform(geom, 'EPSG:4326', 'EPSG:3857', always_xy := true)"));
+    }
+
+    #[test]
+    fn test_build_mvt_select_sql_rejects_invalid_standard_crs() {
+        let conn = setup_conn_for_sql_build();
+        let params = TileParams {
+            source_crs: "EPSG:4326'); DROP TABLE files; --".to_string(),
+            crs_type: "standard".to_string(),
+            data_bounds: None,
+        };
+
+        let err = build_mvt_select_sql(&conn, "src_1", "table_a", &params, 0, 0, 0, false)
+            .expect_err("invalid standard CRS should be rejected");
+        assert!(err.0.contains("Invalid standard CRS for tile transform"));
     }
 }

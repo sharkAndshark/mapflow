@@ -34,59 +34,59 @@
 | ID | 模块 | 可观测行为 | 验证标准 | 验证命令 | 层级 | 优先级 |
 |----|------|-----------|---------|---------|------|--------|
 | CLI-001 | 服务启动 | 支持 `--listen [host]:port` 和 `LISTEN` 环境变量。`:port` 表示监听所有接口。CLI 优先于环境变量。默认 `:3000` | 绑定到指定地址 | `cargo test test_listen_*` | Unit | P1 |
-| CLI-002 | 端口回退 | 端口被占用时自动尝试 port+1 至 `--listen-max-port`。日志：`Listening on http://0.0.0.0:{actual_port}` | 日志显示实际端口 | `cargo test test_port_fallback` | Unit | P1 |
+| CLI-002 | 端口回退 | 端口被占用时自动尝试 port+1 至 `--listen-max-port`。日志：`Listening on http://0.0.0.0:{actual_port}` | 日志显示实际端口 | `cargo test test_port_fallback_*` | Unit | P1 |
 | CLI-003 | 端口耗尽 | 所有端口不可用时 panic：`No available port in range {start}-{end}` | panic 信息清晰 | `cargo test test_port_exhausted` | Unit | P2 |
 | CLI-004 | Windows 托盘启动 | Windows 双击运行时：无控制台窗口，托盘图标显示，"打开 Web 界面"打开浏览器，"退出"触发优雅关闭 + checkpoint | 手动测试清单 | Manual | P2 |
 | API-001 | 上传 | POST /api/uploads 需要认证，接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 201 + 元数据 / 400（格式无效） / 401（未认证） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
-| API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | lifecycle tests 轮询验证 | Integration | P0 |
-| API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | lifecycle tests + `test_preview_not_ready_returns_409` | Integration | P0 |
-| API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证。动态生成返回 MVT（Web Mercator 投影）；MBTiles 返回 MVT 或 PNG。空瓦片（无几何数据）返回 204 No Content | 200 + MVT/PNG / 204（空瓦片） / 401 / 400 / 404 / 409 | `cargo test test_tiles_*` | Integration | P0 |
-| API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回 `{fid,properties:[{key,value,alias?}]}`，alias 为字段别名（可选），NULL 值保留，按 ordinal 排序。MBTiles 文件不支持特征属性，返回 400 | 200 / 400（MBTiles） / 401 / 404 / 409 | `cargo test test_features_*` | Integration | P0 |
+| API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | `cargo test test_upload_geojson_lifecycle test_upload_shapefile_zip_lifecycle` | Integration | P0 |
+| API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | `cargo test test_preview_not_ready_returns_409 test_mbtiles_preview_includes_bounds test_dynamic_table_preview_returns_null_zoom` | Integration | P0 |
+| API-004 | Tile 瓦片 | GET /api/files/:id/tiles/:z/:x/:y 需要认证。动态生成返回 MVT（Web Mercator 投影）；MBTiles 返回 MVT 或 PNG。空瓦片（无几何数据）返回 204 No Content | 200 + MVT/PNG / 204（空瓦片） / 401 / 400 / 404 / 409 | `cargo test test_tile_invalid_coords_returns_400 test_tile_not_ready_returns_409 test_mbtiles_tile_returns_correct_format test_mbtiles_empty_tile_returns_204` | Integration | P0 |
+| API-005 | 特征属性 | GET /api/files/:id/features/:fid 需要认证，返回 `{fid,properties:[{key,value,alias?}]}`，alias 为字段别名（可选），NULL 值保留，按 ordinal 排序。MBTiles 文件不支持特征属性，返回 400 | 200 / 400（MBTiles） / 401 / 404 / 409 | `cargo test test_feature_properties_endpoint_returns_null_for_missing_values test_mbtiles_feature_properties_returns_400 test_feature_properties_returns_alias` | Integration | P0 |
 | API-006 | Schema 查询 | GET /api/files/:id/schema 需要认证，返回 `{layers:[{id,description?,fields:[{name,type,alias?,normalized?}]}]}`，type 为 MVT 兼容类型，alias 为字段别名（可选），normalized 为标准化字段名（可选），按 ordinal 排序，仅 ready 状态可访问。MBTiles 文件从 metadata.json 提取图层信息，栅格瓦片返回空数组，普通数据集返回默认图层 | 200 + layers[] / 401 / 404 / 409 | `cargo test test_schema_*` | Integration | P1 |
 | API-007 | 发布文件 | POST /api/files/:id/publish 需要认证，设置 `is_public=TRUE` 并分配 `public_slug`，可选自定义 slug（默认文件 ID）、minZoom/maxZoom（仅动态数据）、useAliases（默认 true）。useAliases 控制公开切片是否使用字段别名作为属性键。返回公开 URL 模板 | 200 + `{url,slug,isPublic,useAliases?}` / 400（slug 无效/冲突） / 401 / 404 / 409 | `cargo test test_publish_*` | Integration | P0 |
 | API-008 | 取消发布 | POST /api/files/:id/unpublish 需要认证，设置 `is_public=FALSE` 并清空 `public_slug` | 200 / 401 / 404 | `cargo test test_unpublish_*` | Integration | P0 |
 | API-009 | 公开地址 | GET /api/files/:id/public-url 需要认证，返回当前文件的公开 URL 模板 | 200 + `{slug,url}` / 401 / 404 | `cargo test test_public_url_*` | Integration | P1 |
 | API-011 | 更新CRS | PUT /api/files/:id/crs 需要认证，更新文件的坐标系定义。请求体 `{crs: string}`（必填），空字符串设为 null 并标记为 custom。自动归一化并更新 crs_type（支持 `EPSG:XXXX` 与 `urn:ogc:def:crs:EPSG::XXXX`） | 200 + `{id,crs,crsType}` / 400（缺少crs） / 401 / 404 / 409（非ready） | `cargo test test_update_crs_*` | Integration | P1 |
 | API-010 | 公开瓦片 | GET /tiles/:slug/:z/:x/:y **无需认证**，验证 `public_slug` 存在且 `is_public=TRUE`。动态生成返回 MVT（属性键根据 useAliases 设置决定使用别名或原始名称）；MBTiles 返回 MVT 或 PNG。空瓦片返回 204 No Content | 200 + MVT/PNG / 204（空瓦片） / 400 / 404 | `cargo test test_public_tiles_*` + `cargo test test_public_tile_uses_alias` | Integration | P0 |
-| API-012 | 公开PMTiles | GET /tiles/:slug **无需认证**，PMTiles HTTP Range 代理。处理 Range 请求头，返回对应字节范围。支持 `HEAD` 检测文件大小。PMTiles 格式单文件包含所有瓦片和元数据 | 206（Partial Content）/ 200（HEAD）/ 404 / 416（Range Invalid） | `cargo test test_pmtiles_*` | Integration | P0 |
-| API-013 | 公开瓦片元数据 | GET /tiles/:slug/meta **无需认证**，返回公开瓦片的完整元数据：slug, name, tileSource, tileUrl, viewerUrl, crs, crsType（"standard"或"custom"）, bbox（WGS84；优先使用 tile_bounds，标准 CRS 动态数据会实时计算范围）, dataBounds（custom CRS时）, tileFormat（"mvt"或"png"）, minZoom, maxZoom | 200 + `{slug,name,tileSource,tileUrl,viewerUrl,crs?,crsType,bbox?,dataBounds?,tileFormat?,minZoom?,maxZoom?}` / 404 | `cargo test test_pmtiles_meta_* test_public_tile_meta_includes_zoom` | Integration | P0 |
+| API-012 | 公开PMTiles | GET /tiles/:slug **无需认证**，PMTiles HTTP Range 代理。处理 Range 请求头，返回对应字节范围。支持 `HEAD` 检测文件大小。PMTiles 格式单文件包含所有瓦片和元数据 | 206（Partial Content）/ 200（HEAD）/ 404 / 416（Range Invalid） | `cargo test test_pmtiles_upload_and_publish test_pmtiles_range_request test_pmtiles_range_request_with_relative_upload_dir` | Integration | P0 |
+| API-013 | 公开瓦片元数据 | GET /tiles/:slug/meta **无需认证**，返回公开瓦片的完整元数据：slug, name, tileSource, tileUrl, viewerUrl, crs, crsType（"standard"或"custom"）, bbox（WGS84；优先使用 tile_bounds，标准 CRS 动态数据会实时计算范围）, dataBounds（custom CRS时）, tileFormat（"mvt"或"png"）, minZoom, maxZoom | 200 + `{slug,name,tileSource,tileUrl,viewerUrl,crs?,crsType,bbox?,dataBounds?,tileFormat?,minZoom?,maxZoom?}` / 404 | `cargo test test_pmtiles_meta_endpoint test_pmtiles_meta_for_duckdb_file test_public_tile_meta_includes_zoom` | Integration | P0 |
 | API-014 | 健康检查 | GET /health **无需认证**，返回服务状态 | 200 + `{status:"ok"}` | `cargo test test_health_check` | Integration | P2 |
 | API-015 | 字段别名更新 | PATCH /api/files/:id/field-aliases 需要认证，更新数据集字段的显示别名。别名用于 MVT 瓦片属性键，发布后可在地图上显示自定义字段名。验证：别名不能为空字符串，最大 255 字符。仅 ready 状态可修改 | 200 + `{success:true}` / 400（空别名/超长/字段不存在） / 401 / 404 / 409 | `cargo test test_update_field_aliases_*` | Integration | P1 |
 | API-016 | 更新发布设置 | PATCH /api/files/:id/publish-settings 需要认证，更新已发布文件的设置。目前支持 useAliases（控制公开切片是否使用字段别名）。仅已发布文件可修改 | 200 + `{id,useAliases}` / 400（未发布） / 401 / 404 | `cargo test test_update_publish_settings_*` | Integration | P1 |
 | API-017 | 系统设置 | GET/PATCH /api/settings 需要认证。GET 返回 `{maxSizeMb}`。PATCH 仅 admin 可用，更新上传大小限制（最小 1MB），持久化到 system_settings 表，重启后保留 | 200 + `{maxSizeMb}` / 400（值无效） / 401 / 403（非admin） | `cargo test test_get_settings_* test_update_settings_*` | Integration | P1 |
-| AUTH-001 | 首次设置 | POST /api/auth/init 创建初始管理员 | 200 / 400 / 409 / 500 | `npm run test:e2e` | E2E | P0 |
-| AUTH-002 | 登录 | POST /api/auth/login 验证凭证，设置会话 | 200 / 401 / 500 | `npm run test:e2e` | E2E | P0 |
-| AUTH-003 | 登出 | POST /api/auth/logout 清除会话 | 204 / 500 | `npm run test:e2e` | E2E | P0 |
-| AUTH-004 | 检查状态 | GET /api/auth/check 返回当前用户 | 200 / 401 | `npm run test:e2e` | E2E | P0 |
-| STORE-001 | 文件存储 | 原始文件存储在 `./uploads/<id>/`（由 UPLOAD_DIR 控制） | 文件存在且路径正确 | `cargo test test_storage_*` | Integration | P0 |
-| STORE-002 | 数据库 Schema | DuckDB 表 files（元数据）、dataset_columns（列映射）、每个数据集的表（空间数据） | 表结构存在，数据可查询 | `pytest test_db_schema` | Unit | P0 |
-| STORE-003 | 状态机 | 任务状态遵循 uploading → uploaded → processing → ready/failed 生命周期，processing 任务在重启时标记为 failed | 数据库状态转换合法，无非法转换 | `pytest test_state_machine` | Unit | P0 |
-| UI-001 | 预览可用性 | UI 仅在 status=ready 时显示"查看"按钮（位于文件行操作区），点击在新窗口打开地图预览 | 按钮状态正确 | `npm run test:e2e` | E2E | P0 |
-| UI-002 | 特征检查器 | 显示基于数据集 schema 的稳定属性字段，NULL 值显示为 `--`（斜体、静音），空字符串显示为 `""`（悬停区分） | NULL 和空字符串正确区分 | `npm run test:e2e` | E2E | P0 |
-| UI-003 | 特征高亮 | 在预览地图中点击特征时，被选中的特征会立即以黄色高亮显示（填充：rgba(255,200,0,0.7)，描边：#ffc800，宽度4px），未选中特征保持蓝色（填充：rgba(0,128,255,0.6)，描边：#0080ff，宽度2px） | 点击后特征样式立即切换，无需缩放或移动地图 | `npm run test:e2e` | E2E | P0 |
+| AUTH-001 | 首次设置 | POST /api/auth/init 创建初始管理员 | 200 / 400 / 409 / 500 | `frontend/tests/auth.spec.js` | E2E | P0 |
+| AUTH-002 | 登录 | POST /api/auth/login 验证凭证，设置会话 | 200 / 401 / 500 | `frontend/tests/auth.spec.js` | E2E | P0 |
+| AUTH-003 | 登出 | POST /api/auth/logout 清除会话 | 204 / 500 | `frontend/tests/auth.spec.js` | E2E | P0 |
+| AUTH-004 | 检查状态 | GET /api/auth/check 返回当前用户 | 200 / 401 | `frontend/tests/auth.spec.js` | E2E | P0 |
+| STORE-001 | 文件存储 | 原始文件存储在 `./uploads/<id>/`（由 UPLOAD_DIR 控制） | 文件存在且路径正确 | `cargo test test_upload_geojson_lifecycle test_upload_shapefile_zip_lifecycle test_pmtiles_range_request_with_relative_upload_dir` | Integration | P0 |
+| STORE-002 | 数据库 Schema | DuckDB 表 files（元数据）、dataset_columns（列映射）、每个数据集的表（空间数据） | 表结构存在，数据可查询 | `cargo test test_users_schema test_sessions_schema test_system_settings_schema test_schema_endpoint_returns_fields_and_types` | Unit | P0 |
+| STORE-003 | 状态机 | 任务状态遵循 uploading → uploaded → processing → ready/failed 生命周期，processing 任务在重启时标记为 failed | 数据库状态转换合法，无非法转换 | `cargo test test_startup_reconciliation_marks_processing_as_failed` | Unit | P0 |
+| UI-001 | 预览可用性 | UI 仅在 status=ready 时显示"查看"按钮（位于文件行操作区），点击在新窗口打开地图预览 | 按钮状态正确 | `frontend/tests/preview.spec.js frontend/tests/polling.spec.js` | E2E | P0 |
+| UI-002 | 特征检查器 | 显示基于数据集 schema 的稳定属性字段，NULL 值显示为 `--`（斜体、静音），空字符串显示为 `""`（悬停区分） | NULL 和空字符串正确区分 | `frontend/tests/preview.spec.js frontend/tests/unit/featureInspectorFormat.test.js` | E2E | P0 |
+| UI-003 | 特征高亮 | 在预览地图中点击特征时，被选中的特征会立即以黄色高亮显示（填充：rgba(255,200,0,0.7)，描边：#ffc800，宽度4px），未选中特征保持蓝色（填充：rgba(0,128,255,0.6)，描边：#0080ff，宽度2px） | 点击后特征样式立即切换，无需缩放或移动地图 | `frontend/tests/preview.spec.js` | E2E | P0 |
 | UI-004 | 字段信息显示 | Detail Sidebar 的 Fields 选项卡在 status=ready 时显示字段表格（原始名称、别名、类型）。点击别名单元格进入编辑模式，输入框下方显示保存/取消按钮。Enter 保存，Esc 取消，点击其他区域取消编辑。别名输入框最小宽度 80px，可显示至少 15 个字符 | 字段信息正确显示，别名编辑交互正常 | `frontend/tests/field-alias.spec.js` | E2E | P1 |
-| UI-005 | 登录页面 | /login 显示登录表单，验证后跳转 | 跳转成功 | `npm run test:e2e` | E2E | P0 |
-| UI-006 | 首次设置 | /init 显示管理员创建表单 | 表单可提交 | `npm run test:e2e` | E2E | P0 |
-| UI-007 | 路由守卫 | 未认证访问受保护路由跳转登录页 | 自动跳转 | `npm run test:e2e` | E2E | P0 |
-| UI-008 | 文件行操作 | 文件列表每行显示操作按钮（仅 ready 状态）：[查看] [发布] 或 [查看] [复制] [取消发布] | 按钮状态正确 | `npm run test:e2e` | E2E | P0 |
-| UI-009 | 发布弹窗 | 点击"发布"打开模态框，显示文件名、slug 输入框（默认文件 ID）、公开地址预览，提交后更新列表 | 弹窗交互正确 | `npm run test:e2e` | E2E | P0 |
-| UI-010 | 缩放层级限制 | Preview 页面根据 API-003 返回的 minZoom/maxZoom 限制地图缩放。mbtiles 文件使用其元数据的缩放范围；动态表（非 mbtiles）不限制缩放（使用默认范围 0-22） | 地图缩放不超过允许范围 | `npm run test:e2e` | E2E | P1 |
-| UI-011 | Detail Sidebar 选项卡 | Detail Sidebar 包含三个选项卡：Basic Info（基本信息）、Fields（字段表格）、Publish（发布设置）。非 ready 状态时 Fields/Publish 显示提示信息 | 选项卡导航正常，内容切换正确 | `npm run test:e2e` | E2E | P2 |
-| UI-012 | 字段别名显示 | Preview 页面特征检查器显示字段别名。有别名的字段显示为：别名 + 灰色小字原始名；无别名时仅显示原始名。通过 API-005 获取 alias 字段 | 有别名正确显示别名+原始名，无别名仅显示原始名 | `npm run test:e2e` | E2E | P1 |
+| UI-005 | 登录页面 | /login 显示登录表单，验证后跳转 | 跳转成功 | `frontend/tests/auth.spec.js` | E2E | P0 |
+| UI-006 | 首次设置 | /init 显示管理员创建表单 | 表单可提交 | `frontend/tests/auth.spec.js` | E2E | P0 |
+| UI-007 | 路由守卫 | 未认证访问受保护路由跳转登录页 | 自动跳转 | `frontend/tests/auth.spec.js` | E2E | P0 |
+| UI-008 | 文件行操作 | 文件列表每行显示操作按钮（仅 ready 状态）：[查看] [发布] 或 [查看] [复制] [取消发布] | 按钮状态正确 | `frontend/tests/publish.spec.js` | E2E | P0 |
+| UI-009 | 发布弹窗 | 点击"发布"打开模态框，显示文件名、slug 输入框（默认文件 ID）、公开地址预览，提交后更新列表 | 弹窗交互正确 | `frontend/tests/publish.spec.js` | E2E | P0 |
+| UI-010 | 缩放层级限制 | Preview 页面根据 API-003 返回的 minZoom/maxZoom 限制地图缩放。mbtiles 文件使用其元数据的缩放范围；动态表（非 mbtiles）不限制缩放（使用默认范围 0-22） | 地图缩放不超过允许范围 | `frontend/tests/zoom-limit.spec.js` | E2E | P1 |
+| UI-011 | Detail Sidebar 选项卡 | Detail Sidebar 包含三个选项卡：Basic Info（基本信息）、Fields（字段表格）、Publish（发布设置）。非 ready 状态时 Fields/Publish 显示提示信息 | 选项卡导航正常，内容切换正确 | `frontend/tests/field-alias.spec.js frontend/tests/publish.spec.js` | E2E | P2 |
+| UI-012 | 字段别名显示 | Preview 页面特征检查器显示字段别名。有别名的字段显示为：别名 + 灰色小字原始名；无别名时仅显示原始名。通过 API-005 获取 alias 字段 | 有别名正确显示别名+原始名，无别名仅显示原始名 | `frontend/tests/field-alias.spec.js` | E2E | P1 |
 | UI-013 | 瓦片文档页 | /tiles/:slug/docs **无需认证**，显示已发布瓦片服务的完整文档：服务URL（可复制）、配置信息、OpenLayers代码示例、实时地图预览。支持标准CRS和自定义CRS | 文档正确显示，代码可复制，地图预览正常加载 | 手动验证 | E2E | P2 |
-| E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
-| E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
+| E2E-001 | 完整上传（GeoJSON） | 上传 .geojson → 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `frontend/tests/upload.spec.js frontend/tests/preview.spec.js` | E2E | P0 |
+| E2E-002 | 完整上传（Shapefile） | 上传 .zip（.shp/.shx/.dbf）→ 列表更新 → ready → 详情可访问 → 预览打开地图 | 端到端流程成功 | `frontend/tests/upload.spec.js` | E2E | P0 |
 | E2E-003 | 完整上传（GeoJSONSeq） | 上传 .geojsonl → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `frontend/tests/upload-formats.spec.js` | E2E | P0 |
 | E2E-004 | 完整上传（KML） | 上传 .kml → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | `cargo test test_upload_kml_lifecycle` | Integration | P0 |
 | E2E-005 | 完整上传（GPX） | 上传 .gpx → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | 格式验证通过（GDAL 解析层） | Integration | P2 |
 | E2E-006 | 完整上传（TopoJSON） | 上传 .topojson → 列表更新 → ready → schema 查询 → 瓦片端点验证成功 | 端到端流程成功 | 格式验证通过（GDAL 解析层） | Integration | P2 |
 | E2E-006a | 完整上传（MBTiles MVT） | 上传 .mbtiles（矢量） → 列表更新 → ready → preview 返回 bounds 和 tile_format=mvt → 瓦片端点返回 MVT 格式 | 端到端流程成功 | `cargo test test_upload_mbtiles_success` | Integration | P0 |
 | E2E-006b | 完整上传（MBTiles PNG） | 上传 .mbtiles（栅格） → 列表更新 → ready → preview 返回 bounds 和 tile_format=png → 瓦片端点返回 PNG 格式 → 前端禁用特征交互 | 端到端流程成功 | `cargo test test_mbtiles_tile_returns_correct_format` | Integration | P0 |
-| E2E-007 | 重启持久化 | 重启后之前上传的文件仍可访问 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
-| E2E-008 | 预览集成 | 点击预览 → 新标签页打开 → 地图加载 → 瓦片请求成功（200 OK 且非空） | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
-| E2E-009 | 认证流程 | 首次访问 → 设置 → 登录 → 使用 → 登出 | 状态正确 | `npm run test:e2e` | E2E | P0 |
-| E2E-010 | 发布流程 | 上传文件 → ready → 点击发布 → 自定义 slug → 确认 → 复制公开地址 → 无需认证访问瓦片 | 端到端流程成功 | `npm run test:e2e` | E2E | P0 |
-| CI-001 | 冒烟测试 | 构建 Docker/二进制 → 上传 GeoJSON → 等待 ready → 获取瓦片 → 发布 → 公开瓦片 | 与 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64 比较字节 | `scripts/smoke/smoke-docker.sh` / `scripts/smoke/smoke-binary.sh` (release/nightly only) | Integration | P1 |
+| E2E-007 | 重启持久化 | 重启后之前上传的文件仍可访问 | 端到端流程成功 | `cargo test test_persistence_across_restart_keeps_ready_dataset` | E2E | P0 |
+| E2E-008 | 预览集成 | 点击预览 → 新标签页打开 → 地图加载 → 瓦片请求成功（200 OK 且非空） | 端到端流程成功 | `frontend/tests/preview.spec.js` | E2E | P0 |
+| E2E-009 | 认证流程 | 首次访问 → 设置 → 登录 → 使用 → 登出 | 状态正确 | `frontend/tests/auth.spec.js` | E2E | P0 |
+| E2E-010 | 发布流程 | 上传文件 → ready → 点击发布 → 自定义 slug → 确认 → 复制公开地址 → 无需认证访问瓦片 | 端到端流程成功 | `frontend/tests/publish.spec.js` | E2E | P0 |
+| CI-001 | 冒烟测试 | 构建 Docker/二进制 → 上传 GeoJSON → 等待 ready → 获取瓦片 → 发布 → 公开瓦片。关键 HTTP 调用具备重试能力（降低网络抖动误报） | 与 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64 比较字节 | `scripts/smoke/smoke-docker.sh` / `scripts/smoke/smoke-binary.sh` (release/nightly only) | Integration | P1 |
 | CI-002 | Nightly 发布 | Nightly 工作流每日触发，先执行 verify + smoke，再发布二进制 bundle 和 GHCR nightly 镜像标签 | 生成 prerelease，包含 Linux/macOS bundle；镜像标签包含 nightly、日期、sha | `.github/workflows/nightly.yml` | Delivery | P1 |
 | CI-003 | Stable 发布 | `v*` tag 工作流先执行 verify + smoke，再发布二进制 bundle 和 GHCR stable 镜像标签 | 生成 release，包含 Linux/macOS bundle；镜像标签包含版本号和 latest | `.github/workflows/release.yml` | Delivery | P1 |
 | CI-004 | 离线扩展打包 | 发布流程按目标平台下载 DuckDB spatial extension；Docker 镜像写入 `/app/extensions/`，二进制 bundle 在构建时内嵌 extension | 镜像内存在 `/app/extensions/spatial.duckdb_extension`；bundle 仅含可执行文件但可离线启动并成功加载 spatial | `scripts/release/spatial_extension_artifact.sh` | Delivery | P1 |
