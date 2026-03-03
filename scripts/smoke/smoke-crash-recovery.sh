@@ -15,6 +15,7 @@ CORRUPT_WAL_AFTER_KILL="${SMOKE_CORRUPT_WAL_AFTER_KILL:-true}"
 DB_PATH_FILE="${WORK_DIR}/data/mapflow.duckdb"
 UPLOADS_DIR="${WORK_DIR}/uploads"
 COOKIE_JAR="${WORK_DIR}/cookies.txt"
+RESTART_COOKIE_JAR="${WORK_DIR}/cookies-restart.txt"
 BASE_URL="http://127.0.0.1:${PORT}"
 FIRST_LOG="${WORK_DIR}/server-first.log"
 SECOND_LOG="${WORK_DIR}/server-second.log"
@@ -128,11 +129,13 @@ fi
 
 start_server "$SECOND_LOG"
 wait_for_ready "$BASE_URL"
-login "$BASE_URL" "$COOKIE_JAR"
+rm -f "$RESTART_COOKIE_JAR"
+init_if_needed "$BASE_URL" "$RESTART_COOKIE_JAR"
+login "$BASE_URL" "$RESTART_COOKIE_JAR"
 
 FILES_JSON="${WORK_DIR}/files-after-restart.json"
-curl_with_retry -fsS -b "$COOKIE_JAR" "${BASE_URL}/api/files" > "$FILES_JSON"
-python3 - "$FILES_JSON" "$FILE_ID" <<'PY'
+curl_with_retry -fsS -b "$RESTART_COOKIE_JAR" "${BASE_URL}/api/files" > "$FILES_JSON"
+pre_crash_file_visibility=$(python3 - "$FILES_JSON" "$FILE_ID" <<'PY'
 import json
 import sys
 
@@ -143,13 +146,20 @@ with open(path, "r", encoding="utf-8") as f:
 if not isinstance(data, list):
     raise SystemExit("expected /api/files to return a JSON array")
 
+found = False
 for item in data:
     if item.get("id") == expected_id:
-        print(item.get("status", "unknown"))
-        raise SystemExit(0)
+        found = True
+        break
 
-raise SystemExit(f"uploaded file not found after restart: {expected_id}")
+print("present" if found else "missing")
 PY
+)
+smoke_log "pre-crash file visibility after restart: ${pre_crash_file_visibility}"
+
+POST_CRASH_FILE_ID=$(upload_file "$BASE_URL" "$RESTART_COOKIE_JAR" "$FIXTURE_PATH")
+smoke_log "uploaded file after recovery: ${POST_CRASH_FILE_ID}"
+wait_for_status "$BASE_URL" "$RESTART_COOKIE_JAR" "$POST_CRASH_FILE_ID" ready
 
 backup_count=$(find "$(dirname "$DB_PATH_FILE")" -maxdepth 1 -name "$(basename "$DB_PATH_FILE").wal.bak.*" | wc -l | tr -d ' ')
 smoke_log "WAL backup count after restart: ${backup_count}"
