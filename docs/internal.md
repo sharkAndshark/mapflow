@@ -19,8 +19,9 @@ Windows 桌面集成:
 - 栅格瓦片（PNG）：仅静态显示，禁用交互
 
 **DuckDB Spatial 扩展加载：**
-- 构建时要求 `backend/extensions/spatial.duckdb_extension` 文件存在（dev: `just setup-dev`，CI: 自动下载）
-- 构建时内嵌 extension，启动时解包到本地 cache 目录后加载（支持离线部署）
+- 默认开发构建不强制内嵌 extension（避免 fresh checkout 编译依赖本地二进制工件）
+- release/self-contained 构建启用 `embed-spatial-extension`，并要求 `backend/extensions/spatial.duckdb_extension` 已准备好（dev: `just setup-dev`，CI: 自动下载）
+- 启用嵌入时，启动时解包到本地 cache 目录后加载（支持离线部署）
 - 解包使用原始文件名 `spatial.duckdb_extension`（DuckDB 根据文件名推导入口点），配合 `.checksum` 文件校验缓存
 - cache 内容被清理后，启动时会自动重新解包；可通过 `SPATIAL_EXTENSION_CACHE_DIR` 指定更稳定/更严格权限的目录
 - `backend/extensions/spatial-extension-manifest.json` 与 `Cargo.lock` 版本必须同步（CI 强校验）

@@ -107,6 +107,15 @@
     - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`
     - `bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:ci --port 3321 --fixture frontend/tests/fixtures/roads.zip --expected-b64 /tmp/nonexistent-smoke-expected.b64`
     - 关键日志：`MBTiles preview meta verified` / `MBTiles schema endpoint verified` / `MBTiles feature properties rejection verified` / `public tile meta verified`
+- [x] S19: 恢复 spatial extension 编译期可选嵌入（避免 fresh checkout 构建回归）
+  - 验证：默认构建不依赖 `backend/extensions/spatial.duckdb_extension`；release/self-contained 构建显式启用 `embed-spatial-extension`
+  - 结果（2026-03-03）：✅ 通过
+    - `cargo check --manifest-path backend/Cargo.toml --all-targets`
+    - `cargo check --manifest-path backend/Cargo.toml --features embed-spatial-extension`
+    - `cargo check --manifest-path backend/Cargo.toml --features embed-web-dist,embed-spatial-extension`
+    - `cargo test --manifest-path backend/Cargo.toml resolve_candidates_prefers_explicit_env_path -- --nocapture`
+    - `cargo test --manifest-path backend/Cargo.toml --features embed-spatial-extension write_embedded_spatial_extension_materializes_file -- --nocapture`
+  - 备注：CI 新增 clean-check job（无预下载 extension）用于防止同类回归
 
 ## Known Issues
 
