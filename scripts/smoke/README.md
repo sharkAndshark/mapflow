@@ -28,6 +28,7 @@
 | 20. MBTiles(PNG) Schema 查询 | `/api/files/:id/schema` 返回空图层数组 |
 | 21. MBTiles(PNG) 瓦片类型 | 私有/公开瓦片 `Content-Type: image/png` |
 | 22. 错误场景 | 超大文件上传返回 413（File too large） |
+| 23. Crash Recovery | 强制终止后重启，服务可恢复启动且 API 可用 |
 
 ## 使用方法
 
@@ -70,6 +71,19 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
   --expected-b64 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64
 ```
 
+### Crash Recovery（二进制）
+
+```bash
+# 基本用法
+./scripts/smoke/smoke-crash-recovery.sh --binary ./target/release/backend
+
+# 完整参数
+./scripts/smoke/smoke-crash-recovery.sh \
+  --binary ./target/release/backend \
+  --port 3010 \
+  --fixture frontend/tests/fixtures/sample.geojson
+```
+
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -88,6 +102,8 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
 | `SMOKE_EXPECTED_B64` | 期望瓦片 base64 | (Docker: `testdata/smoke/...`) |
 | `SMOKE_WORK_DIR` | 工作目录 | 临时目录 |
 | `SMOKE_KEEP_DATA` | 保留测试数据 | false |
+| `SMOKE_CRASH_PORT` | crash-recovery 端口 | 3010 |
+| `SMOKE_CORRUPT_WAL_AFTER_KILL` | 崩溃后是否注入损坏 WAL | true |
 | `SMOKE_USERNAME` | 测试用户名 | smoke_admin |
 | `SMOKE_PASSWORD` | 测试密码 | SmokePass1! |
 | `SMOKE_HTTP_RETRIES` | HTTP 请求重试次数（网络抖动缓解） | 3 |
@@ -108,6 +124,12 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
   shell: bash
   run: |
     bash scripts/smoke/smoke-binary.sh \
+      --binary "./target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+
+- name: Smoke test crash recovery
+  shell: bash
+  run: |
+    bash scripts/smoke/smoke-crash-recovery.sh \
       --binary "./target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
 ```
 

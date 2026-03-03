@@ -16,6 +16,33 @@ smoke_fail() {
   exit 1
 }
 
+is_windows_shell() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+force_kill_pid() {
+  local pid="$1"
+  if [ -z "$pid" ]; then
+    return 0
+  fi
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  if is_windows_shell; then
+    powershell.exe -NoProfile -Command "Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue" >/dev/null 2>&1 || true
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  else
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+}
+
 curl_with_retry() {
   local max_retries="$SMOKE_HTTP_RETRIES"
   local delay="$SMOKE_HTTP_RETRY_DELAY"

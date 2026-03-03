@@ -428,6 +428,20 @@ function calculateResolutions(bounds, maxZoom = 20) {
 
 ## Windows Desktop Experience
 
+### Tray + Console 关闭路径设计分析（2026-03-03）
+
+- **结论**：WAL 风险不是 Windows 独有；Windows 特有问题是“托盘模型”和“可直接关闭控制台窗口”并存，导致退出路径不唯一。
+- **现状事实**：
+  - `backend/src/main.rs` 的 Windows 入口仍是控制台进程（未配置 `windows_subsystem = "windows"`），用户可以直接关命令行窗口。
+  - 优雅关闭当前依赖 `Ctrl+C`/tray `Exit` 触发；直接关闭控制台窗口不保证走同一条 checkpoint 路径。
+  - `db::open_with_wal_recovery` 现在是跨平台兜底（WAL 相关 open/replay 错误时隔离并重试），但它只解决“下次能启动”，不能保证“最后一次未 checkpoint 写入不丢”。
+- **自动化覆盖现状**：
+  - `ci.yml` 目前只在 Linux 跑 backend/frontend 测试。
+  - `nightly.yml`/`release.yml` 的 binary smoke 已包含 `windows-latest` 矩阵。
+- **设计方向**：
+  - 推荐将 Windows 桌面发布收敛为单一退出路径：GUI 子系统（无控制台窗口）+ tray Exit。
+  - 同时为开发/CLI 场景保留 console 模式，并补 `CTRL_CLOSE_EVENT` 等控制台关闭信号处理，减少“直接关窗”硬退出窗口。
+
 ### System Tray (Phase 1)
 
 - [ ] 添加 tray-item 依赖（Windows only）
@@ -437,6 +451,10 @@ function calculateResolutions(bounds, maxZoom = 20) {
 - [ ] Windows GUI 子系统配置（无控制台窗口）
 - [ ] 托盘图标（当前为 placeholder，需替换）
 - [ ] 手动测试：托盘退出 → 重启无 WAL 错误
+- [x] WAL 启动恢复加固（跨平台）：WAL 相关 open/replay 错误时备份隔离 `*.wal.bak.<ts>` 并重试；支持非 `.duckdb` 的 `DB_PATH` 推导与 `WAL_RECOVERY_STRICT=1`
+- [x] 新增跨平台 crash-recovery smoke（本地 + workflow）：`启动 -> 写入 -> 强制终止 -> 重启`，断言服务可恢复启动且有明确日志（`scripts/smoke/smoke-crash-recovery.sh` + nightly/release binary matrix）
+- [ ] nightly/release 增加 Windows 强制终止恢复 smoke（PowerShell）并归档故障日志（含 `.wal.bak.*`）
+- [ ] 评估并落地 Windows 双模式启动：`desktop(gui+tray)` 与 `console(dev)`，避免发布形态暴露“直接关控制台”路径
 
 ### Future
 

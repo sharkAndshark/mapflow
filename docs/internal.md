@@ -29,7 +29,7 @@ Windows 桌面集成:
 
 ## 系统韧性
 
-- **启动恢复**：WAL 损坏时自动删除并重试（`db::open_with_wal_recovery`）
+- **启动恢复**：先按 DuckDB 默认流程 replay WAL；若 open/replay 报 WAL 相关错误，则将 WAL 备份为 `*.wal.bak.<ts>` 后重试启动（`db::open_with_wal_recovery`）。可用 `WAL_RECOVERY_STRICT=1` 禁用自动隔离。
 - **优雅关闭**：
   - Unix: SIGINT/SIGTERM 时执行 CHECKPOINT 刷入数据
   - Windows: 系统托盘"退出"菜单触发优雅关闭（避免强制终止导致 WAL 损坏）
