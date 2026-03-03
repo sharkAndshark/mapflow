@@ -76,6 +76,12 @@
     - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
     - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `upload max size to 1 MB` 与 `oversize upload rejected as expected`）
     - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
+- [x] S14: Smoke 覆盖补齐 Schema 查询验证
+  - 验证：`smoke-binary` 新增 `/api/files/:id/schema` 结构断言（layers/fields）
+  - 结果（2026-03-03）：✅ 通过
+    - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
+    - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3317`（日志包含 `schema endpoint verified`）
+    - 备注：`smoke-docker.sh` 已同步逻辑；当前环境 Docker daemon 不可用，未执行容器实测
 
 ## Known Issues
 
@@ -391,7 +397,7 @@ function calculateResolutions(bounds, maxZoom = 20) {
 - [ ] MBTiles 上传测试（MVT/PNG）
 - [x] 错误场景：无效格式上传返回 400（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [x] 错误场景：超大文件（413）（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
-- [ ] Schema 查询验证
+- [x] Schema 查询验证（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [ ] 特征属性端点验证
 - [ ] CRS 更新验证
 - [ ] Windows 托盘功能（手动测试自动化）

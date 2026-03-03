@@ -271,6 +271,58 @@ set_upload_max_size_mb() {
   smoke_log "upload max size updated"
 }
 
+verify_schema_endpoint() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_id="$3"
+
+  smoke_log "verifying schema endpoint for file ${file_id}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+    "${base_url}/api/files/${file_id}/schema" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected schema status 200, got ${http_code}, body=${body}"
+  fi
+
+  python3 - "$response_file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+layers = data.get("layers")
+if not isinstance(layers, list):
+    raise SystemExit("schema validation failed: layers is not an array")
+
+if len(layers) == 0:
+    raise SystemExit("schema validation failed: layers is empty")
+
+first = layers[0]
+if not isinstance(first, dict):
+    raise SystemExit("schema validation failed: first layer is not an object")
+
+fields = first.get("fields")
+if not isinstance(fields, list):
+    raise SystemExit("schema validation failed: fields is not an array")
+
+if len(fields) == 0:
+    raise SystemExit("schema validation failed: fields is empty")
+PY
+
+  rm -f "$response_file"
+  smoke_log "schema endpoint verified"
+}
+
 verify_oversize_upload_rejected() {
   local base_url="$1"
   local cookie_jar="$2"

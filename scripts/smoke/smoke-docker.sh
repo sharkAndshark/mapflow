@@ -118,6 +118,8 @@ smoke_log "uploaded file: ${FILE_ID}"
 
 wait_for_status "$BASE_URL" "$COOKIE_JAR" "$FILE_ID" ready
 
+verify_schema_endpoint "$BASE_URL" "$COOKIE_JAR" "$FILE_ID"
+
 get_tile "$BASE_URL" "$COOKIE_JAR" "$FILE_ID" 0 0 0 "$TILE_OUT"
 verify_tile_content "$TILE_OUT" "$EXPECTED_B64_PATH"
 
