@@ -186,6 +186,105 @@ get_public_tile() {
   smoke_log "public tile size: ${size} bytes"
 }
 
+verify_private_tile_content_type() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_id="$3"
+  local expected_content_type="$4"
+  local z="${5:-0}"
+  local x="${6:-0}"
+  local y="${7:-0}"
+
+  smoke_log "verifying private tile content-type for file ${file_id} (${z}/${x}/${y})"
+
+  local response_file
+  response_file="$(mktemp)"
+  local headers_file
+  headers_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -D "$headers_file" -w "%{http_code}" -b "$cookie_jar" \
+    "${base_url}/api/files/${file_id}/tiles/${z}/${x}/${y}" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file" "$headers_file"
+    smoke_fail "expected private tile status 200, got ${http_code}, body=${body}"
+  fi
+
+  python3 - "$headers_file" "$expected_content_type" <<'PY'
+import sys
+
+path, expected = sys.argv[1], sys.argv[2].lower()
+content_type = None
+with open(path, "r", encoding="utf-8", errors="ignore") as f:
+    for line in f:
+        if line.lower().startswith("content-type:"):
+            content_type = line.split(":", 1)[1].strip().lower()
+            break
+
+if content_type is None:
+    raise SystemExit("private tile content-type header missing")
+if not content_type.startswith(expected):
+    raise SystemExit(
+        f"private tile content-type mismatch: expected prefix {expected}, got {content_type}"
+    )
+PY
+
+  rm -f "$response_file" "$headers_file"
+  smoke_log "private tile content-type verified"
+}
+
+verify_public_tile_content_type() {
+  local base_url="$1"
+  local slug="$2"
+  local expected_content_type="$3"
+  local z="${4:-0}"
+  local x="${5:-0}"
+  local y="${6:-0}"
+
+  smoke_log "verifying public tile content-type for slug ${slug} (${z}/${x}/${y})"
+
+  local response_file
+  response_file="$(mktemp)"
+  local headers_file
+  headers_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -D "$headers_file" -w "%{http_code}" \
+    "${base_url}/tiles/${slug}/${z}/${x}/${y}" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file" "$headers_file"
+    smoke_fail "expected public tile status 200, got ${http_code}, body=${body}"
+  fi
+
+  python3 - "$headers_file" "$expected_content_type" <<'PY'
+import sys
+
+path, expected = sys.argv[1], sys.argv[2].lower()
+content_type = None
+with open(path, "r", encoding="utf-8", errors="ignore") as f:
+    for line in f:
+        if line.lower().startswith("content-type:"):
+            content_type = line.split(":", 1)[1].strip().lower()
+            break
+
+if content_type is None:
+    raise SystemExit("public tile content-type header missing")
+if not content_type.startswith(expected):
+    raise SystemExit(
+        f"public tile content-type mismatch: expected prefix {expected}, got {content_type}"
+    )
+PY
+
+  rm -f "$response_file" "$headers_file"
+  smoke_log "public tile content-type verified"
+}
+
 verify_tile_content() {
   local tile_path="$1"
   local expected_b64_path="${2:-}"
@@ -527,6 +626,46 @@ PY
 
   rm -f "$response_file"
   smoke_log "MBTiles schema endpoint verified"
+}
+
+verify_mbtiles_schema_empty_endpoint() {
+  local base_url="$1"
+  local cookie_jar="$2"
+  local file_id="$3"
+
+  smoke_log "verifying MBTiles schema endpoint is empty for file ${file_id}"
+
+  local response_file
+  response_file="$(mktemp)"
+
+  local http_code
+  http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+    "${base_url}/api/files/${file_id}/schema" || true)
+
+  if [ "$http_code" != "200" ]; then
+    local body
+    body="$(cat "$response_file" 2>/dev/null || true)"
+    rm -f "$response_file"
+    smoke_fail "expected MBTiles schema status 200, got ${http_code}, body=${body}"
+  fi
+
+  python3 - "$response_file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+layers = data.get("layers")
+if not isinstance(layers, list):
+    raise SystemExit("mbtiles schema validation failed: layers is not an array")
+if len(layers) != 0:
+    raise SystemExit(f"mbtiles schema validation failed: expected empty layers, got {len(layers)}")
+PY
+
+  rm -f "$response_file"
+  smoke_log "MBTiles empty schema endpoint verified"
 }
 
 verify_mbtiles_feature_properties_rejected() {

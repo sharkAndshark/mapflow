@@ -10,6 +10,8 @@ PORT="${SMOKE_PORT:-3000}"
 FIXTURE_PATH="${SMOKE_FIXTURE:-frontend/tests/fixtures/sample.geojson}"
 MBTILES_FIXTURE_PATH="${SMOKE_MBTILES_FIXTURE:-testdata/monaco_roads.mbtiles}"
 MBTILES_EXPECTED_FORMAT="${SMOKE_MBTILES_EXPECTED_FORMAT:-mvt}"
+MBTILES_PNG_FIXTURE_PATH="${SMOKE_MBTILES_PNG_FIXTURE:-testdata/sample_png.mbtiles}"
+MBTILES_PNG_EXPECTED_FORMAT="${SMOKE_MBTILES_PNG_EXPECTED_FORMAT:-png}"
 OVERSIZE_FIXTURE_PATH="${SMOKE_OVERSIZE_FIXTURE:-frontend/tests/fixtures/roads.zip}"
 OVERSIZE_LIMIT_MB="${SMOKE_OVERSIZE_LIMIT_MB:-1}"
 CRS_UPDATE_INPUT="${SMOKE_CRS_UPDATE_INPUT:-urn:ogc:def:crs:EPSG::4490}"
@@ -29,6 +31,8 @@ Options:
   --fixture <path>      Test file to upload (default: frontend/tests/fixtures/sample.geojson)
   --mbtiles-fixture <path> MBTiles test file (default: testdata/monaco_roads.mbtiles)
   --mbtiles-format <value> Expected MBTiles tileFormat (default: mvt)
+  --mbtiles-png-fixture <path> PNG MBTiles test file (default: testdata/sample_png.mbtiles)
+  --mbtiles-png-format <value> Expected PNG MBTiles tileFormat (default: png)
   --oversize-fixture <path>  Oversize test file (default: frontend/tests/fixtures/roads.zip)
   --oversize-limit-mb <n>    Temporary upload size limit for oversize check (default: 1)
   --crs-update-input <value> CRS value sent to PUT /api/files/:id/crs
@@ -42,6 +46,8 @@ Environment:
   SMOKE_FIXTURE         Default fixture path
   SMOKE_MBTILES_FIXTURE MBTiles test file path
   SMOKE_MBTILES_EXPECTED_FORMAT Expected MBTiles tileFormat
+  SMOKE_MBTILES_PNG_FIXTURE PNG MBTiles test file path
+  SMOKE_MBTILES_PNG_EXPECTED_FORMAT Expected PNG MBTiles tileFormat
   SMOKE_OVERSIZE_FIXTURE Oversize test file path
   SMOKE_OVERSIZE_LIMIT_MB Temporary upload size limit for oversize check
   SMOKE_CRS_UPDATE_INPUT CRS value sent to PUT /api/files/:id/crs
@@ -61,6 +67,8 @@ while [[ $# -gt 0 ]]; do
     --fixture) FIXTURE_PATH="$2"; shift 2 ;;
     --mbtiles-fixture) MBTILES_FIXTURE_PATH="$2"; shift 2 ;;
     --mbtiles-format) MBTILES_EXPECTED_FORMAT="$2"; shift 2 ;;
+    --mbtiles-png-fixture) MBTILES_PNG_FIXTURE_PATH="$2"; shift 2 ;;
+    --mbtiles-png-format) MBTILES_PNG_EXPECTED_FORMAT="$2"; shift 2 ;;
     --oversize-fixture) OVERSIZE_FIXTURE_PATH="$2"; shift 2 ;;
     --oversize-limit-mb) OVERSIZE_LIMIT_MB="$2"; shift 2 ;;
     --crs-update-input) CRS_UPDATE_INPUT="$2"; shift 2 ;;
@@ -83,6 +91,10 @@ fi
 
 if [ ! -f "$MBTILES_FIXTURE_PATH" ]; then
   smoke_fail "mbtiles fixture not found: ${MBTILES_FIXTURE_PATH}"
+fi
+
+if [ ! -f "$MBTILES_PNG_FIXTURE_PATH" ]; then
+  smoke_fail "mbtiles png fixture not found: ${MBTILES_PNG_FIXTURE_PATH}"
 fi
 
 if [ ! -f "$OVERSIZE_FIXTURE_PATH" ]; then
@@ -155,7 +167,7 @@ smoke_log "published with slug: ${SLUG}"
 get_public_tile "$BASE_URL" "$SLUG" 0 0 0 "$PUBLIC_TILE_OUT"
 
 MBTILES_FILE_ID=$(upload_file "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FIXTURE_PATH")
-smoke_log "uploaded MBTiles file: ${MBTILES_FILE_ID}"
+smoke_log "uploaded MBTiles(MVT) file: ${MBTILES_FILE_ID}"
 
 wait_for_status "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID" ready
 verify_mbtiles_preview_meta "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID" "$MBTILES_EXPECTED_FORMAT"
@@ -163,8 +175,22 @@ verify_mbtiles_schema_endpoint "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID"
 verify_mbtiles_feature_properties_rejected "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID"
 
 MBTILES_SLUG=$(publish_file "$BASE_URL" "$COOKIE_JAR" "$MBTILES_FILE_ID")
-smoke_log "published MBTiles with slug: ${MBTILES_SLUG}"
+smoke_log "published MBTiles(MVT) with slug: ${MBTILES_SLUG}"
 verify_public_tile_meta_format "$BASE_URL" "$MBTILES_SLUG" "$MBTILES_EXPECTED_FORMAT"
+
+MBTILES_PNG_FILE_ID=$(upload_file "$BASE_URL" "$COOKIE_JAR" "$MBTILES_PNG_FIXTURE_PATH")
+smoke_log "uploaded MBTiles(PNG) file: ${MBTILES_PNG_FILE_ID}"
+
+wait_for_status "$BASE_URL" "$COOKIE_JAR" "$MBTILES_PNG_FILE_ID" ready
+verify_mbtiles_preview_meta "$BASE_URL" "$COOKIE_JAR" "$MBTILES_PNG_FILE_ID" "$MBTILES_PNG_EXPECTED_FORMAT"
+verify_mbtiles_schema_empty_endpoint "$BASE_URL" "$COOKIE_JAR" "$MBTILES_PNG_FILE_ID"
+verify_mbtiles_feature_properties_rejected "$BASE_URL" "$COOKIE_JAR" "$MBTILES_PNG_FILE_ID"
+verify_private_tile_content_type "$BASE_URL" "$COOKIE_JAR" "$MBTILES_PNG_FILE_ID" "image/png"
+
+MBTILES_PNG_SLUG=$(publish_file "$BASE_URL" "$COOKIE_JAR" "$MBTILES_PNG_FILE_ID")
+smoke_log "published MBTiles(PNG) with slug: ${MBTILES_PNG_SLUG}"
+verify_public_tile_meta_format "$BASE_URL" "$MBTILES_PNG_SLUG" "$MBTILES_PNG_EXPECTED_FORMAT"
+verify_public_tile_content_type "$BASE_URL" "$MBTILES_PNG_SLUG" "image/png"
 
 oversize_bytes=$(wc -c < "$OVERSIZE_FIXTURE_PATH" | tr -d ' ')
 oversize_limit_bytes=$((OVERSIZE_LIMIT_MB * 1024 * 1024))
