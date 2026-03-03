@@ -122,6 +122,10 @@
     - `docker build -t mapflow-smoke:ci-fix .`
     - `bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:ci-fix --port 3322 --fixture frontend/tests/fixtures/roads.zip --expected-b64 /tmp/nonexistent-smoke-expected.b64`
     - 关键日志：`Attempting to materialize embedded spatial extension` / `Spatial extension loaded successfully` / `SUCCESS: all smoke tests passed`
+- [x] S21: 增加 spatial fallback 回归测试（坏本地文件不应阻断 `LOAD spatial`）
+  - 验证：新增 `db::tests::ensure_spatial_extension_falls_back_after_local_load_failure`
+  - 结果（2026-03-03）：✅ 通过
+    - `cargo test --manifest-path backend/Cargo.toml ensure_spatial_extension_falls_back_after_local_load_failure -- --nocapture`
 
 ## Known Issues
 

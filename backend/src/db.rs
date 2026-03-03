@@ -527,8 +527,10 @@ fn try_load_spatial_from_path(conn: &duckdb::Connection, path: &Path) -> Result<
     })
 }
 
-pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String> {
-    let local_candidates = local_spatial_extension_candidates();
+fn ensure_spatial_extension_with_candidates(
+    conn: &duckdb::Connection,
+    local_candidates: &[PathBuf],
+) -> Result<(), String> {
     let mut local_load_error: Option<String> = None;
 
     tracing::info!(
@@ -536,7 +538,7 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
         "Searching for embedded spatial extension"
     );
 
-    if let Some(local_path) = find_existing_local_spatial_extension_path(&local_candidates) {
+    if let Some(local_path) = find_existing_local_spatial_extension_path(local_candidates) {
         tracing::info!(
             path = %local_path.display(),
             "Loading spatial extension from embedded file"
@@ -601,6 +603,11 @@ pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String>
                 .join("\n")
         ))
     }
+}
+
+pub fn ensure_spatial_extension(conn: &duckdb::Connection) -> Result<(), String> {
+    let local_candidates = local_spatial_extension_candidates();
+    ensure_spatial_extension_with_candidates(conn, &local_candidates)
 }
 pub fn is_initialized(conn: &duckdb::Connection) -> Result<bool, duckdb::Error> {
     let mut stmt = conn.prepare(
@@ -722,6 +729,41 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM test", [], |r| r.get(0))
             .expect("query");
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn ensure_spatial_extension_falls_back_after_local_load_failure() {
+        let valid_extension = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("extensions")
+            .join(SPATIAL_EXTENSION_FILENAME);
+        if !valid_extension.is_file() {
+            eprintln!(
+                "Skipping: valid spatial extension file not found at {}",
+                valid_extension.display()
+            );
+            return;
+        }
+
+        let conn = duckdb::Connection::open_in_memory().expect("open in-memory db");
+        try_load_spatial_from_path(&conn, &valid_extension)
+            .expect("preload spatial extension from valid path");
+
+        if conn.execute_batch("LOAD spatial;").is_err() {
+            eprintln!("Skipping: LOAD spatial is not available in current test environment");
+            return;
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bad_extension = temp.path().join("bad-spatial.duckdb_extension");
+        std::fs::write(&bad_extension, b"not-a-valid-duckdb-extension")
+            .expect("write invalid extension file");
+
+        let result = ensure_spatial_extension_with_candidates(&conn, &[bad_extension]);
+        assert!(
+            result.is_ok(),
+            "expected fallback LOAD spatial to succeed after local load failure, got: {:?}",
+            result
+        );
     }
 
     #[cfg(feature = "embed-spatial-extension")]
