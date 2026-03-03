@@ -18,12 +18,16 @@
 | 10. 获取瓦片 | 私有瓦片返回 MVT |
 | 11. 发布文件 | 公开 slug 分配成功 |
 | 12. 公开瓦片 | 无需认证访问瓦片 |
-| 13. 上传 MBTiles | MBTiles 上传成功 |
-| 14. MBTiles 元数据 | preview/meta 返回期望 `tileFormat` |
-| 15. MBTiles Schema 查询 | `/api/files/:id/schema` 返回有效图层 |
-| 16. MBTiles 特征属性 | `/api/files/:id/features/:fid` 返回 400（不支持） |
-| 17. MBTiles 发布 | 发布后 `tiles/:slug/meta` 返回期望 `tileFormat` |
-| 18. 错误场景 | 超大文件上传返回 413（File too large） |
+| 13. 上传 MBTiles(MVT) | MBTiles 上传成功 |
+| 14. MBTiles(MVT) 元数据 | preview/meta 返回 `tileFormat=mvt` |
+| 15. MBTiles(MVT) Schema 查询 | `/api/files/:id/schema` 返回有效图层 |
+| 16. MBTiles(MVT) 特征属性 | `/api/files/:id/features/:fid` 返回 400（不支持） |
+| 17. MBTiles(MVT) 发布 | 发布后 `tiles/:slug/meta` 返回 `tileFormat=mvt` |
+| 18. 上传 MBTiles(PNG) | MBTiles 上传成功 |
+| 19. MBTiles(PNG) 元数据 | preview/meta 返回 `tileFormat=png` |
+| 20. MBTiles(PNG) Schema 查询 | `/api/files/:id/schema` 返回空图层数组 |
+| 21. MBTiles(PNG) 瓦片类型 | 私有/公开瓦片 `Content-Type: image/png` |
+| 22. 错误场景 | 超大文件上传返回 413（File too large） |
 
 ## 使用方法
 
@@ -40,6 +44,8 @@
   --fixture frontend/tests/fixtures/sample.geojson \
   --mbtiles-fixture testdata/monaco_roads.mbtiles \
   --mbtiles-format mvt \
+  --mbtiles-png-fixture testdata/sample_png.mbtiles \
+  --mbtiles-png-format png \
   --expected-b64 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64
 
 # 保留测试数据（调试用）
@@ -59,6 +65,8 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
   --fixture frontend/tests/fixtures/sample.geojson \
   --mbtiles-fixture testdata/monaco_roads.mbtiles \
   --mbtiles-format mvt \
+  --mbtiles-png-fixture testdata/sample_png.mbtiles \
+  --mbtiles-png-format png \
   --expected-b64 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64
 ```
 
@@ -70,6 +78,8 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
 | `SMOKE_FIXTURE` | 测试文件路径 | `frontend/tests/fixtures/sample.geojson` |
 | `SMOKE_MBTILES_FIXTURE` | MBTiles 测试文件路径 | `testdata/monaco_roads.mbtiles` |
 | `SMOKE_MBTILES_EXPECTED_FORMAT` | MBTiles 期望 tileFormat | `mvt` |
+| `SMOKE_MBTILES_PNG_FIXTURE` | PNG MBTiles 测试文件路径 | `testdata/sample_png.mbtiles` |
+| `SMOKE_MBTILES_PNG_EXPECTED_FORMAT` | PNG MBTiles 期望 tileFormat | `png` |
 | `SMOKE_OVERSIZE_FIXTURE` | 超大文件测试路径（需大于限制） | `frontend/tests/fixtures/roads.zip` |
 | `SMOKE_OVERSIZE_LIMIT_MB` | 超大文件测试时临时限制（通过 `/api/settings` 下调） | 1 |
 | `SMOKE_CRS_UPDATE_INPUT` | CRS 更新请求值（PUT `/api/files/:id/crs`） | `urn:ogc:def:crs:EPSG::4490` |

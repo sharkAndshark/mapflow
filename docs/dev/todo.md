@@ -126,6 +126,13 @@
   - 验证：新增 `db::tests::ensure_spatial_extension_falls_back_after_local_load_failure`
   - 结果（2026-03-03）：✅ 通过
     - `cargo test --manifest-path backend/Cargo.toml ensure_spatial_extension_falls_back_after_local_load_failure -- --nocapture`
+- [x] S22: Smoke 覆盖补齐 MBTiles(PNG) 场景（schema 空数组 + 私有/公开瓦片 content-type）
+  - 验证：`smoke-binary` 与 `smoke-docker` 均覆盖 MVT+PNG 双场景
+  - 结果（2026-03-03）：✅ 通过
+    - `bash -n scripts/smoke/lib/common.sh scripts/smoke/smoke-binary.sh scripts/smoke/smoke-docker.sh`
+    - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3331 --expected-b64 /tmp/nonexistent-smoke-expected.b64`
+    - `docker build -t mapflow-smoke:mbtiles-png .`
+    - `bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:mbtiles-png --port 3332 --expected-b64 /tmp/nonexistent-smoke-expected.b64`
 
 ## Known Issues
 
@@ -450,7 +457,7 @@ function calculateResolutions(bounds, maxZoom = 20) {
 待扩展：
 - [x] Shapefile 上传测试（`scripts/smoke/smoke-docker.sh --fixture frontend/tests/fixtures/roads.zip`）
 - [x] MBTiles 上传测试（MVT）（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh` 默认覆盖）
-- [ ] MBTiles 上传测试（PNG）
+- [x] MBTiles 上传测试（PNG）（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh` 默认覆盖；含 schema 空数组与 private/public `Content-Type: image/png` 断言）
 - [x] 错误场景：无效格式上传返回 400（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [x] 错误场景：超大文件（413）（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
 - [x] Schema 查询验证（`scripts/smoke/smoke-binary.sh` / `scripts/smoke/smoke-docker.sh`）
