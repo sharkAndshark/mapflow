@@ -202,10 +202,16 @@ async fn main() -> Result<()> {
     let db_for_shutdown = db.clone();
     let shutdown = async move {
         let ctrl_c = async {
-            tokio::signal::ctrl_c()
-                .await
-                .expect("Failed to install Ctrl+C handler");
-            tracing::info!("Ctrl+C received");
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => tracing::info!("Ctrl+C received"),
+                Err(e) => {
+                    tracing::debug!(
+                        error = %e,
+                        "Ctrl+C handler unavailable (likely no console attached); relying on tray exit"
+                    );
+                    std::future::pending::<()>().await;
+                }
+            }
         };
 
         let tray_exit = async {

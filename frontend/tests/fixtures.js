@@ -106,7 +106,14 @@ export const test = base.extend({
       ];
 
       let backendCommand = 'cargo';
-      let backendArgs = ['run', '--quiet', '--manifest-path', 'backend/Cargo.toml'];
+      let backendArgs = [
+        'run',
+        '--quiet',
+        '--manifest-path',
+        'backend/Cargo.toml',
+        '--bin',
+        'backend',
+      ];
       for (const candidate of binaryCandidates) {
         if (fs.existsSync(candidate)) {
           backendCommand = candidate;

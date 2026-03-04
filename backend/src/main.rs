@@ -196,6 +196,8 @@ async fn main() -> Result<()> {
         } else {
             tracing::info!("Database checkpoint completed");
         }
+        #[cfg(windows)]
+        windows_console::mark_shutdown_complete();
     };
 
     axum::serve(listener, app)
@@ -241,6 +243,7 @@ mod windows_console {
     use anyhow::Result;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::OnceLock;
+    use std::time::{Duration, Instant};
     use tokio::sync::Notify;
     use windows_sys::Win32::System::Console::{
         SetConsoleCtrlHandler, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C_EVENT, CTRL_LOGOFF_EVENT,
@@ -249,14 +252,21 @@ mod windows_console {
 
     static CLOSE_NOTIFY: OnceLock<Notify> = OnceLock::new();
     static CLOSE_SIGNALLED: AtomicBool = AtomicBool::new(false);
+    static SHUTDOWN_COMPLETE: AtomicBool = AtomicBool::new(false);
 
     pub fn install_close_handler() -> Result<()> {
         CLOSE_NOTIFY.get_or_init(Notify::new);
+        CLOSE_SIGNALLED.store(false, Ordering::SeqCst);
+        SHUTDOWN_COMPLETE.store(false, Ordering::SeqCst);
         let registered = unsafe { SetConsoleCtrlHandler(Some(handle_console_ctrl), 1) };
         if registered == 0 {
             anyhow::bail!("Failed to register Windows console close handler");
         }
         Ok(())
+    }
+
+    pub fn mark_shutdown_complete() {
+        SHUTDOWN_COMPLETE.store(true, Ordering::SeqCst);
     }
 
     pub async fn wait_for_close_signal() {
@@ -268,14 +278,12 @@ mod windows_console {
     }
 
     unsafe extern "system" fn handle_console_ctrl(ctrl_type: u32) -> i32 {
-        let should_handle = matches!(
+        let is_close_like_event = matches!(
             ctrl_type,
-            CTRL_C_EVENT
-                | CTRL_BREAK_EVENT
-                | CTRL_CLOSE_EVENT
-                | CTRL_LOGOFF_EVENT
-                | CTRL_SHUTDOWN_EVENT
+            CTRL_CLOSE_EVENT | CTRL_LOGOFF_EVENT | CTRL_SHUTDOWN_EVENT
         );
+        let should_handle =
+            matches!(ctrl_type, CTRL_C_EVENT | CTRL_BREAK_EVENT) || is_close_like_event;
 
         if !should_handle {
             return 0;
@@ -285,7 +293,21 @@ mod windows_console {
         if let Some(notify) = CLOSE_NOTIFY.get() {
             notify.notify_waiters();
         }
+
+        if is_close_like_event {
+            wait_for_shutdown_completion();
+        }
         1
+    }
+
+    fn wait_for_shutdown_completion() {
+        const WAIT_SLICE_MS: u64 = 25;
+        const MAX_WAIT_MS: u64 = 4_000;
+
+        let deadline = Instant::now() + Duration::from_millis(MAX_WAIT_MS);
+        while !SHUTDOWN_COMPLETE.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(WAIT_SLICE_MS));
+        }
     }
 }
 
