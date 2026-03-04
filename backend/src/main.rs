@@ -1,14 +1,10 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
-#[cfg(not(windows))]
 use tokio::fs;
 use tokio::sync::{Mutex, RwLock};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[cfg(windows)]
-mod tray;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -85,157 +81,6 @@ async fn bind_with_fallback(
     bail!("No available port in range {}-{}", base_port, max_port);
 }
 
-#[cfg(windows)]
-fn main() -> Result<()> {
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,backend=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-
-    let db_path = std::env::var("DB_PATH").unwrap_or_else(|_| backend::DEFAULT_DB_PATH.to_string());
-    tracing::info!(db_path = %db_path, "Initializing database");
-    let db_path = PathBuf::from(db_path);
-    let conn = backend::init_database(&db_path);
-
-    let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string());
-    tracing::info!(upload_dir = %upload_dir, "Using upload directory");
-    let upload_dir = PathBuf::from(upload_dir);
-
-    let rt = tokio::runtime::Runtime::new()?;
-    let _guard = rt.enter();
-
-    let _ = std::fs::create_dir_all(&upload_dir);
-    let upload_dir_canonical = upload_dir
-        .canonicalize()
-        .unwrap_or_else(|_| upload_dir.clone());
-
-    let (max_size, max_size_label) = backend::init_max_size_config(&conn);
-    tracing::info!(max_size, max_size_label, "Upload size limit configured");
-
-    let db = Arc::new(Mutex::new(conn));
-
-    let auth_backend = backend::AuthBackend::new(db.clone());
-    let session_store = backend::DuckDBStore::new(db.clone());
-
-    let state = backend::AppState {
-        upload_dir,
-        upload_dir_canonical,
-        db: db.clone(),
-        max_size: Arc::new(RwLock::new(max_size)),
-        max_size_label: Arc::new(RwLock::new(max_size_label)),
-        auth_backend,
-        session_store,
-    };
-
-    rt.block_on(async {
-        match backend::reconcile_processing_files(&state.db).await {
-            Ok(count) => {
-                tracing::info!(reconciled = count, "Reconciled processing files on startup")
-            }
-            Err(e) => tracing::warn!(error = %e, "Failed to reconcile processing files on startup"),
-        }
-    });
-
-    let mut app = backend::build_api_router(state.clone());
-
-    let web_dist = std::env::var("WEB_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
-    let web_dist_path = PathBuf::from(&web_dist);
-    if web_dist_path.exists() {
-        tracing::info!(web_dist = %web_dist, "Serving static files");
-        let index_path = web_dist_path.join("index.html");
-        app = app.fallback_service(
-            ServeDir::new(&web_dist_path).not_found_service(ServeFile::new(index_path)),
-        );
-    } else {
-        #[cfg(feature = "embed-web-dist")]
-        {
-            tracing::info!(
-                web_dist = %web_dist,
-                "WEB_DIST not found, serving embedded frontend bundle"
-            );
-            app = app.fallback(backend::serve_embedded_spa);
-        }
-
-        #[cfg(not(feature = "embed-web-dist"))]
-        {
-            tracing::warn!(
-                web_dist = %web_dist,
-                "WEB_DIST not found and embedded frontend disabled; frontend routes unavailable"
-            );
-        }
-    }
-
-    let cli = Cli::parse();
-    let (host, base_port) = parse_listen_addr(&cli.listen)?;
-    let max_port = cli
-        .listen_max_port
-        .unwrap_or_else(|| base_port.saturating_add(99));
-
-    tracing::info!(listen = %cli.listen, host = %host, base_port, max_port, "Server starting");
-
-    let (listener, actual_port) = rt.block_on(bind_with_fallback(&host, base_port, max_port))?;
-
-    if actual_port != base_port {
-        tracing::warn!(
-            original_port = base_port,
-            actual_port,
-            "Port {} was in use, using port {} instead",
-            base_port,
-            actual_port
-        );
-    }
-    tracing::info!("Listening on http://{}:{}", host, actual_port);
-
-    if let Err(e) = tray::create_tray(shutdown_tx, actual_port) {
-        tracing::error!(error = ?e, "Failed to create system tray - cannot continue in GUI mode");
-        return Err(e.into());
-    }
-
-    let db_for_shutdown = db.clone();
-    let shutdown = async move {
-        let ctrl_c = async {
-            tokio::signal::ctrl_c()
-                .await
-                .expect("Failed to install Ctrl+C handler");
-            tracing::info!("Ctrl+C received");
-        };
-
-        let tray_exit = async {
-            match shutdown_rx.recv().await {
-                Some(_) => tracing::info!("Tray exit received"),
-                None => tracing::warn!("Tray channel closed unexpectedly"),
-            }
-        };
-
-        tokio::select! {
-            _ = ctrl_c => {},
-            _ = tray_exit => {},
-        }
-
-        tracing::info!("Shutdown signal received, checkpointing database...");
-        let conn = db_for_shutdown.lock().await;
-        if let Err(e) = conn.execute("CHECKPOINT", []) {
-            tracing::error!(error = %e, "Failed to checkpoint database during shutdown");
-        } else {
-            tracing::info!("Database checkpoint completed");
-        }
-    };
-
-    rt.block_on(async {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown)
-            .await
-    })?;
-
-    Ok(())
-}
-
-#[cfg(not(windows))]
 #[tokio::main]
 async fn main() -> Result<()> {
     #[cfg(target_os = "windows")]
@@ -250,6 +95,9 @@ async fn main() -> Result<()> {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    #[cfg(windows)]
+    windows_console::install_close_handler()?;
 
     let db_path = std::env::var("DB_PATH").unwrap_or_else(|_| backend::DEFAULT_DB_PATH.to_string());
     tracing::info!(db_path = %db_path, "Initializing database");
@@ -357,7 +205,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(windows))]
 async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -376,9 +223,69 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 
+    #[cfg(windows)]
+    let console_close = windows_console::wait_for_close_signal();
+
+    #[cfg(not(windows))]
+    let console_close = std::future::pending::<()>();
+
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+        _ = console_close => {},
+    }
+}
+
+#[cfg(windows)]
+mod windows_console {
+    use anyhow::Result;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::OnceLock;
+    use tokio::sync::Notify;
+    use windows_sys::Win32::System::Console::{
+        SetConsoleCtrlHandler, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C_EVENT, CTRL_LOGOFF_EVENT,
+        CTRL_SHUTDOWN_EVENT,
+    };
+
+    static CLOSE_NOTIFY: OnceLock<Notify> = OnceLock::new();
+    static CLOSE_SIGNALLED: AtomicBool = AtomicBool::new(false);
+
+    pub fn install_close_handler() -> Result<()> {
+        CLOSE_NOTIFY.get_or_init(Notify::new);
+        let registered = unsafe { SetConsoleCtrlHandler(Some(handle_console_ctrl), 1) };
+        if registered == 0 {
+            anyhow::bail!("Failed to register Windows console close handler");
+        }
+        Ok(())
+    }
+
+    pub async fn wait_for_close_signal() {
+        if CLOSE_SIGNALLED.load(Ordering::SeqCst) {
+            return;
+        }
+        let notify = CLOSE_NOTIFY.get_or_init(Notify::new);
+        notify.notified().await;
+    }
+
+    unsafe extern "system" fn handle_console_ctrl(ctrl_type: u32) -> i32 {
+        let should_handle = matches!(
+            ctrl_type,
+            CTRL_C_EVENT
+                | CTRL_BREAK_EVENT
+                | CTRL_CLOSE_EVENT
+                | CTRL_LOGOFF_EVENT
+                | CTRL_SHUTDOWN_EVENT
+        );
+
+        if !should_handle {
+            return 0;
+        }
+
+        CLOSE_SIGNALLED.store(true, Ordering::SeqCst);
+        if let Some(notify) = CLOSE_NOTIFY.get() {
+            notify.notify_waiters();
+        }
+        1
     }
 }
 

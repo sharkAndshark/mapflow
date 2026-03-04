@@ -8,8 +8,8 @@
 React → HTTP → Axum → DuckDB
 
 Windows 桌面集成:
-  托盘图标 → shutdown_signal → CHECKPOINT
-  (GUI 子系统编译，无控制台窗口)
+  desktop(mapflow-desktop.exe, GUI 子系统) → 托盘 Exit → shutdown_signal → CHECKPOINT
+  console(backend.exe, dev/CI) → Ctrl+C/关窗事件 → shutdown_signal → CHECKPOINT
 ```
 
 **MBTiles 支持：**
@@ -32,7 +32,8 @@ Windows 桌面集成:
 - **启动恢复**：先按 DuckDB 默认流程 replay WAL；若 open/replay 报 WAL 相关错误，则将 WAL 备份为 `*.wal.bak.<ts>` 后重试启动（`db::open_with_wal_recovery`）。可用 `WAL_RECOVERY_STRICT=1` 禁用自动隔离。
 - **优雅关闭**：
   - Unix: SIGINT/SIGTERM 时执行 CHECKPOINT 刷入数据
-  - Windows: 系统托盘"退出"菜单触发优雅关闭（避免强制终止导致 WAL 损坏）
+  - Windows desktop: 托盘"退出"菜单触发优雅关闭（发布默认入口）
+  - Windows console: Ctrl+C/控制台关闭事件触发优雅关闭尝试（开发/CI 入口）
 
 ## 认证
 
@@ -46,4 +47,5 @@ Axum 0.8, axum-login, tower-sessions, DuckDB, OpenLayers
 
 - Stable：`v*` tag 触发，发布 GHCR 多架构镜像与二进制 bundle 资产
 - Nightly：每日 UTC 02:00 自动触发（也支持手动触发），发布 prerelease 与 nightly 镜像标签
-- 二进制发布产物内嵌 `spatial.duckdb_extension`（按目标平台编译时注入），支持单可执行文件离线启动
+- 二进制发布产物内嵌 `spatial.duckdb_extension`（按目标平台编译时注入），支持离线启动
+- Windows 发布包仅暴露 desktop 入口（`mapflow-desktop.exe`），console 入口保留给开发/CI
