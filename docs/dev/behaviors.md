@@ -36,7 +36,8 @@
 | CLI-001 | 服务启动 | 支持 `--listen [host]:port` 和 `LISTEN` 环境变量。`:port` 表示监听所有接口。CLI 优先于环境变量。默认 `:3000` | 绑定到指定地址 | `cargo test test_listen_*` | Unit | P1 |
 | CLI-002 | 端口回退 | 端口被占用时自动尝试 port+1 至 `--listen-max-port`。日志：`Listening on http://0.0.0.0:{actual_port}` | 日志显示实际端口 | `cargo test test_port_fallback_*` | Unit | P1 |
 | CLI-003 | 端口耗尽 | 所有端口不可用时 panic：`No available port in range {start}-{end}` | panic 信息清晰 | `cargo test test_port_exhausted` | Unit | P2 |
-| CLI-004 | Windows 托盘启动 | Windows 双击运行时：无控制台窗口，托盘图标显示，"打开 Web 界面"打开浏览器，"退出"触发优雅关闭 + checkpoint | 手动测试清单 | Manual | P2 |
+| CLI-004 | Windows Desktop 启动 | Windows 终端用户入口 `mapflow-desktop.exe`：无控制台窗口，托盘图标显示，"打开 Web 界面"打开浏览器，"退出"触发优雅关闭 + checkpoint | 手动测试清单 | Manual | P2 |
+| CLI-005 | Windows Console 关窗退出 | Windows 开发入口 `backend.exe`：Ctrl+C/关闭控制台窗口触发优雅关闭尝试（checkpoint）；若发生硬退出，依赖 WAL 恢复保障可重启 | 手动测试清单 | Manual | P2 |
 | API-001 | 上传 | POST /api/uploads 需要认证，接收 multipart/form-data，最大大小 UPLOAD_MAX_SIZE_MB，返回文件元数据 JSON | 201 + 元数据 / 400（格式无效） / 401（未认证） / 413（超大小） + `{error}` | `cargo test test_upload_*` | Integration | P0 |
 | API-002 | 文件列表 | GET /api/files 需要认证，返回文件列表（id/name/type/size/uploadedAt/status/crs/path/error） | 200 + 列表 JSON / 401 | `cargo test test_upload_geojson_lifecycle test_upload_shapefile_zip_lifecycle` | Integration | P0 |
 | API-003 | 预览状态 | GET /api/files/:id/preview 需要认证，仅在 ready 状态返回数据。MBTiles 返回预计算的 bounds、tileFormat（"mvt"或"png"）、minZoom、maxZoom；动态表返回计算的 bounds，tileFormat/minZoom/maxZoom 为 null | 200 + bbox(minx,miny,maxx,maxy,WGS84) + tileFormat? + minZoom? + maxZoom? / 401 / 404 / 409 + `{error}` | `cargo test test_preview_not_ready_returns_409 test_mbtiles_preview_includes_bounds test_dynamic_table_preview_returns_null_zoom` | Integration | P0 |

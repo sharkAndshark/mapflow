@@ -171,7 +171,7 @@ jobs:
             "${{ matrix.duckdb_platform }}" \
             "backend/extensions/spatial.duckdb_extension"
 
-      - name: Build backend binary
+      - name: Build backend binaries
         run: cargo build --release --locked --manifest-path backend/Cargo.toml --target ${{ matrix.rust_target }} --features embed-web-dist,embed-spatial-extension
 
       - name: Smoke test binary
@@ -193,10 +193,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
+          bundle_binary="target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            # Publish desktop entrypoint only; keep console binary for smoke/dev.
+            bundle_binary="target/${{ matrix.rust_target }}/release/mapflow-desktop.exe"
+          fi
           bash scripts/release/package_bundle.sh \
             "${{ github.ref_name }}" \
             "${{ matrix.artifact_id }}" \
-            "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}" \
+            "${bundle_binary}" \
             "release-assets"
 
       - name: Upload binary bundle

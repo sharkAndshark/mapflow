@@ -15,7 +15,7 @@ dev:
 
 # Dev backend only
 dev-backend:
-  PORT={{PORT}} cargo run --manifest-path backend/Cargo.toml
+  PORT={{PORT}} cargo run --manifest-path backend/Cargo.toml --bin backend
 
 # Dev frontend only
 dev-frontend:
