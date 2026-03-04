@@ -270,11 +270,13 @@ mod windows_console {
     }
 
     pub async fn wait_for_close_signal() {
-        if CLOSE_SIGNALLED.load(Ordering::SeqCst) {
-            return;
-        }
         let notify = CLOSE_NOTIFY.get_or_init(Notify::new);
-        notify.notified().await;
+        loop {
+            if CLOSE_SIGNALLED.load(Ordering::SeqCst) {
+                return;
+            }
+            notify.notified().await;
+        }
     }
 
     unsafe extern "system" fn handle_console_ctrl(ctrl_type: u32) -> i32 {
@@ -291,7 +293,7 @@ mod windows_console {
 
         CLOSE_SIGNALLED.store(true, Ordering::SeqCst);
         if let Some(notify) = CLOSE_NOTIFY.get() {
-            notify.notify_waiters();
+            notify.notify_one();
         }
 
         if is_close_like_event {
