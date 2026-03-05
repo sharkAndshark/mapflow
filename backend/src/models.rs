@@ -48,6 +48,8 @@ pub struct FileItem {
     pub maxzoom: Option<i32>,
     #[serde(rename = "useAliases", skip_serializing_if = "Option::is_none")]
     pub use_aliases: Option<bool>,
+    #[serde(rename = "tileSource", skip_serializing_if = "Option::is_none")]
+    pub tile_source: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -194,4 +196,55 @@ pub struct FieldAliasUpdate {
 #[derive(Debug, Deserialize)]
 pub struct UpdateFieldAliasesRequest {
     pub fields: Vec<FieldAliasUpdate>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PostgisConnectionConfig {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub username: String,
+    pub password: String,
+    #[serde(rename = "sslMode", default = "default_postgis_ssl_mode")]
+    pub ssl_mode: String,
+}
+
+fn default_postgis_ssl_mode() -> String {
+    "disable".to_string()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PostgisConnectionTestRequest {
+    pub connection: PostgisConnectionConfig,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PostgisConnectionTestResponse {
+    pub success: bool,
+    #[serde(rename = "serverVersion")]
+    pub server_version: String,
+    #[serde(rename = "postgisVersion")]
+    pub postgis_version: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RegisterPostgisSourceRequest {
+    #[serde(rename = "connectionName")]
+    pub connection_name: String,
+    pub connection: PostgisConnectionConfig,
+    pub schema: String,
+    pub object: String,
+    #[serde(rename = "geometryColumn")]
+    pub geometry_column: String,
+    #[serde(rename = "fidColumn")]
+    pub fid_column: String,
+    #[serde(rename = "displayName")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RegisterPostgisSourceResponse {
+    #[serde(rename = "fileId")]
+    pub file_id: String,
+    pub status: String,
 }

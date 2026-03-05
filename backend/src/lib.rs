@@ -9,6 +9,7 @@ mod import;
 mod mbtiles;
 mod models;
 mod password;
+mod postgis;
 mod public;
 mod routes;
 mod session_store;
@@ -86,7 +87,8 @@ mod tests {
             tile_format VARCHAR,
             minzoom INTEGER,
             maxzoom INTEGER,
-            tile_bounds VARCHAR
+            tile_bounds VARCHAR,
+            tile_source VARCHAR DEFAULT 'duckdb'
         );
 
         CREATE TABLE IF NOT EXISTS published_files (
@@ -160,6 +162,7 @@ mod tests {
             minzoom: None,
             maxzoom: None,
             use_aliases: None,
+            tile_source: None,
         };
 
         let conn = state.db.lock().await;

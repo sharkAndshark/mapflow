@@ -238,6 +238,7 @@ pub async fn upload_file(
         minzoom: None,
         maxzoom: None,
         use_aliases: None,
+        tile_source: None,
     };
 
     Ok((StatusCode::CREATED, Json(meta)))

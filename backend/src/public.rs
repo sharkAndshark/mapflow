@@ -17,6 +17,10 @@ use crate::{
     http_errors::internal_error,
     mbtiles,
     models::{ErrorResponse, PublicTileMeta},
+    postgis::{
+        build_property_columns_for_query, fetch_postgis_source_config, query_mvt_tile,
+        TILE_SOURCE_POSTGIS,
+    },
     tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
 };
@@ -32,6 +36,7 @@ struct PublicTileFileMeta {
     minzoom: Option<i32>,
     maxzoom: Option<i32>,
     use_aliases: bool,
+    tile_source: String,
 }
 
 fn strip_dot_prefix(path: &str) -> &str {
@@ -118,7 +123,8 @@ pub async fn get_public_tile(
             "SELECT f.crs, f.crs_type, f.data_bounds, f.status, f.table_name, f.tile_format, f.path,
                     COALESCE(pf.minzoom, f.minzoom) as minzoom,
                     COALESCE(pf.maxzoom, f.maxzoom) as maxzoom,
-                    COALESCE(pf.use_aliases, TRUE) as use_aliases
+                    COALESCE(pf.use_aliases, TRUE) as use_aliases,
+                    COALESCE(pf.tile_source, f.tile_source, 'duckdb') as tile_source
              FROM files f
              LEFT JOIN published_files pf ON f.id = pf.file_id
              WHERE f.id = ? AND f.is_public = TRUE",
@@ -134,6 +140,7 @@ pub async fn get_public_tile(
                 minzoom: row.get(7)?,
                 maxzoom: row.get(8)?,
                 use_aliases: row.get(9)?,
+                tile_source: row.get(10)?,
             }),
         )
         .map_err(|_| {
@@ -198,6 +205,30 @@ pub async fn get_public_tile(
     if meta.minzoom.is_some_and(|min| z < min) || meta.maxzoom.is_some_and(|max| z > max) {
         drop(conn);
         return Ok(StatusCode::NO_CONTENT.into_response());
+    }
+
+    if meta.tile_source == TILE_SOURCE_POSTGIS {
+        let source = fetch_postgis_source_config(&conn, &file_id)
+            .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
+            .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
+        let properties = build_property_columns_for_query(&conn, &file_id)
+            .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
+        drop(conn);
+
+        let mvt_blob = query_mvt_tile(&source, &properties, z, x, y, meta.use_aliases)
+            .await
+            .map_err(|e| internal_error(format!("PostGIS tile generation failed: {e}")))?;
+        return match mvt_blob {
+            Some(blob) => Ok((
+                [
+                    (header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile"),
+                    (header::CACHE_CONTROL, "public, max-age=300"),
+                ],
+                blob,
+            )
+                .into_response()),
+            None => Ok(StatusCode::NO_CONTENT.into_response()),
+        };
     }
 
     let table_name = meta.table_name.ok_or_else(|| {

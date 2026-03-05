@@ -21,6 +21,10 @@ use crate::{
         ErrorResponse, FeaturePropertiesResponse, FeatureProperty, FileItem, PreviewMeta,
         UpdateZoomRequest,
     },
+    postgis::{
+        build_feature_properties, build_property_columns_for_query, fetch_postgis_source_config,
+        query_feature_properties_json, query_mvt_tile, TILE_SOURCE_POSTGIS,
+    },
     read_preview_zoom_config,
     tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
@@ -37,6 +41,7 @@ pub type FileMetadata = (
     Option<String>,
     Option<i32>,
     Option<i32>,
+    Option<String>,
 );
 
 pub type TileFileMetadata = (
@@ -47,6 +52,7 @@ pub type TileFileMetadata = (
     Option<String>,
     Option<String>,
     String,
+    Option<String>,
 );
 
 pub async fn list_files(
@@ -55,7 +61,7 @@ pub async fn list_files(
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_format, f.minzoom, f.maxzoom, pf.use_aliases
+            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_format, f.minzoom, f.maxzoom, pf.use_aliases, f.tile_source
           FROM files f
           LEFT JOIN published_files pf ON f.id = pf.file_id
           ORDER BY f.uploaded_at DESC",
@@ -74,6 +80,7 @@ pub async fn list_files(
             let minzoom: Option<i32> = row.get(14)?;
             let maxzoom: Option<i32> = row.get(15)?;
             let use_aliases: Option<bool> = row.get(16)?;
+            let tile_source: Option<String> = row.get(17)?;
             Ok(FileItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -95,6 +102,7 @@ pub async fn list_files(
                 minzoom,
                 maxzoom,
                 use_aliases,
+                tile_source,
             })
         })
         .map_err(internal_error)?;
@@ -115,7 +123,7 @@ pub async fn get_preview_meta(
     let conn = state.db.lock().await;
 
     let mut stmt = conn
-        .prepare("SELECT name, crs, crs_type, data_bounds, status, table_name, tile_format, tile_bounds, minzoom, maxzoom FROM files WHERE id = ?")
+        .prepare("SELECT name, crs, crs_type, data_bounds, status, table_name, tile_format, tile_bounds, minzoom, maxzoom, tile_source FROM files WHERE id = ?")
         .map_err(internal_error)?;
 
     let meta: Option<FileMetadata> = stmt
@@ -131,6 +139,7 @@ pub async fn get_preview_meta(
                 row.get(7)?,
                 row.get(8)?,
                 row.get(9)?,
+                row.get(10)?,
             ))
         })
         .ok();
@@ -146,6 +155,7 @@ pub async fn get_preview_meta(
         tile_bounds,
         minzoom,
         maxzoom,
+        tile_source,
     ) = match meta {
         Some(m) => m,
         None => {
@@ -173,12 +183,17 @@ pub async fn get_preview_meta(
         .and_then(|j| DataBounds::from_json(j));
     let data_bounds_array = data_bounds.as_ref().map(|b| b.to_array());
 
+    let tile_source = tile_source.unwrap_or_else(|| "duckdb".to_string());
     let bbox_values = if let Some(bounds_json) = tile_bounds {
         serde_json::from_str::<[f64; 4]>(&bounds_json).ok()
     } else {
         None
     }
     .or_else(|| {
+        if tile_source == TILE_SOURCE_POSTGIS {
+            return data_bounds_array;
+        }
+
         if crs_type == CRS_TYPE_CUSTOM {
             return data_bounds_array;
         }
@@ -255,7 +270,7 @@ pub async fn get_tile(
 
     let meta: TileFileMetadata = conn
         .query_row(
-            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path FROM files WHERE id = ?",
+            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path, tile_source FROM files WHERE id = ?",
             duckdb::params![id],
             |row| {
                 Ok((
@@ -266,6 +281,7 @@ pub async fn get_tile(
                     row.get(4)?,
                     row.get(5)?,
                     row.get(6)?,
+                    row.get(7)?,
                 ))
             },
         )
@@ -278,7 +294,8 @@ pub async fn get_tile(
             )
         })?;
 
-    let (crs, crs_type, data_bounds_json, status, table_name, tile_format, file_path) = meta;
+    let (crs, crs_type, data_bounds_json, status, table_name, tile_format, file_path, tile_source) =
+        meta;
 
     if status != "ready" {
         return Err((
@@ -322,6 +339,27 @@ pub async fn get_tile(
                 return Err(internal_error(format!("Failed to read MBTiles: {}", e)));
             }
         }
+    }
+
+    let tile_source = tile_source.unwrap_or_else(|| "duckdb".to_string());
+    if tile_source == TILE_SOURCE_POSTGIS {
+        let source = fetch_postgis_source_config(&conn, &id)
+            .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
+            .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
+        let properties = build_property_columns_for_query(&conn, &id)
+            .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
+        drop(conn);
+        let mvt_blob = query_mvt_tile(&source, &properties, z, x, y, true)
+            .await
+            .map_err(|e| internal_error(format!("PostGIS tile generation failed: {e}")))?;
+        return match mvt_blob {
+            Some(blob) => Ok((
+                [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
+                blob,
+            )
+                .into_response()),
+            None => Ok(StatusCode::NO_CONTENT.into_response()),
+        };
     }
 
     let table_name = table_name.ok_or_else(|| {
@@ -387,11 +425,16 @@ pub async fn get_feature_properties(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let conn = state.db.lock().await;
 
-    let (status, table_name, tile_format): (String, Option<String>, Option<String>) = conn
+    let (status, table_name, tile_format, tile_source): (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = conn
         .query_row(
-            "SELECT status, table_name, tile_format FROM files WHERE id = ?",
+            "SELECT status, table_name, tile_format, tile_source FROM files WHERE id = ?",
             duckdb::params![id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|_| {
             (
@@ -401,6 +444,40 @@ pub async fn get_feature_properties(
                 }),
             )
         })?;
+
+    let tile_source = tile_source.unwrap_or_else(|| "duckdb".to_string());
+    if tile_source == TILE_SOURCE_POSTGIS {
+        if status != "ready" {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ErrorResponse {
+                    error: "File is not ready for preview".to_string(),
+                }),
+            ));
+        }
+
+        let source = fetch_postgis_source_config(&conn, &id)
+            .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
+            .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
+        let properties = build_property_columns_for_query(&conn, &id)
+            .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
+        drop(conn);
+
+        let values = query_feature_properties_json(&source, &properties, fid)
+            .await
+            .map_err(|e| internal_error(format!("Failed to query PostGIS feature: {e}")))?;
+        let Some(values) = values else {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Feature not found".to_string(),
+                }),
+            ));
+        };
+
+        let properties = build_feature_properties(&properties, &values);
+        return Ok(Json(FeaturePropertiesResponse { fid, properties }));
+    }
 
     if tile_format.is_some() {
         return Err((
