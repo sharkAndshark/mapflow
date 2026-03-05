@@ -222,8 +222,19 @@ async fn shutdown_signal() {
             .await;
     };
 
+    #[cfg(unix)]
+    let hangup = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+    };
+
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
+
+    #[cfg(not(unix))]
+    let hangup = std::future::pending::<()>();
 
     #[cfg(windows)]
     let console_close = windows_console::wait_for_close_signal();
@@ -234,6 +245,7 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+        _ = hangup => {},
         _ = console_close => {},
     }
 }

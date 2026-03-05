@@ -19,8 +19,15 @@ fi
 
 # Detect if this is a Windows platform based on artifact_id
 is_windows=false
-if [[ "$artifact_id" == *"windows"* ]] || [[ "$artifact_id" == *"win"* ]]; then
-  is_windows=true
+case "$artifact_id" in
+  windows-*|windows_*|*-windows-*|*-windows_*|win-*)
+    is_windows=true
+    ;;
+esac
+
+is_macos=false
+if [[ "$artifact_id" == *"darwin"* ]] || [[ "$artifact_id" == *"macos"* ]] || [[ "$artifact_id" == *"osx"* ]]; then
+  is_macos=true
 fi
 
 bundle_name="mapflow-${version}-${artifact_id}"
@@ -38,6 +45,15 @@ cp backend/extensions/spatial-extension-manifest.json "${bundle_dir}/spatial-ext
 cp README.md "${bundle_dir}/README.md"
 cp LICENSE "${bundle_dir}/LICENSE"
 cp NOTICE "${bundle_dir}/NOTICE"
+
+if [ "$is_macos" = true ]; then
+  mkdir -p "${bundle_dir}/macos"
+  cp scripts/macos/launchd-install.sh "${bundle_dir}/macos/launchd-install.sh"
+  cp scripts/macos/launchd-uninstall.sh "${bundle_dir}/macos/launchd-uninstall.sh"
+  cp scripts/macos/launchd-status.sh "${bundle_dir}/macos/launchd-status.sh"
+  cp scripts/macos/README.md "${bundle_dir}/macos/README.md"
+  chmod +x "${bundle_dir}/macos/"*.sh
+fi
 
 mkdir -p "$output_dir"
 
