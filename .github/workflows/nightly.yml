@@ -20,6 +20,7 @@ jobs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
       release_name: ${{ steps.meta.outputs.release_name }}
       release_version: ${{ steps.meta.outputs.release_version }}
+      deb_version: ${{ steps.meta.outputs.deb_version }}
       stamp: ${{ steps.meta.outputs.stamp }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
       owner_lc: ${{ steps.meta.outputs.owner_lc }}
@@ -37,6 +38,7 @@ jobs:
           echo "owner_lc=${owner_lc}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
           echo "release_version=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "deb_version=0.0.0~nightly.${stamp}+${short_sha}.r${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "release_name=Nightly ${stamp} (${short_sha})" >> "$GITHUB_OUTPUT"
 
   verify:
@@ -233,6 +235,45 @@ jobs:
             "${bundle_binary}" \
             "release-assets"
 
+      - name: Package deb (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/release/package_deb.sh \
+            "${{ needs.meta.outputs.deb_version }}" \
+            "${{ matrix.artifact_id }}" \
+            "target/${{ matrix.rust_target }}/release/backend" \
+            "release-assets"
+
+      - name: Verify deb package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb_path="$(ls release-assets/*.deb | head -n 1)"
+          dpkg-deb --info "${deb_path}" >/dev/null
+          contents="$(dpkg-deb --contents "${deb_path}")"
+          grep -q "./usr/bin/mapflow" <<<"${contents}"
+          grep -q "./usr/share/mapflow/spatial-extension-manifest.json" <<<"${contents}"
+          grep -q "./usr/share/doc/mapflow/README.md" <<<"${contents}"
+          grep -q "./usr/share/doc/mapflow/LICENSE" <<<"${contents}"
+          grep -q "./usr/share/doc/mapflow/NOTICE" <<<"${contents}"
+
+      - name: Smoke test installed deb (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb_path="$(ls release-assets/*.deb | head -n 1)"
+          cleanup() {
+            sudo dpkg -r mapflow >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          sudo dpkg -i "${deb_path}"
+          /usr/bin/mapflow --version
+          bash scripts/smoke/smoke-binary.sh --binary /usr/bin/mapflow --port 3317
+
       - name: Upload binary bundle
         uses: actions/upload-artifact@v7
         with:
@@ -240,6 +281,7 @@ jobs:
           path: |
             release-assets/*.tar.gz
             release-assets/*.zip
+            release-assets/*.deb
 
   docker_build:
     needs:
@@ -403,3 +445,4 @@ jobs:
           files: |
             release-assets/**/*.tar.gz
             release-assets/**/*.zip
+            release-assets/**/*.deb

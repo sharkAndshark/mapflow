@@ -90,8 +90,9 @@
 | E2E-009 | 认证流程 | 首次访问 → 设置 → 登录 → 使用 → 登出 | 状态正确 | `frontend/tests/auth.spec.js` | E2E | P0 |
 | E2E-010 | 发布流程 | 上传文件 → ready → 点击发布 → 自定义 slug → 确认 → 复制公开地址 → 无需认证访问瓦片 | 端到端流程成功 | `frontend/tests/publish.spec.js` | E2E | P0 |
 | CI-001 | 冒烟测试 | 构建 Docker/二进制 → 上传 GeoJSON → 等待 ready → 获取瓦片 → 发布 → 公开瓦片。关键 HTTP 调用具备重试能力（降低网络抖动误报） | 与 testdata/smoke/expected_sample_z0_x0_y0.mvt.base64 比较字节 | `scripts/smoke/smoke-docker.sh` / `scripts/smoke/smoke-binary.sh` (release/nightly only) | Integration | P1 |
-| CI-002 | Nightly 发布 | Nightly 工作流每日触发，先执行 verify + smoke，再发布二进制 bundle 和 GHCR nightly 镜像标签 | 生成 prerelease，包含 Linux/macOS bundle；镜像标签包含 nightly、日期、sha | `.github/workflows/nightly.yml` | Delivery | P1 |
-| CI-003 | Stable 发布 | `v*` tag 工作流先执行 verify + smoke，再发布二进制 bundle 和 GHCR stable 镜像标签 | 生成 release，包含 Linux/macOS bundle；镜像标签包含版本号和 latest | `.github/workflows/release.yml` | Delivery | P1 |
+| CI-002 | Nightly 发布 | Nightly 工作流每日触发，先执行 verify + smoke，再发布二进制 bundle、Linux `.deb`（amd64/arm64）和 GHCR nightly 镜像标签 | 生成 prerelease，包含 Linux/macOS bundle + Linux `.deb`；镜像标签包含 nightly、日期、sha | `.github/workflows/nightly.yml` | Delivery | P1 |
+| CI-003 | Stable 发布 | `v*` tag 工作流先执行 verify + smoke，再发布二进制 bundle、Linux `.deb`（amd64/arm64）和 GHCR stable 镜像标签 | 生成 release，包含 Linux/macOS bundle + Linux `.deb`；镜像标签包含版本号和 latest | `.github/workflows/release.yml` | Delivery | P1 |
+| CI-005 | `.deb` 安装验证 | Linux 发布流程对生成的 `.deb` 执行安装校验（`dpkg -i` + `mapflow --version`）并复用 binary smoke 验证安装后行为 | 安装成功且 `scripts/smoke/smoke-binary.sh --binary /usr/bin/mapflow` 通过 | `.github/workflows/nightly.yml` `.github/workflows/release.yml` | Delivery | P1 |
 | CI-004 | 离线扩展打包 | 发布流程按目标平台下载 DuckDB spatial extension；Docker 镜像写入 `/app/extensions/`，二进制 bundle 在构建时内嵌 extension | 镜像内存在 `/app/extensions/spatial.duckdb_extension`；bundle 仅含可执行文件但可离线启动并成功加载 spatial | `scripts/release/spatial_extension_artifact.sh` | Delivery | P1 |
 | OSM-001 | 瓦片生成（lines） | OSM sf_lines（20,898 道路特征）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_lines_samples` | Integration | P1 |
 | OSM-002 | 瓦片生成（points） | OSM sf_points（交通信号灯、地点）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_points_samples` | Integration | P1 |
