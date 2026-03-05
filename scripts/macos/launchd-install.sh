@@ -86,8 +86,10 @@ abs_path() {
 guess_binary() {
   local candidates=(
     "${PWD}/mapflow"
+    "${SCRIPT_DIR}/../mapflow"
     "${SCRIPT_DIR}/../../mapflow"
     "${PWD}/target/release/backend"
+    "${SCRIPT_DIR}/../../target/release/backend"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -320,7 +322,7 @@ health_url="http://${health_host}:${health_port}/health"
 echo
 echo "Service installed and started."
 echo "Self-check commands:"
-echo "  bash scripts/macos/launchd-status.sh --label \"$LABEL\" --listen \"$LISTEN\""
+echo "  bash \"$SCRIPT_DIR/launchd-status.sh\" --label \"$LABEL\" --listen \"$LISTEN\""
 echo "  curl -fsS \"$health_url\""
 echo "Logs:"
 echo "  tail -f \"$STDOUT_LOG\""
