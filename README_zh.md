@@ -21,6 +21,19 @@
 docker run -d -p 3000:3000 ghcr.io/sharkandshark/mapflow:nightly
 ```
 
+## Homebrew（Preview 渠道）
+
+MapFlow 的 Homebrew 分发当前为早期预览渠道：
+
+- 允许引入破坏性变更
+- **不保证**升级向后兼容
+- 执行 `brew upgrade` 前请先备份 `~/.mapflow`
+
+```bash
+brew tap sharkAndshark/mapflow
+brew install sharkAndshark/mapflow/mapflow-preview
+```
+
 ## 支持格式
 
 - Shapefile（`.zip` 包含 `.shp/.shx/.dbf`）

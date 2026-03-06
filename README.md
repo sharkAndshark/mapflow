@@ -21,6 +21,19 @@
 docker run -d -p 3000:3000 ghcr.io/sharkandshark/mapflow:nightly
 ```
 
+## Homebrew (Preview Channel)
+
+MapFlow Homebrew distribution is currently an early preview channel.
+
+- Breaking changes may be introduced at any time
+- Upgrades are **not** guaranteed to be backward compatible
+- Back up `~/.mapflow` before `brew upgrade`
+
+```bash
+brew tap sharkAndshark/mapflow
+brew install sharkAndshark/mapflow/mapflow-preview
+```
+
 ## Supported Formats
 
 - Shapefile (`.zip` containing `.shp/.shx/.dbf`)

@@ -1,6 +1,15 @@
 # Known Issues & TODOs
 
-**Last Updated**: 2026-03-05
+**Last Updated**: 2026-03-06
+
+## Homebrew Preview Distribution（2026-03-06）
+
+- [x] 创建 tap 仓库：`sharkAndshark/homebrew-mapflow`
+- [x] 在主仓库新增 formula 生成脚本：`scripts/release/generate_homebrew_formula.sh`
+- [x] 在 README / README_zh 明确 preview 语义（允许破坏性变更、不保证升级兼容）
+- [ ] 首次发布 `mapflow-preview`（建议从 `v0.1.0-preview.1` 开始，而非 nightly tag）
+- [ ] 将 `Formula/mapflow-preview.rb` 提交到 tap 仓库并验证 `brew install sharkAndshark/mapflow/mapflow-preview`
+- [ ] 发布回滚说明：如何 pin 到旧 preview 版本 + 升级前备份 `~/.mapflow`
 
 ## Agent 接管执行清单（2026-03-02）
 
