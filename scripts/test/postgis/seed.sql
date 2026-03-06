@@ -1,6 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 DROP VIEW IF EXISTS public.roads_view;
+DROP TABLE IF EXISTS public.roads_empty;
 DROP TABLE IF EXISTS public.roads_include;
 DROP TABLE IF EXISTS public.roads_quoted;
 DROP TABLE IF EXISTS public.roads_composite;
@@ -23,6 +24,12 @@ CREATE INDEX roads_geom_gix ON public.roads USING GIST (geom);
 CREATE VIEW public.roads_view AS
 SELECT id, name, category, speed_limit, geom
 FROM public.roads;
+
+CREATE TABLE public.roads_empty (
+  id BIGINT PRIMARY KEY,
+  name TEXT NOT NULL,
+  geom geometry(LineString, 4326) NOT NULL
+);
 
 CREATE TABLE public.roads_composite (
   id BIGINT NOT NULL,

@@ -497,6 +497,36 @@ async fn test_postgis_view_registration_succeeds() {
 }
 
 #[tokio::test]
+async fn test_postgis_empty_relation_registration_succeeds() {
+    init_tracing();
+    let Some(cfg) = PostgisEnv::maybe_from_env() else {
+        return;
+    };
+
+    std::env::set_var("APP_SECRET", "postgis-integration-secret");
+
+    let (app, _tmp, db) = setup_app().await;
+    let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
+
+    let register_payload = register_source_payload(
+        &cfg,
+        "integration-empty",
+        "roads_empty",
+        "PostGIS Empty Roads",
+    );
+
+    let (status, body) = send_json_retry_postgis_connectivity(
+        &app,
+        Method::POST,
+        "/api/postgis/sources/register",
+        Some(register_payload),
+        Some(&admin_cookie),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{}", body);
+}
+
+#[tokio::test]
 async fn test_postgis_rejects_composite_unique_fid_index() {
     init_tracing();
     let Some(cfg) = PostgisEnv::maybe_from_env() else {

@@ -629,16 +629,46 @@ async fn introspect_relation(
         ));
     }
 
-    let srid_sql = format!(
-        "SELECT ST_SRID({geom_ident}) FROM {relation_name} WHERE {geom_ident} IS NOT NULL LIMIT 1"
-    );
-    let srid_row = client
-        .query_opt(&srid_sql, &[])
+    let srid_metadata_row = client
+        .query_opt(
+            "SELECT COALESCE(
+                NULLIF(postgis_typmod_srid(a.atttypmod), 0),
+                NULLIF(gc.srid, 0)
+            )
+             FROM pg_attribute a
+             JOIN pg_class c ON c.oid = a.attrelid
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             LEFT JOIN geometry_columns gc
+               ON gc.f_table_schema = n.nspname
+              AND gc.f_table_name = c.relname
+              AND gc.f_geometry_column = a.attname
+             WHERE a.attrelid = $1::OID
+               AND a.attnum > 0
+               AND NOT a.attisdropped
+               AND a.attname = $2",
+            &[&relation_oid, &geom_column],
+        )
         .await
-        .map_err(|e| internal_error(format!("Failed to detect SRID: {e}")))?;
-    let srid = srid_row
+        .map_err(|e| internal_error(format!("Failed to inspect geometry SRID metadata: {e}")))?;
+
+    let srid_from_metadata = srid_metadata_row
         .and_then(|row| row.try_get::<_, Option<i32>>(0).ok().flatten())
-        .unwrap_or(0);
+        .filter(|value| *value > 0);
+
+    let srid = if let Some(value) = srid_from_metadata {
+        value
+    } else {
+        let srid_sql = format!(
+            "SELECT ST_SRID({geom_ident}) FROM {relation_name} WHERE {geom_ident} IS NOT NULL LIMIT 1"
+        );
+        let srid_row = client
+            .query_opt(&srid_sql, &[])
+            .await
+            .map_err(|e| internal_error(format!("Failed to detect SRID from data rows: {e}")))?;
+        srid_row
+            .and_then(|row| row.try_get::<_, Option<i32>>(0).ok().flatten())
+            .unwrap_or(0)
+    };
     if srid <= 0 {
         return Err(bad_request("Geometry SRID must be a positive EPSG code"));
     }
