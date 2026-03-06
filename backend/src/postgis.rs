@@ -398,16 +398,24 @@ pub async fn query_feature_properties_json(
 fn validate_connection_config(
     config: PostgisConnectionConfig,
 ) -> Result<PostgisConnectionConfig, String> {
-    let host = config.host.trim();
-    let database = config.database.trim();
-    let username = config.username.trim();
-    let password = config.password.trim();
-    let ssl_mode = config.ssl_mode.trim().to_ascii_lowercase();
+    let PostgisConnectionConfig {
+        host,
+        port,
+        database,
+        username,
+        password,
+        ssl_mode,
+    } = config;
+
+    let host = host.trim();
+    let database = database.trim();
+    let username = username.trim();
+    let ssl_mode = ssl_mode.trim().to_ascii_lowercase();
 
     if host.is_empty() || database.is_empty() || username.is_empty() || password.is_empty() {
         return Err("Connection fields host/database/username/password are required".to_string());
     }
-    if config.port == 0 {
+    if port == 0 {
         return Err("Connection port must be greater than 0".to_string());
     }
     if ssl_mode != "disable" {
@@ -416,10 +424,10 @@ fn validate_connection_config(
 
     Ok(PostgisConnectionConfig {
         host: host.to_string(),
-        port: config.port,
+        port,
         database: database.to_string(),
         username: username.to_string(),
-        password: password.to_string(),
+        password,
         ssl_mode,
     })
 }
@@ -904,7 +912,7 @@ pub fn build_feature_properties(
 
 #[cfg(test)]
 mod tests {
-    use super::quote_ident;
+    use super::{quote_ident, validate_connection_config, PostgisConnectionConfig};
 
     #[test]
     fn quote_ident_allows_quoted_postgres_identifiers() {
@@ -917,5 +925,47 @@ mod tests {
     fn quote_ident_rejects_empty_or_nul() {
         assert!(quote_ident("").is_err());
         assert!(quote_ident("a\0b").is_err());
+    }
+
+    #[test]
+    fn validate_connection_config_preserves_password_whitespace() {
+        let cfg = PostgisConnectionConfig {
+            host: " localhost ".to_string(),
+            port: 5432,
+            database: " mapflow ".to_string(),
+            username: " user ".to_string(),
+            password: "  secret with space  ".to_string(),
+            ssl_mode: " disable ".to_string(),
+        };
+
+        let validated = validate_connection_config(cfg).expect("validated");
+        assert_eq!(validated.host, "localhost");
+        assert_eq!(validated.database, "mapflow");
+        assert_eq!(validated.username, "user");
+        assert_eq!(validated.password, "  secret with space  ");
+        assert_eq!(validated.ssl_mode, "disable");
+    }
+
+    #[test]
+    fn validate_connection_config_accepts_whitespace_only_password_but_rejects_empty() {
+        let whitespace_password = PostgisConnectionConfig {
+            host: "localhost".to_string(),
+            port: 5432,
+            database: "mapflow".to_string(),
+            username: "user".to_string(),
+            password: "   ".to_string(),
+            ssl_mode: "disable".to_string(),
+        };
+        assert!(validate_connection_config(whitespace_password).is_ok());
+
+        let empty_password = PostgisConnectionConfig {
+            host: "localhost".to_string(),
+            port: 5432,
+            database: "mapflow".to_string(),
+            username: "user".to_string(),
+            password: String::new(),
+            ssl_mode: "disable".to_string(),
+        };
+        assert!(validate_connection_config(empty_password).is_err());
     }
 }
