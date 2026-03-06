@@ -408,6 +408,40 @@ async fn test_postgis_rejects_composite_unique_fid_index() {
 }
 
 #[tokio::test]
+async fn test_postgis_rejects_include_only_fid_index() {
+    init_tracing();
+    let Some(cfg) = PostgisEnv::maybe_from_env() else {
+        return;
+    };
+
+    std::env::set_var("APP_SECRET", "postgis-integration-secret");
+
+    let (app, _tmp) = setup_app().await;
+
+    let register_payload = register_source_payload(
+        &cfg,
+        "integration-include",
+        "roads_include",
+        "PostGIS Include FID",
+    );
+
+    let (status, body) = send_json_retry_postgis_connectivity(
+        &app,
+        Method::POST,
+        "/api/postgis/sources/register",
+        Some(register_payload),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{}", body);
+
+    let error = body["error"].as_str().unwrap_or("");
+    assert!(
+        error.contains("single-column UNIQUE/PRIMARY KEY index"),
+        "unexpected error body: {body}"
+    );
+}
+
+#[tokio::test]
 async fn test_postgis_quoted_property_identifiers_and_aliases_work() {
     init_tracing();
     let Some(cfg) = PostgisEnv::maybe_from_env() else {

@@ -1,6 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 DROP VIEW IF EXISTS public.roads_view;
+DROP TABLE IF EXISTS public.roads_include;
 DROP TABLE IF EXISTS public.roads_quoted;
 DROP TABLE IF EXISTS public.roads_composite;
 DROP TABLE IF EXISTS public.roads;
@@ -36,6 +37,20 @@ INSERT INTO public.roads_composite (id, version, name, geom) VALUES
   (1, 2, 'Main Street v2', ST_GeomFromText('LINESTRING(-122.4231 37.7786, -122.4120 37.7811)', 4326));
 
 CREATE INDEX roads_composite_geom_gix ON public.roads_composite USING GIST (geom);
+
+CREATE TABLE public.roads_include (
+  id BIGINT NOT NULL,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  geom geometry(LineString, 4326) NOT NULL
+);
+
+INSERT INTO public.roads_include (id, code, name, geom) VALUES
+  (1, 'A100', 'Include Road A', ST_GeomFromText('LINESTRING(-122.4231 37.7785, -122.4120 37.7810)', 4326)),
+  (2, 'B200', 'Include Road B', ST_GeomFromText('LINESTRING(-122.4300 37.7700, -122.4200 37.7680)', 4326));
+
+CREATE UNIQUE INDEX roads_include_code_uidx ON public.roads_include (code) INCLUDE (id);
+CREATE INDEX roads_include_geom_gix ON public.roads_include USING GIST (geom);
 
 CREATE TABLE public.roads_quoted (
   id BIGINT PRIMARY KEY,

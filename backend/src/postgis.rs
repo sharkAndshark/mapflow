@@ -543,9 +543,11 @@ async fn introspect_relation(
                 "SELECT EXISTS(
                     SELECT 1
                     FROM pg_index i
+                    JOIN LATERAL unnest(i.indkey::INT2[]) WITH ORDINALITY AS idx(attnum, ord)
+                      ON idx.ord <= i.indnkeyatts
                     JOIN pg_attribute a
                       ON a.attrelid = i.indrelid
-                     AND a.attnum = ANY(i.indkey)
+                     AND a.attnum = idx.attnum
                     WHERE i.indrelid = $1::OID
                       AND (i.indisunique OR i.indisprimary)
                       AND i.indnkeyatts = 1
