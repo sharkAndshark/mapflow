@@ -3,6 +3,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum_login::AuthSession;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use chrono::Utc;
 use rand::RngCore;
@@ -53,9 +54,12 @@ struct ColumnMetadata {
 }
 
 pub async fn test_postgis_connection(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(_state): State<AppState>,
     Json(req): Json<PostgisConnectionTestRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    require_postgis_admin(&auth_session)?;
+
     let cfg = validate_connection_config(req.connection).map_err(|e| bad_request(&e))?;
     let (server_version, postgis_version) = probe_postgis_versions(&cfg).await.map_err(|e| {
         (
@@ -74,9 +78,12 @@ pub async fn test_postgis_connection(
 }
 
 pub async fn register_postgis_source(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     Json(req): Json<RegisterPostgisSourceRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    require_postgis_admin(&auth_session)?;
+
     let connection_name = req.connection_name.trim().to_string();
     if connection_name.is_empty() {
         return Err(bad_request("connectionName is required"));
@@ -218,6 +225,30 @@ pub async fn register_postgis_source(
             )))
         }
     }
+}
+
+fn require_postgis_admin(
+    auth_session: &AuthSession<crate::AuthBackend>,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let Some(user) = auth_session.user.as_ref() else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Not authenticated".to_string(),
+            }),
+        ));
+    };
+
+    if user.role != "admin" {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Only administrators can manage PostGIS sources".to_string(),
+            }),
+        ));
+    }
+
+    Ok(())
 }
 
 pub fn fetch_postgis_source_config(

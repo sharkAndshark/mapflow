@@ -3,14 +3,17 @@ use axum::http::{Method, Request, StatusCode};
 use backend::{build_test_router, init_database, AppState, AuthBackend, DuckDBStore};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
+use tower_sessions::session::{Id, Record};
 
 static TRACING_INIT: Once = Once::new();
+static TEST_MODE_INIT: Once = Once::new();
 
 #[derive(Debug, Clone)]
 struct PostgisEnv {
@@ -49,7 +52,19 @@ impl PostgisEnv {
     }
 }
 
-async fn setup_app() -> (axum::Router, TempDir) {
+fn ensure_test_mode() {
+    TEST_MODE_INIT.call_once(|| {
+        std::env::set_var("MAPFLOW_TEST_MODE", "1");
+    });
+}
+
+async fn setup_app() -> (
+    axum::Router,
+    TempDir,
+    Arc<tokio::sync::Mutex<duckdb::Connection>>,
+) {
+    ensure_test_mode();
+
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
     std::fs::create_dir_all(&upload_dir).expect("create upload dir");
@@ -68,11 +83,11 @@ async fn setup_app() -> (axum::Router, TempDir) {
         max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
         max_size_label: Arc::new(RwLock::new("10MB".to_string())),
         auth_backend: AuthBackend::new(db.clone()),
-        session_store: DuckDBStore::new(db),
+        session_store: DuckDBStore::new(db.clone()),
     };
 
     let router = build_test_router(state);
-    (router, temp_dir)
+    (router, temp_dir, db)
 }
 
 fn init_tracing() {
@@ -125,18 +140,61 @@ async fn send_json(
     (status, value)
 }
 
+async fn send_json_with_cookie(
+    app: &axum::Router,
+    method: Method,
+    uri: &str,
+    body: Option<Value>,
+    cookie: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(cookie) = cookie {
+        builder = builder.header("cookie", cookie);
+    }
+
+    let request = if let Some(payload) = body {
+        builder
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .expect("request")
+    } else {
+        builder.body(Body::empty()).expect("request")
+    };
+
+    let response = app.clone().oneshot(request).await.expect("response");
+    let status = response.status();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("collect body")
+        .to_bytes();
+    let value = if bytes.is_empty() {
+        json!({})
+    } else {
+        serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
+            panic!(
+                "non-json response body: {}",
+                String::from_utf8_lossy(&bytes)
+            )
+        })
+    };
+    (status, value)
+}
+
 async fn send_json_retry_postgis_connectivity(
     app: &axum::Router,
     method: Method,
     uri: &str,
     body: Option<Value>,
+    cookie: Option<&str>,
 ) -> (StatusCode, Value) {
     const MAX_ATTEMPTS: usize = 8;
     const RETRY_DELAY_MS: u64 = 500;
 
     let mut attempt = 0;
     loop {
-        let result = send_json(app, method.clone(), uri, body.clone()).await;
+        let result = send_json_with_cookie(app, method.clone(), uri, body.clone(), cookie).await;
         let should_retry = result.0 == StatusCode::BAD_REQUEST
             && result.1["error"]
                 .as_str()
@@ -198,6 +256,66 @@ fn register_source_payload(
     })
 }
 
+async fn create_user_and_session(
+    app: &axum::Router,
+    db: Arc<tokio::sync::Mutex<duckdb::Connection>>,
+    user_id: &str,
+    username: &str,
+    role: &str,
+) -> String {
+    let password_hash = "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36IgQE0VrqQ6EJdNpO5mLY";
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET username = excluded.username, password_hash = excluded.password_hash, role = excluded.role",
+            duckdb::params![user_id, username, password_hash, role],
+        )
+        .expect("insert user");
+    }
+
+    let id = Id::default();
+    let expiry_date = time::OffsetDateTime::now_utc() + time::Duration::hours(24);
+
+    let auth_hash = password_hash.as_bytes().to_vec();
+    let mut auth_data = HashMap::new();
+    auth_data.insert("user_id".to_string(), serde_json::json!(user_id));
+    auth_data.insert("auth_hash".to_string(), serde_json::json!(auth_hash));
+
+    let mut session_data = HashMap::new();
+    session_data.insert("axum-login.data".to_string(), serde_json::json!(auth_data));
+
+    let record = Record {
+        id,
+        data: session_data,
+        expiry_date,
+    };
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/test/session")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "session_id": record.id.to_string(),
+                "data": serde_json::to_string(&record.data).expect("session json"),
+                "expiry_date": chrono::DateTime::from_timestamp(record.expiry_date.unix_timestamp(), 0)
+                    .expect("expiry timestamp")
+                    .to_rfc3339()
+            })
+            .to_string(),
+        ))
+        .expect("session request");
+
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("session response");
+    assert_eq!(response.status(), StatusCode::OK);
+    format!("id={}", record.id)
+}
+
 #[tokio::test]
 async fn test_postgis_register_preview_publish_flow() {
     init_tracing();
@@ -207,7 +325,8 @@ async fn test_postgis_register_preview_publish_flow() {
 
     std::env::set_var("APP_SECRET", "postgis-integration-secret");
 
-    let (app, _tmp) = setup_app().await;
+    let (app, _tmp, db) = setup_app().await;
+    let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
     let test_payload = json!({
         "connection": postgis_connection_payload(&cfg)
@@ -218,6 +337,7 @@ async fn test_postgis_register_preview_publish_flow() {
         Method::POST,
         "/api/postgis/connections/test",
         Some(test_payload),
+        Some(&admin_cookie),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", body);
@@ -231,6 +351,7 @@ async fn test_postgis_register_preview_publish_flow() {
         Method::POST,
         "/api/postgis/sources/register",
         Some(register_payload),
+        Some(&admin_cookie),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{}", body);
@@ -338,7 +459,8 @@ async fn test_postgis_view_registration_succeeds() {
 
     std::env::set_var("APP_SECRET", "postgis-integration-secret");
 
-    let (app, _tmp) = setup_app().await;
+    let (app, _tmp, db) = setup_app().await;
+    let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
     let register_payload =
         register_source_payload(&cfg, "integration-view", "roads_view", "PostGIS Roads View");
@@ -348,6 +470,7 @@ async fn test_postgis_view_registration_succeeds() {
         Method::POST,
         "/api/postgis/sources/register",
         Some(register_payload),
+        Some(&admin_cookie),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{}", body);
@@ -382,7 +505,8 @@ async fn test_postgis_rejects_composite_unique_fid_index() {
 
     std::env::set_var("APP_SECRET", "postgis-integration-secret");
 
-    let (app, _tmp) = setup_app().await;
+    let (app, _tmp, db) = setup_app().await;
+    let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
     let register_payload = register_source_payload(
         &cfg,
@@ -396,6 +520,7 @@ async fn test_postgis_rejects_composite_unique_fid_index() {
         Method::POST,
         "/api/postgis/sources/register",
         Some(register_payload),
+        Some(&admin_cookie),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{}", body);
@@ -416,7 +541,8 @@ async fn test_postgis_rejects_include_only_fid_index() {
 
     std::env::set_var("APP_SECRET", "postgis-integration-secret");
 
-    let (app, _tmp) = setup_app().await;
+    let (app, _tmp, db) = setup_app().await;
+    let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
     let register_payload = register_source_payload(
         &cfg,
@@ -430,6 +556,7 @@ async fn test_postgis_rejects_include_only_fid_index() {
         Method::POST,
         "/api/postgis/sources/register",
         Some(register_payload),
+        Some(&admin_cookie),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{}", body);
@@ -450,7 +577,8 @@ async fn test_postgis_quoted_property_identifiers_and_aliases_work() {
 
     std::env::set_var("APP_SECRET", "postgis-integration-secret");
 
-    let (app, _tmp) = setup_app().await;
+    let (app, _tmp, db) = setup_app().await;
+    let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
     let register_payload = register_source_payload(
         &cfg,
@@ -463,6 +591,7 @@ async fn test_postgis_quoted_property_identifiers_and_aliases_work() {
         Method::POST,
         "/api/postgis/sources/register",
         Some(register_payload),
+        Some(&admin_cookie),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{}", body);
