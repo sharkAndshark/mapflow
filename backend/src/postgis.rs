@@ -532,47 +532,60 @@ async fn introspect_relation(
     if matches!(relation_kind.as_str(), "r" | "p") {
         let fid_unique_row = client
             .query_one(
-                "SELECT COALESCE(bool_or(i.indisunique OR i.indisprimary), FALSE)
-                 FROM pg_index i
-                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                 WHERE i.indrelid = $1::OID AND a.attname = $2",
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM pg_index i
+                    JOIN pg_attribute a
+                      ON a.attrelid = i.indrelid
+                     AND a.attnum = ANY(i.indkey)
+                    WHERE i.indrelid = $1::OID
+                      AND (i.indisunique OR i.indisprimary)
+                      AND i.indnkeyatts = 1
+                      AND i.indpred IS NULL
+                      AND a.attname = $2
+                )",
                 &[&relation_oid, &fid_column],
             )
             .await
             .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
-        let fid_is_unique: bool = fid_unique_row.get(0);
-        if !fid_is_unique {
+        let fid_has_single_unique_index: bool = fid_unique_row.get(0);
+        if !fid_has_single_unique_index {
             return Err(bad_request(
-                "fidColumn must be covered by UNIQUE/PRIMARY KEY index",
+                "fidColumn must be backed by a single-column UNIQUE/PRIMARY KEY index",
             ));
         }
-    } else {
-        let fid_data_sql = format!(
-            "SELECT
-                EXISTS(SELECT 1 FROM {relation_name} WHERE {fid_ident} IS NULL LIMIT 1),
-                EXISTS(
-                    SELECT 1
-                    FROM (
-                        SELECT {fid_ident}
-                        FROM {relation_name}
-                        GROUP BY {fid_ident}
-                        HAVING COUNT(*) > 1
-                        LIMIT 1
-                    ) d
-                )"
-        );
+    }
 
-        let fid_data_row = client
-            .query_one(&fid_data_sql, &[])
-            .await
-            .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
-        let has_null_fid: bool = fid_data_row.get(0);
-        let has_duplicate_fid: bool = fid_data_row.get(1);
-        if has_null_fid || has_duplicate_fid {
+    let fid_data_sql = format!(
+        "SELECT
+            EXISTS(SELECT 1 FROM {relation_name} WHERE {fid_ident} IS NULL LIMIT 1),
+            EXISTS(
+                SELECT 1
+                FROM (
+                    SELECT {fid_ident}
+                    FROM {relation_name}
+                    GROUP BY {fid_ident}
+                    HAVING COUNT(*) > 1
+                    LIMIT 1
+                ) d
+            )"
+    );
+
+    let fid_data_row = client
+        .query_one(&fid_data_sql, &[])
+        .await
+        .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
+    let has_null_fid: bool = fid_data_row.get(0);
+    let has_duplicate_fid: bool = fid_data_row.get(1);
+    if has_null_fid || has_duplicate_fid {
+        if matches!(relation_kind.as_str(), "r" | "p") {
             return Err(bad_request(
-                "fidColumn must be unique and non-null for view/foreign sources",
+                "fidColumn must be unique and non-null across all rows",
             ));
         }
+        return Err(bad_request(
+            "fidColumn must be unique and non-null for view/foreign sources",
+        ));
     }
 
     let srid_sql = format!(
@@ -729,10 +742,11 @@ fn validate_identifier(
 }
 
 fn quote_ident(raw: &str) -> Result<String, String> {
-    let pattern =
-        Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*$").map_err(|e| format!("Regex init failed: {e}"))?;
-    if !pattern.is_match(raw) {
-        return Err(format!("Invalid identifier: {raw}"));
+    if raw.is_empty() {
+        return Err("Invalid identifier: empty".to_string());
+    }
+    if raw.chars().any(|ch| ch == '\0') {
+        return Err("Invalid identifier: contains NUL byte".to_string());
     }
     Ok(format!("\"{}\"", raw.replace('"', "\"\"")))
 }
@@ -886,4 +900,22 @@ pub fn build_feature_properties(
             alias: prop.alias.clone(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quote_ident;
+
+    #[test]
+    fn quote_ident_allows_quoted_postgres_identifiers() {
+        assert_eq!(quote_ident("road name").expect("quoted"), "\"road name\"");
+        assert_eq!(quote_ident("1st-class").expect("quoted"), "\"1st-class\"");
+        assert_eq!(quote_ident("ab\"cd").expect("quoted"), "\"ab\"\"cd\"");
+    }
+
+    #[test]
+    fn quote_ident_rejects_empty_or_nul() {
+        assert!(quote_ident("").is_err());
+        assert!(quote_ident("a\0b").is_err());
+    }
 }

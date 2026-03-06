@@ -5,6 +5,7 @@ use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::sync::Once;
+use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
@@ -124,6 +125,32 @@ async fn send_json(
     (status, value)
 }
 
+async fn send_json_retry_postgis_connectivity(
+    app: &axum::Router,
+    method: Method,
+    uri: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    const MAX_ATTEMPTS: usize = 8;
+    const RETRY_DELAY_MS: u64 = 500;
+
+    let mut attempt = 0;
+    loop {
+        let result = send_json(app, method.clone(), uri, body.clone()).await;
+        let should_retry = result.0 == StatusCode::BAD_REQUEST
+            && result.1["error"]
+                .as_str()
+                .map(|msg| msg.contains("error communicating with the server"))
+                .unwrap_or(false)
+            && attempt + 1 < MAX_ATTEMPTS;
+        if !should_retry {
+            return result;
+        }
+        attempt += 1;
+        tokio::time::sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+    }
+}
+
 async fn send_bytes(app: &axum::Router, method: Method, uri: &str) -> (StatusCode, Vec<u8>) {
     let request = Request::builder()
         .method(method)
@@ -154,6 +181,23 @@ fn postgis_connection_payload(cfg: &PostgisEnv) -> Value {
     })
 }
 
+fn register_source_payload(
+    cfg: &PostgisEnv,
+    connection_name: &str,
+    object: &str,
+    display_name: &str,
+) -> Value {
+    json!({
+        "connectionName": connection_name,
+        "connection": postgis_connection_payload(cfg),
+        "schema": "public",
+        "object": object,
+        "geometryColumn": "geom",
+        "fidColumn": "id",
+        "displayName": display_name
+    })
+}
+
 #[tokio::test]
 async fn test_postgis_register_preview_publish_flow() {
     init_tracing();
@@ -169,7 +213,7 @@ async fn test_postgis_register_preview_publish_flow() {
         "connection": postgis_connection_payload(&cfg)
     });
 
-    let (status, body) = send_json(
+    let (status, body) = send_json_retry_postgis_connectivity(
         &app,
         Method::POST,
         "/api/postgis/connections/test",
@@ -179,17 +223,10 @@ async fn test_postgis_register_preview_publish_flow() {
     assert_eq!(status, StatusCode::OK, "{}", body);
     assert_eq!(body["success"], json!(true));
 
-    let register_payload = json!({
-        "connectionName": "integration-local",
-        "connection": postgis_connection_payload(&cfg),
-        "schema": "public",
-        "object": "roads",
-        "geometryColumn": "geom",
-        "fidColumn": "id",
-        "displayName": "PostGIS Roads"
-    });
+    let register_payload =
+        register_source_payload(&cfg, "integration-local", "roads", "PostGIS Roads");
 
-    let (status, body) = send_json(
+    let (status, body) = send_json_retry_postgis_connectivity(
         &app,
         Method::POST,
         "/api/postgis/sources/register",
@@ -303,17 +340,10 @@ async fn test_postgis_view_registration_succeeds() {
 
     let (app, _tmp) = setup_app().await;
 
-    let register_payload = json!({
-        "connectionName": "integration-view",
-        "connection": postgis_connection_payload(&cfg),
-        "schema": "public",
-        "object": "roads_view",
-        "geometryColumn": "geom",
-        "fidColumn": "id",
-        "displayName": "PostGIS Roads View"
-    });
+    let register_payload =
+        register_source_payload(&cfg, "integration-view", "roads_view", "PostGIS Roads View");
 
-    let (status, body) = send_json(
+    let (status, body) = send_json_retry_postgis_connectivity(
         &app,
         Method::POST,
         "/api/postgis/sources/register",
@@ -341,4 +371,132 @@ async fn test_postgis_view_registration_succeeds() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", feature);
+}
+
+#[tokio::test]
+async fn test_postgis_rejects_composite_unique_fid_index() {
+    init_tracing();
+    let Some(cfg) = PostgisEnv::maybe_from_env() else {
+        return;
+    };
+
+    std::env::set_var("APP_SECRET", "postgis-integration-secret");
+
+    let (app, _tmp) = setup_app().await;
+
+    let register_payload = register_source_payload(
+        &cfg,
+        "integration-composite",
+        "roads_composite",
+        "PostGIS Composite FID",
+    );
+
+    let (status, body) = send_json_retry_postgis_connectivity(
+        &app,
+        Method::POST,
+        "/api/postgis/sources/register",
+        Some(register_payload),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{}", body);
+
+    let error = body["error"].as_str().unwrap_or("");
+    assert!(
+        error.contains("single-column UNIQUE/PRIMARY KEY index"),
+        "unexpected error body: {body}"
+    );
+}
+
+#[tokio::test]
+async fn test_postgis_quoted_property_identifiers_and_aliases_work() {
+    init_tracing();
+    let Some(cfg) = PostgisEnv::maybe_from_env() else {
+        return;
+    };
+
+    std::env::set_var("APP_SECRET", "postgis-integration-secret");
+
+    let (app, _tmp) = setup_app().await;
+
+    let register_payload = register_source_payload(
+        &cfg,
+        "integration-quoted",
+        "roads_quoted",
+        "PostGIS Quoted Columns",
+    );
+    let (status, body) = send_json_retry_postgis_connectivity(
+        &app,
+        Method::POST,
+        "/api/postgis/sources/register",
+        Some(register_payload),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{}", body);
+    let file_id = body["fileId"].as_str().expect("fileId").to_string();
+
+    let (status, schema) = send_json(
+        &app,
+        Method::GET,
+        &format!("/api/files/{file_id}/schema"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", schema);
+    let normalized_name = schema["layers"][0]["fields"]
+        .as_array()
+        .and_then(|fields| {
+            fields
+                .iter()
+                .find(|field| field["name"] == json!("road name"))
+                .and_then(|field| field["normalized"].as_str())
+        })
+        .expect("normalized name for quoted column")
+        .to_string();
+
+    let (status, updated) = send_json(
+        &app,
+        Method::PATCH,
+        &format!("/api/files/{file_id}/field-aliases"),
+        Some(json!({
+            "fields": [
+                {
+                    "normalized_name": normalized_name,
+                    "alias": "Road Name-1"
+                }
+            ]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", updated);
+
+    let (status, feature) = send_json(
+        &app,
+        Method::GET,
+        &format!("/api/files/{file_id}/features/1"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", feature);
+    let has_quoted_property = feature["properties"]
+        .as_array()
+        .map(|props| props.iter().any(|p| p["key"] == json!("road name")))
+        .unwrap_or(false);
+    assert!(
+        has_quoted_property,
+        "feature should contain quoted property key: {feature}"
+    );
+
+    let (status, tile) = send_bytes(
+        &app,
+        Method::GET,
+        &format!("/api/files/{file_id}/tiles/0/0/0"),
+    )
+    .await;
+    assert!(
+        status == StatusCode::OK || status == StatusCode::NO_CONTENT,
+        "tile status {status}"
+    );
+    if status == StatusCode::OK {
+        assert!(!tile.is_empty(), "tile should not be empty");
+    }
 }
