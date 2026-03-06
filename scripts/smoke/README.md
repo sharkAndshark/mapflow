@@ -29,6 +29,7 @@
 | 21. MBTiles(PNG) 瓦片类型 | 私有/公开瓦片 `Content-Type: image/png` |
 | 22. 错误场景 | 超大文件上传返回 413（File too large） |
 | 23. Crash Recovery | 强制终止后重启，服务可恢复启动且 API 可用 |
+| 24. Graceful Shutdown (Unix) | 发送 SIGHUP 触发优雅退出（checkpoint）后重启，服务与数据可用且无 WAL 隔离产物 |
 
 ## 使用方法
 
@@ -84,6 +85,19 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
   --fixture frontend/tests/fixtures/sample.geojson
 ```
 
+### Graceful Shutdown（二进制，Unix SIGHUP）
+
+```bash
+# 基本用法
+./scripts/smoke/smoke-graceful-shutdown.sh --binary ./target/release/backend
+
+# 完整参数
+./scripts/smoke/smoke-graceful-shutdown.sh \
+  --binary ./target/release/backend \
+  --port 3011 \
+  --fixture frontend/tests/fixtures/sample.geojson
+```
+
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -103,6 +117,7 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
 | `SMOKE_WORK_DIR` | 工作目录 | 临时目录 |
 | `SMOKE_KEEP_DATA` | 保留测试数据 | false |
 | `SMOKE_CRASH_PORT` | crash-recovery 端口 | 3010 |
+| `SMOKE_GRACEFUL_PORT` | graceful-shutdown 端口 | 3011 |
 | `SMOKE_CORRUPT_WAL_AFTER_KILL` | 崩溃后是否注入损坏 WAL | true |
 | `SMOKE_USERNAME` | 测试用户名 | smoke_admin |
 | `SMOKE_PASSWORD` | 测试密码 | SmokePass1! |
@@ -131,6 +146,13 @@ SMOKE_KEEP_DATA=true ./scripts/smoke/smoke-binary.sh --binary ./mapflow
   run: |
     bash scripts/smoke/smoke-crash-recovery.sh \
       --binary "./target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+
+- name: Smoke test graceful shutdown (Unix SIGHUP)
+  if: runner.os != 'Windows'
+  shell: bash
+  run: |
+    bash scripts/smoke/smoke-graceful-shutdown.sh \
+      --binary "./target/${{ matrix.rust_target }}/release/backend"
 ```
 
 ### Docker smoke

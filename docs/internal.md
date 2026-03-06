@@ -31,9 +31,10 @@ Windows 桌面集成:
 
 - **启动恢复**：先按 DuckDB 默认流程 replay WAL；若 open/replay 报 WAL 相关错误，则将 WAL 备份为 `*.wal.bak.<ts>` 后重试启动（`db::open_with_wal_recovery`）。可用 `WAL_RECOVERY_STRICT=1` 禁用自动隔离。
 - **优雅关闭**：
-  - Unix: SIGINT/SIGTERM 时执行 CHECKPOINT 刷入数据
+  - Unix: SIGINT/SIGTERM/SIGHUP 时执行 CHECKPOINT 刷入数据
   - Windows desktop: 托盘"退出"菜单触发优雅关闭（发布默认入口）
   - Windows console: Ctrl+C/控制台关闭事件触发优雅关闭尝试（开发/CI 入口）
+  - macOS user service: 可选通过 `scripts/macos/launchd-install.sh` 以 LaunchAgent 托管，避免终端窗口生命周期影响
 
 ## 认证
 

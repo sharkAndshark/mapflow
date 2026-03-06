@@ -219,6 +219,14 @@ jobs:
             --binary "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}" \
             --port 3010
 
+      - name: Smoke test graceful shutdown (Unix SIGHUP)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          bash scripts/smoke/smoke-graceful-shutdown.sh \
+            --binary "target/${{ matrix.rust_target }}/release/backend" \
+            --port 3011
+
       - name: Package bundle
         shell: bash
         run: |

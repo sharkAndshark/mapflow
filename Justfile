@@ -43,8 +43,8 @@ setup-dev:
       echo "unsupported host platform: os=$os arch=$arch" >&2; \
       exit 1; \
     fi; \
-    echo "Downloading DuckDB spatial extension for $$duckdb_platform..."; \
-    bash scripts/release/spatial_extension_artifact.sh download "$$duckdb_platform" "backend/extensions/spatial.duckdb_extension"
+    echo "Downloading DuckDB spatial extension for $duckdb_platform..."; \
+    bash scripts/release/spatial_extension_artifact.sh download "$duckdb_platform" "backend/extensions/spatial.duckdb_extension"
 
 # Check code quality
 check:
