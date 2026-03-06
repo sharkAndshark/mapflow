@@ -6,6 +6,8 @@ import {
 } from './polling.js';
 import {
   publishFile,
+  registerPostgisSource,
+  testPostgisConnection,
   unpublishFile,
   updateTileZoom,
   updateFieldAliases,
@@ -19,6 +21,21 @@ const STATUS_LABELS = {
   processing: '处理中',
   ready: '已就绪',
   failed: '失败',
+};
+
+const INITIAL_POSTGIS_FORM = {
+  connectionName: '',
+  host: '127.0.0.1',
+  port: 5432,
+  database: '',
+  username: '',
+  password: '',
+  sslMode: 'disable',
+  schema: 'public',
+  object: '',
+  geometryColumn: 'geom',
+  fidColumn: 'id',
+  displayName: '',
 };
 
 function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliasesUpdate }) {
@@ -251,6 +268,11 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
             <div className="detail-group">
               <div className="detail-label">Type</div>
               <div className="detail-value">{file.type}</div>
+            </div>
+
+            <div className="detail-group">
+              <div className="detail-label">Source</div>
+              <div className="detail-value">{file.tileSource || 'duckdb'}</div>
             </div>
 
             <div className="detail-group">
@@ -1055,6 +1077,29 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [showPostgisModal, setShowPostgisModal] = useState(false);
+  const [postgisForm, setPostgisForm] = useState(INITIAL_POSTGIS_FORM);
+  const [postgisMessage, setPostgisMessage] = useState('');
+  const [isTestingPostgis, setIsTestingPostgis] = useState(false);
+  const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
+
+  async function refreshFiles(nextSelectedId = null) {
+    const res = await fetch('/api/files');
+    const data = await res.json();
+    setFiles(Array.isArray(data) ? data : []);
+    if (nextSelectedId) {
+      setSelectedId(nextSelectedId);
+    }
+  }
+
+  function resetPostgisForm() {
+    setPostgisForm(INITIAL_POSTGIS_FORM);
+    setPostgisMessage('');
+  }
+
+  function updatePostgisField(field, value) {
+    setPostgisForm((prev) => ({ ...prev, [field]: value }));
+  }
 
   async function handleLogout() {
     try {
@@ -1062,6 +1107,62 @@ export default function App() {
       window.location.href = '/login';
     } catch (error) {
       console.error('Logout failed:', error);
+    }
+  }
+
+  async function handleTestPostgisConnection() {
+    setPostgisMessage('');
+    setIsTestingPostgis(true);
+    try {
+      const payload = {
+        connection: {
+          host: postgisForm.host.trim(),
+          port: Number(postgisForm.port),
+          database: postgisForm.database.trim(),
+          username: postgisForm.username.trim(),
+          password: postgisForm.password,
+          sslMode: postgisForm.sslMode,
+        },
+      };
+      const result = await testPostgisConnection(payload);
+      setPostgisMessage(
+        `连接成功: PostgreSQL ${result.serverVersion}, ${result.postgisVersion.split(' ').slice(0, 2).join(' ')}`,
+      );
+    } catch (error) {
+      setPostgisMessage(error instanceof Error ? error.message : 'PostGIS 连接测试失败');
+    } finally {
+      setIsTestingPostgis(false);
+    }
+  }
+
+  async function handleRegisterPostgisSource() {
+    setPostgisMessage('');
+    setIsRegisteringPostgis(true);
+    try {
+      const payload = {
+        connectionName: postgisForm.connectionName.trim(),
+        connection: {
+          host: postgisForm.host.trim(),
+          port: Number(postgisForm.port),
+          database: postgisForm.database.trim(),
+          username: postgisForm.username.trim(),
+          password: postgisForm.password,
+          sslMode: postgisForm.sslMode,
+        },
+        schema: postgisForm.schema.trim(),
+        object: postgisForm.object.trim(),
+        geometryColumn: postgisForm.geometryColumn.trim(),
+        fidColumn: postgisForm.fidColumn.trim(),
+        displayName: postgisForm.displayName.trim() || undefined,
+      };
+      const result = await registerPostgisSource(payload);
+      await refreshFiles(result.fileId);
+      setShowPostgisModal(false);
+      resetPostgisForm();
+    } catch (error) {
+      setPostgisMessage(error instanceof Error ? error.message : 'PostGIS 数据源注册失败');
+    } finally {
+      setIsRegisteringPostgis(false);
     }
   }
 
@@ -1205,7 +1306,7 @@ export default function App() {
       <header className="header">
         <div>
           <h1>MapFlow</h1>
-          <p className="subtitle">文件上传与列表</p>
+          <p className="subtitle">数据源管理与列表</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {user && (
@@ -1217,6 +1318,18 @@ export default function App() {
             <a href="/settings" className="btn-text" style={{ fontSize: '14px' }}>
               设置
             </a>
+          )}
+          {user?.role === 'admin' && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setShowPostgisModal(true);
+                setPostgisMessage('');
+              }}
+            >
+              连接 PostGIS
+            </button>
           )}
           <label className="upload-button">
             <input
@@ -1239,10 +1352,10 @@ export default function App() {
 
       <section className="panel">
         <div className="panel-header">
-          <h2>上传文件</h2>
+          <h2>数据源</h2>
           <span className="panel-meta">
-            支持 .zip / .geojson / .geojsonl / .kml / .gpx / .topojson / .mbtiles /
-            .pmtiles，单文件最大 1GB（可配置）
+            支持上传 .zip / .geojson / .geojsonl / .kml / .gpx / .topojson / .mbtiles /
+            .pmtiles，或连接 PostGIS table/view
           </span>
         </div>
 
@@ -1281,7 +1394,10 @@ export default function App() {
                     data-testid={`file-row-${item.id}`}
                   >
                     <div>{item.name}</div>
-                    <div>{item.type}</div>
+                    <div>
+                      {item.type}
+                      {item.tileSource === 'postgis' ? ' · PostGIS' : ''}
+                    </div>
                     <div>{formatSize(item.size || 0)}</div>
                     <div className="muted">
                       {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : '--'}
@@ -1319,6 +1435,153 @@ export default function App() {
           </div>
         </div>
       </section>
+
+      {showPostgisModal && (
+        <div className="modal-overlay" onClick={() => setShowPostgisModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>连接 PostGIS</h3>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setShowPostgisModal(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Connection Name</label>
+                <input
+                  className="form-input"
+                  value={postgisForm.connectionName}
+                  onChange={(e) => updatePostgisField('connectionName', e.target.value)}
+                  placeholder="local-dev"
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px' }}>
+                <div className="form-group">
+                  <label>Host</label>
+                  <input
+                    className="form-input"
+                    value={postgisForm.host}
+                    onChange={(e) => updatePostgisField('host', e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Port</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={postgisForm.port}
+                    onChange={(e) => updatePostgisField('port', Number(e.target.value))}
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Database</label>
+                <input
+                  className="form-input"
+                  value={postgisForm.database}
+                  onChange={(e) => updatePostgisField('database', e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label>Username</label>
+                  <input
+                    className="form-input"
+                    value={postgisForm.username}
+                    onChange={(e) => updatePostgisField('username', e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Password</label>
+                  <input
+                    className="form-input"
+                    type="password"
+                    value={postgisForm.password}
+                    onChange={(e) => updatePostgisField('password', e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Schema</label>
+                <input
+                  className="form-input"
+                  value={postgisForm.schema}
+                  onChange={(e) => updatePostgisField('schema', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Table/View</label>
+                <input
+                  className="form-input"
+                  value={postgisForm.object}
+                  onChange={(e) => updatePostgisField('object', e.target.value)}
+                  placeholder="roads"
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label>Geometry Column</label>
+                  <input
+                    className="form-input"
+                    value={postgisForm.geometryColumn}
+                    onChange={(e) => updatePostgisField('geometryColumn', e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>FID Column</label>
+                  <input
+                    className="form-input"
+                    value={postgisForm.fidColumn}
+                    onChange={(e) => updatePostgisField('fidColumn', e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Display Name (Optional)</label>
+                <input
+                  className="form-input"
+                  value={postgisForm.displayName}
+                  onChange={(e) => updatePostgisField('displayName', e.target.value)}
+                />
+              </div>
+              {postgisMessage ? (
+                <div
+                  className="form-hint"
+                  style={{
+                    color: postgisMessage.startsWith('连接成功') ? '#2e7d32' : '#c62828',
+                    marginTop: '8px',
+                  }}
+                >
+                  {postgisMessage}
+                </div>
+              ) : null}
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleTestPostgisConnection}
+                disabled={isTestingPostgis || isRegisteringPostgis}
+              >
+                {isTestingPostgis ? '测试中...' : '测试连接'}
+              </button>
+              <button
+                type="button"
+                className="upload-button"
+                onClick={handleRegisterPostgisSource}
+                disabled={isTestingPostgis || isRegisteringPostgis}
+              >
+                {isRegisteringPostgis ? '注册中...' : '注册为数据源'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

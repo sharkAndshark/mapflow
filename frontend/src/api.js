@@ -122,3 +122,29 @@ export async function updateSettings(maxSizeMb) {
   }
   return res.json();
 }
+
+export async function testPostgisConnection(payload) {
+  const res = await fetchWithAuth('/api/postgis/connections/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'PostGIS 连接测试失败');
+  }
+  return res.json();
+}
+
+export async function registerPostgisSource(payload) {
+  const res = await fetchWithAuth('/api/postgis/sources/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'PostGIS 数据源注册失败');
+  }
+  return res.json();
+}

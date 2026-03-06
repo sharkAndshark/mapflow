@@ -6,6 +6,7 @@
 
 ```
 React → HTTP → Axum → DuckDB
+                    └─(tile_source=postgis)→ tokio-postgres → PostGIS
 
 Windows 桌面集成:
   desktop(mapflow-desktop.exe, GUI 子系统) → 托盘 Exit → shutdown_signal → CHECKPOINT
@@ -26,6 +27,13 @@ Windows 桌面集成:
 - cache 内容被清理后，启动时会自动重新解包；可通过 `SPATIAL_EXTENSION_CACHE_DIR` 指定更稳定/更严格权限的目录
 - `backend/extensions/spatial-extension-manifest.json` 与 `Cargo.lock` 版本必须同步（CI 强校验）
 - 无网络回退：移除了 `INSTALL spatial` 网络下载逻辑，确保完全离线运行
+
+**PostGIS 数据源（MVP）：**
+- 控制面仍在 DuckDB：`files` 增加 `tile_source`；新增 `postgis_connections` + `postgis_sources` 记录外部连接与源映射
+- `/api/postgis/connections/test`：仅做连接探测与版本检查
+- `/api/postgis/sources/register`：校验 schema/table(or view)/geom/fid 后注册为 `ready` 数据源（`type=postgis`）
+- 运行时按 `tile_source` 分流：DuckDB 本地表 vs PostGIS 远端查询（私有 `/api/files/:id/tiles/...` 与公开 `/tiles/:slug/...`）
+- 凭据存储：使用 `APP_SECRET` 派生密钥，对 PostGIS 密码做 AES-GCM 加密后写入 DuckDB
 
 ## 系统韧性
 

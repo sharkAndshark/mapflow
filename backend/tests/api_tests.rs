@@ -5874,6 +5874,114 @@ async fn test_update_settings_requires_admin() {
 }
 
 #[tokio::test]
+async fn test_postgis_connection_test_requires_admin() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let cookie = create_user_and_session(&app, db, "user-1", "testuser", "user").await;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/postgis/connections/test")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "connection": {
+                    "host": "127.0.0.1",
+                    "port": 5432,
+                    "database": "postgres",
+                    "username": "postgres",
+                    "password": "postgres",
+                    "sslMode": "disable"
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_postgis_register_requires_admin() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("test.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let cookie = create_user_and_session(&app, db, "user-1", "testuser", "user").await;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/postgis/sources/register")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "connectionName": "demo",
+                "connection": {
+                    "host": "127.0.0.1",
+                    "port": 5432,
+                    "database": "postgres",
+                    "username": "postgres",
+                    "password": "postgres",
+                    "sslMode": "disable"
+                },
+                "schema": "public",
+                "object": "roads",
+                "geometryColumn": "geom",
+                "fidColumn": "id",
+                "displayName": "Demo"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn test_update_settings_success() {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");

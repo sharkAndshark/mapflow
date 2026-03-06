@@ -1,6 +1,6 @@
 # Known Issues & TODOs
 
-**Last Updated**: 2026-03-03
+**Last Updated**: 2026-03-05
 
 ## Agent 接管执行清单（2026-03-02）
 
@@ -133,6 +133,48 @@
     - `bash scripts/smoke/smoke-binary.sh --binary ./target/debug/backend --port 3331 --expected-b64 /tmp/nonexistent-smoke-expected.b64`
     - `docker build -t mapflow-smoke:mbtiles-png .`
     - `bash scripts/smoke/smoke-docker.sh --image mapflow-smoke:mbtiles-png --port 3332 --expected-b64 /tmp/nonexistent-smoke-expected.b64`
+
+### 待执行（PostGIS 后续支持，按顺序）
+
+> 备注：S23-S33 以 `feat/postgis-source-mvp` 合并主干后为基线推进。
+
+- [ ] S23: PostGIS 连接复用与去重（避免每次注册都创建新连接记录）
+  - 验证：同 connectionName 重复注册不同 source 时，`postgis_connections` 不重复增长
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_register_reuses_connection -- --nocapture`
+- [ ] S24: PostGIS 私有瓦片路径支持 minZoom/maxZoom 限制（与公开路径语义一致）
+  - 验证：`GET /api/files/:id/tiles/:z/:x/:y` 在越界时返回 204
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_private_tile_respects_zoom_limits -- --nocapture`
+- [ ] S25: PostGIS `schema` / `features` 读取路径性能收敛（连接复用 + 查询超时）
+  - 验证：批量读取时 p95 延迟稳定；超时返回明确错误语义
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_feature_query_timeout -- --nocapture`
+- [ ] S26: SSL 模式扩展（`disable` -> `prefer/require`）
+  - 验证：不同 sslMode 可成功建连；错误配置返回可诊断信息
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_ssl_modes -- --nocapture`
+- [ ] S27: PostGIS function source v1（无参 set-returning function）
+  - 验证：可注册 function 并走 preview/tile/schema/features/publish 全链路
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_function_source_noargs_lifecycle -- --nocapture`
+- [ ] S28: PostGIS function source v2（参数化函数，白名单参数）
+  - 验证：仅允许声明参数；禁止任意 SQL 注入路径
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_function_source_param_whitelist -- --nocapture`
+- [ ] S29: 凭据管理增强（密钥版本化与轮换策略）
+  - 验证：老版本加密凭据可平滑读取；支持迁移重加密
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_credential_key_rotation -- --nocapture`
+- [ ] S30: PostGIS 观测性（结构化 tracing + 错误标签 + 查询耗时）
+  - 验证：关键路径日志包含 source_id/connection_id/query_kind/duration_ms
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_tracing_fields -- --nocapture`
+- [ ] S31: PostGIS 集成测试基座（Docker PostGIS fixture）
+  - 进展（2026-03-06）：已新增 `docker-compose.postgis-test.yml`、`scripts/test/postgis-integration.sh`、`backend/tests/postgis_integration.rs`
+  - 验证：CI 可稳定启动 fixture 并跑后端集成测试
+  - 验证命令：`bash scripts/test/postgis-integration.sh`
+- [ ] S32: Frontend E2E 覆盖 PostGIS 注册与预览发布流程
+  - 验证：UI 从“连接 PostGIS”到公开 URL 全链路可观测
+  - 验证命令：`npm --prefix frontend run test:e2e -- --grep \"PostGIS\"`
+- [ ] S33: 契约文档补齐（`docs/dev/behaviors.md` + `docs/internal.md`）
+  - 验证：新增 API/行为与实现一致，引用 lint 通过
+  - 验证命令：`bash scripts/ci/lint_behaviors_refs.sh`
+- [ ] S34: 评估并试点 `testcontainers`（仅 backend integration），保留 smoke 为显式 Docker 脚本
+  - 验证：`backend/tests/postgis_integration.rs` 可切换为 testcontainers 启容器并稳定通过；CI 运行时长与失败率可接受
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml --test postgis_integration -- --test-threads=1 --nocapture`
 
 ## Known Issues
 

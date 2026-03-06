@@ -18,6 +18,7 @@ use crate::{
         update_crs, update_field_aliases, update_publish_settings, update_settings,
         update_tile_zoom,
     },
+    postgis::{register_postgis_source, test_postgis_connection},
     public::{get_public_pmtiles, get_public_tile, get_public_tile_meta, head_public_pmtiles},
     upload::upload_file,
     AppState,
@@ -79,6 +80,14 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .route("/api/files", get(list_files))
         .route("/api/uploads", post(upload_file))
         .route("/api/settings", get(get_settings).patch(update_settings))
+        .route(
+            "/api/postgis/connections/test",
+            post(test_postgis_connection),
+        )
+        .route(
+            "/api/postgis/sources/register",
+            post(register_postgis_source),
+        )
         .route("/api/files/{id}/preview", get(get_preview_meta))
         .route(
             "/api/files/{id}/tiles/{z}/{x}/{y}",

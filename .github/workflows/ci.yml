@@ -115,6 +115,27 @@ jobs:
           echo "Previous backend test step failed; rerunning api_tests with --nocapture for diagnostics"
           cargo test --manifest-path backend/Cargo.toml --test api_tests -- --test-threads=1 --nocapture || true
 
+  backend_postgis_integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Prepare spatial extension for binary embedding
+        run: |
+          bash scripts/release/spatial_extension_artifact.sh download linux_amd64 backend/extensions/spatial.duckdb_extension
+
+      - name: Backend PostGIS integration tests (Docker fixture)
+        run: bash scripts/test/postgis-integration.sh
+
   frontend_unit:
     runs-on: ubuntu-latest
     steps:

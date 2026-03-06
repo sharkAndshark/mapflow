@@ -200,6 +200,43 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     )
     .expect("Failed to create system_settings table");
 
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS postgis_connections (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            host VARCHAR NOT NULL,
+            port INTEGER NOT NULL,
+            database_name VARCHAR NOT NULL,
+            username VARCHAR NOT NULL,
+            password_encrypted VARCHAR NOT NULL,
+            ssl_mode VARCHAR NOT NULL DEFAULT 'disable',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_postgis_connections_name
+            ON postgis_connections(name);
+
+        CREATE TABLE IF NOT EXISTS postgis_sources (
+            file_id VARCHAR PRIMARY KEY,
+            connection_id VARCHAR NOT NULL,
+            schema_name VARCHAR NOT NULL,
+            object_name VARCHAR NOT NULL,
+            geom_column VARCHAR NOT NULL,
+            fid_column VARCHAR NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (file_id) REFERENCES files(id),
+            FOREIGN KEY (connection_id) REFERENCES postgis_connections(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_postgis_sources_connection_id
+            ON postgis_sources(connection_id);
+        ",
+    )
+    .expect("Failed to create PostGIS source tables");
+
     conn
 }
 
