@@ -172,6 +172,9 @@
 - [ ] S33: 契约文档补齐（`docs/dev/behaviors.md` + `docs/internal.md`）
   - 验证：新增 API/行为与实现一致，引用 lint 通过
   - 验证命令：`bash scripts/ci/lint_behaviors_refs.sh`
+- [ ] S34: 评估并试点 `testcontainers`（仅 backend integration），保留 smoke 为显式 Docker 脚本
+  - 验证：`backend/tests/postgis_integration.rs` 可切换为 testcontainers 启容器并稳定通过；CI 运行时长与失败率可接受
+  - 验证命令：`cargo test --manifest-path backend/Cargo.toml --test postgis_integration -- --test-threads=1 --nocapture`
 
 ## Known Issues
 
