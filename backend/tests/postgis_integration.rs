@@ -143,6 +143,17 @@ async fn send_bytes(app: &axum::Router, method: Method, uri: &str) -> (StatusCod
     (status, bytes)
 }
 
+fn postgis_connection_payload(cfg: &PostgisEnv) -> Value {
+    json!({
+        "host": cfg.host,
+        "port": cfg.port,
+        "database": cfg.database,
+        "username": cfg.username,
+        "password": cfg.password,
+        "sslMode": "disable"
+    })
+}
+
 #[tokio::test]
 async fn test_postgis_register_preview_publish_flow() {
     init_tracing();
@@ -155,14 +166,7 @@ async fn test_postgis_register_preview_publish_flow() {
     let (app, _tmp) = setup_app().await;
 
     let test_payload = json!({
-        "connection": {
-            "host": cfg.host,
-            "port": cfg.port,
-            "database": cfg.database,
-            "username": cfg.username,
-            "password": cfg.password,
-            "sslMode": "disable"
-        }
+        "connection": postgis_connection_payload(&cfg)
     });
 
     let (status, body) = send_json(
@@ -177,14 +181,7 @@ async fn test_postgis_register_preview_publish_flow() {
 
     let register_payload = json!({
         "connectionName": "integration-local",
-        "connection": {
-            "host": cfg.host,
-            "port": cfg.port,
-            "database": cfg.database,
-            "username": cfg.username,
-            "password": cfg.password,
-            "sslMode": "disable"
-        },
+        "connection": postgis_connection_payload(&cfg),
         "schema": "public",
         "object": "roads",
         "geometryColumn": "geom",
@@ -293,4 +290,55 @@ async fn test_postgis_register_preview_publish_flow() {
     if status == StatusCode::OK {
         assert!(!public_tile.is_empty(), "public tile is empty");
     }
+}
+
+#[tokio::test]
+async fn test_postgis_view_registration_succeeds() {
+    init_tracing();
+    let Some(cfg) = PostgisEnv::maybe_from_env() else {
+        return;
+    };
+
+    std::env::set_var("APP_SECRET", "postgis-integration-secret");
+
+    let (app, _tmp) = setup_app().await;
+
+    let register_payload = json!({
+        "connectionName": "integration-view",
+        "connection": postgis_connection_payload(&cfg),
+        "schema": "public",
+        "object": "roads_view",
+        "geometryColumn": "geom",
+        "fidColumn": "id",
+        "displayName": "PostGIS Roads View"
+    });
+
+    let (status, body) = send_json(
+        &app,
+        Method::POST,
+        "/api/postgis/sources/register",
+        Some(register_payload),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{}", body);
+
+    let file_id = body["fileId"].as_str().expect("fileId").to_string();
+
+    let (status, files) = send_json(&app, Method::GET, "/api/files", None).await;
+    assert_eq!(status, StatusCode::OK, "{}", files);
+    let item = files
+        .as_array()
+        .and_then(|items| items.iter().find(|i| i["id"] == json!(file_id)))
+        .expect("registered view file in /api/files");
+    assert_eq!(item["tileSource"], json!("postgis"));
+    assert_eq!(item["status"], json!("ready"));
+
+    let (status, feature) = send_json(
+        &app,
+        Method::GET,
+        &format!("/api/files/{file_id}/features/1"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", feature);
 }

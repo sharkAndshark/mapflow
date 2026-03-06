@@ -462,7 +462,7 @@ async fn introspect_relation(
 
     let relation = client
         .query_opt(
-            "SELECT c.oid
+            "SELECT c.oid, c.relkind::TEXT
              FROM pg_class c
              JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = $1 AND c.relname = $2
@@ -476,6 +476,7 @@ async fn introspect_relation(
         return Err(bad_request("Target table/view not found"));
     };
     let relation_oid: u32 = relation_row.get(0);
+    let relation_kind: String = relation_row.get(1);
 
     let geom_type_row = client
         .query_opt(
@@ -523,26 +524,56 @@ async fn introspect_relation(
         return Err(bad_request("fidColumn must be int2/int4/int8"));
     }
 
-    let fid_unique_row = client
-        .query_one(
-            "SELECT COALESCE(bool_or(i.indisunique OR i.indisprimary), FALSE)
-             FROM pg_index i
-             JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-             WHERE i.indrelid = $1::OID AND a.attname = $2",
-            &[&relation_oid, &fid_column],
-        )
-        .await
-        .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
-    let fid_is_unique: bool = fid_unique_row.get(0);
-    if !fid_is_unique {
-        return Err(bad_request(
-            "fidColumn must be covered by UNIQUE/PRIMARY KEY index",
-        ));
-    }
-
     let relation_name =
         qualified_relation_name(schema_name, object_name).map_err(|e| bad_request(&e))?;
     let geom_ident = quote_ident(geom_column).map_err(|e| bad_request(&e))?;
+    let fid_ident = quote_ident(fid_column).map_err(|e| bad_request(&e))?;
+
+    if matches!(relation_kind.as_str(), "r" | "p") {
+        let fid_unique_row = client
+            .query_one(
+                "SELECT COALESCE(bool_or(i.indisunique OR i.indisprimary), FALSE)
+                 FROM pg_index i
+                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                 WHERE i.indrelid = $1::OID AND a.attname = $2",
+                &[&relation_oid, &fid_column],
+            )
+            .await
+            .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
+        let fid_is_unique: bool = fid_unique_row.get(0);
+        if !fid_is_unique {
+            return Err(bad_request(
+                "fidColumn must be covered by UNIQUE/PRIMARY KEY index",
+            ));
+        }
+    } else {
+        let fid_data_sql = format!(
+            "SELECT
+                EXISTS(SELECT 1 FROM {relation_name} WHERE {fid_ident} IS NULL LIMIT 1),
+                EXISTS(
+                    SELECT 1
+                    FROM (
+                        SELECT {fid_ident}
+                        FROM {relation_name}
+                        GROUP BY {fid_ident}
+                        HAVING COUNT(*) > 1
+                        LIMIT 1
+                    ) d
+                )"
+        );
+
+        let fid_data_row = client
+            .query_one(&fid_data_sql, &[])
+            .await
+            .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
+        let has_null_fid: bool = fid_data_row.get(0);
+        let has_duplicate_fid: bool = fid_data_row.get(1);
+        if has_null_fid || has_duplicate_fid {
+            return Err(bad_request(
+                "fidColumn must be unique and non-null for view/foreign sources",
+            ));
+        }
+    }
 
     let srid_sql = format!(
         "SELECT ST_SRID({geom_ident}) FROM {relation_name} WHERE {geom_ident} IS NOT NULL LIMIT 1"
@@ -646,7 +677,7 @@ async fn connect_postgis_client_from_connection(
     pg.user(&config.username);
     pg.password(&config.password);
     pg.dbname(&config.database);
-    pg.connect_timeout(std::time::Duration::from_secs(5));
+    pg.connect_timeout(std::time::Duration::from_secs(10));
 
     let (client, connection) = pg.connect(NoTls).await.map_err(|e| e.to_string())?;
     tokio::spawn(async move {

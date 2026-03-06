@@ -50,6 +50,20 @@ docker compose -f "${COMPOSE_FILE}" exec -T postgis \
   psql -v ON_ERROR_STOP=1 -U "${POSTGIS_TEST_USER}" -d "${POSTGIS_TEST_DB}" \
   -f "${SEED_FILE_IN_CONTAINER}" >/dev/null
 
+echo "[postgis-integration] waiting for host port reachability ${POSTGIS_TEST_HOST}:${POSTGIS_TEST_PORT}"
+for _ in $(seq 1 30); do
+  if (echo >"/dev/tcp/${POSTGIS_TEST_HOST}/${POSTGIS_TEST_PORT}") >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+if ! (echo >"/dev/tcp/${POSTGIS_TEST_HOST}/${POSTGIS_TEST_PORT}") >/dev/null 2>&1; then
+  echo "[postgis-integration] host port is not reachable"
+  docker compose -f "${COMPOSE_FILE}" logs postgis || true
+  exit 1
+fi
+
 echo "[postgis-integration] running cargo test --test postgis_integration"
 cargo test --manifest-path "${ROOT_DIR}/backend/Cargo.toml" --test postgis_integration -- --test-threads=1 --nocapture
 
