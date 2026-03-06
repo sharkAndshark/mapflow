@@ -1,6 +1,6 @@
 services:
   postgis:
-    image: postgis/postgis:16-3.4
+    image: postgis/postgis:16-3.4-alpine
     environment:
       POSTGRES_DB: ${POSTGIS_TEST_DB:-mapflow}
       POSTGRES_USER: ${POSTGIS_TEST_USER:-mapflow}
