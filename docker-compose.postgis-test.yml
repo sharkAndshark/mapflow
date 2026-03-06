@@ -1,0 +1,16 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ${POSTGIS_TEST_DB:-mapflow}
+      POSTGRES_USER: ${POSTGIS_TEST_USER:-mapflow}
+      POSTGRES_PASSWORD: ${POSTGIS_TEST_PASSWORD:-mapflow}
+    ports:
+      - "${POSTGIS_TEST_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGIS_TEST_USER:-mapflow} -d ${POSTGIS_TEST_DB:-mapflow}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - ./scripts/test/postgis:/fixtures:ro

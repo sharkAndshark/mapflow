@@ -163,6 +163,7 @@
   - 验证：关键路径日志包含 source_id/connection_id/query_kind/duration_ms
   - 验证命令：`cargo test --manifest-path backend/Cargo.toml test_postgis_tracing_fields -- --nocapture`
 - [ ] S31: PostGIS 集成测试基座（Docker PostGIS fixture）
+  - 进展（2026-03-06）：已新增 `docker-compose.postgis-test.yml`、`scripts/test/postgis-integration.sh`、`backend/tests/postgis_integration.rs`
   - 验证：CI 可稳定启动 fixture 并跑后端集成测试
   - 验证命令：`bash scripts/test/postgis-integration.sh`
 - [ ] S32: Frontend E2E 覆盖 PostGIS 注册与预览发布流程

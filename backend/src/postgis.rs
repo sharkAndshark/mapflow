@@ -110,7 +110,7 @@ pub async fn register_postgis_source(
 
     let connection_id = Uuid::new_v4().to_string();
     let file_id = Uuid::new_v4().to_string();
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().naive_utc();
     let tile_bounds_json = relation
         .bbox_wgs84
         .map(|bbox| serde_json::json!(bbox).to_string());
@@ -462,7 +462,7 @@ async fn introspect_relation(
 
     let relation = client
         .query_opt(
-            "SELECT c.oid::INT8
+            "SELECT c.oid
              FROM pg_class c
              JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = $1 AND c.relname = $2
@@ -475,7 +475,7 @@ async fn introspect_relation(
     let Some(relation_row) = relation else {
         return Err(bad_request("Target table/view not found"));
     };
-    let relation_oid: i64 = relation_row.get(0);
+    let relation_oid: u32 = relation_row.get(0);
 
     let geom_type_row = client
         .query_opt(
