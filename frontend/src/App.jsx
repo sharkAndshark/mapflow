@@ -879,7 +879,12 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                   <div className="detail-group">
                     <div
                       className="detail-label"
-                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      style={{
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
                       onClick={() => setIframeCodeExpanded(!iframeCodeExpanded)}
                     >
                       <span>嵌入代码</span>
@@ -917,15 +922,18 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           </div>
 
                           {/* Code preview */}
-                          <pre className="iframe-code-preview">
-                            {generateIframeCode()}
-                          </pre>
+                          <pre className="iframe-code-preview">{generateIframeCode()}</pre>
 
                           {/* Copy button */}
                           <button
                             type="button"
                             className="btn-primary"
-                            style={{ fontSize: '12px', padding: '6px 12px', marginTop: '8px', width: '100%' }}
+                            style={{
+                              fontSize: '12px',
+                              padding: '6px 12px',
+                              marginTop: '8px',
+                              width: '100%',
+                            }}
                             onClick={handleCopyIframe}
                           >
                             {copyIframeSuccess ? '✓ 已复制' : '复制嵌入代码'}
@@ -933,19 +941,23 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
                           {/* Mini preview */}
                           <div className="iframe-mini-preview" style={{ marginTop: '12px' }}>
-                            <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>预览效果:</div>
-                            <div style={{
-                              width: '100%',
-                              height: '120px',
-                              border: '1px solid #ddd',
-                              borderRadius: '4px',
-                              background: '#f0f4f8',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: '#666',
-                              fontSize: '12px'
-                            }}>
+                            <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>
+                              预览效果:
+                            </div>
+                            <div
+                              style={{
+                                width: '100%',
+                                height: '120px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
+                                background: '#f0f4f8',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#666',
+                                fontSize: '12px',
+                              }}
+                            >
                               🗺️ 嵌入后显示你的地图
                             </div>
                           </div>
