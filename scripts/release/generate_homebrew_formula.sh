@@ -100,7 +100,7 @@ find_asset() {
   ' | head -n 1
 }
 
-darwin_line="$(find_asset "darwin-arm64\\.tar\\.gz$")""
+darwin_line="$(find_asset "darwin-arm64\\.tar\\.gz$")"
 linux_amd64_line="$(find_asset "linux-amd64\\.tar\\.gz$")"
 linux_arm64_line="$(find_asset "linux-arm64\\.tar\\.gz$")"
 
