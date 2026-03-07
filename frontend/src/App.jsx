@@ -65,6 +65,12 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [isSavingAlias, setIsSavingAlias] = useState(false);
   const aliasEditRef = useRef(null);
 
+  // Iframe embed states
+  const [iframeCodeExpanded, setIframeCodeExpanded] = useState(false);
+  const [iframeWidth, setIframeWidth] = useState('100%');
+  const [iframeHeight, setIframeHeight] = useState('400');
+  const [copyIframeSuccess, setCopyIframeSuccess] = useState(false);
+
   // Handle click outside to cancel alias editing
   useEffect(() => {
     if (!editingAlias) return;
@@ -189,6 +195,55 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
       })
       .catch(() => {
         alert('复制失败，请手动复制地址');
+      });
+  }
+
+  // Generate iframe embed code
+  function generateIframeCode() {
+    if (!file?.publicSlug) return '';
+
+    const width = iframeWidth || '100%';
+    const height = iframeHeight || '400';
+    const tileUrl = `${window.location.origin}/tiles/${file.publicSlug}/\{z\}/\{x\}/\{y\}`;
+
+    return `<div style="width:${width};height:${height};position:relative;">
+  <script src="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.css" rel="stylesheet" />
+  <div id="map" style="width:100%;height:100%;"></div>
+  <script>
+    new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        sources: {
+          'tiles': {
+            type: 'raster',
+            tiles: ['${tileUrl}'],
+            tileSize: 256
+          }
+        },
+        layers: [{ id: 'layer', type: 'raster', source: 'tiles' }]
+      },
+      center: [0, 0],
+      zoom: 1
+    });
+  </script>
+</div>`;
+  }
+
+  // Copy iframe embed code
+  function handleCopyIframe() {
+    const code = generateIframeCode();
+    if (!code) return;
+
+    navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        setCopyIframeSuccess(true);
+        setTimeout(() => setCopyIframeSuccess(false), 2000);
+      })
+      .catch(() => {
+        alert('复制失败，请手动复制代码');
       });
   }
 
@@ -820,6 +875,84 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Iframe Embed Section */}
+                  <div className="detail-group">
+                    <div
+                      className="detail-label"
+                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      onClick={() => setIframeCodeExpanded(!iframeCodeExpanded)}
+                    >
+                      <span>嵌入代码</span>
+                      <span style={{ fontSize: '10px', color: '#999' }}>
+                        {iframeCodeExpanded ? '▼' : '▶'}
+                      </span>
+                    </div>
+                    {iframeCodeExpanded && (
+                      <div className="detail-value" style={{ marginTop: '8px' }}>
+                        <div className="iframe-embed-section">
+                          {/* Size inputs */}
+                          <div className="iframe-size-inputs">
+                            <label>
+                              宽度:
+                              <input
+                                type="text"
+                                value={iframeWidth}
+                                onChange={(e) => setIframeWidth(e.target.value)}
+                                placeholder="100%"
+                                className="form-input"
+                                style={{ width: '70px', fontSize: '12px' }}
+                              />
+                            </label>
+                            <label style={{ marginLeft: '12px' }}>
+                              高度:
+                              <input
+                                type="text"
+                                value={iframeHeight}
+                                onChange={(e) => setIframeHeight(e.target.value)}
+                                placeholder="400"
+                                className="form-input"
+                                style={{ width: '70px', fontSize: '12px' }}
+                              />
+                            </label>
+                          </div>
+
+                          {/* Code preview */}
+                          <pre className="iframe-code-preview">
+                            {generateIframeCode()}
+                          </pre>
+
+                          {/* Copy button */}
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            style={{ fontSize: '12px', padding: '6px 12px', marginTop: '8px', width: '100%' }}
+                            onClick={handleCopyIframe}
+                          >
+                            {copyIframeSuccess ? '✓ 已复制' : '复制嵌入代码'}
+                          </button>
+
+                          {/* Mini preview */}
+                          <div className="iframe-mini-preview" style={{ marginTop: '12px' }}>
+                            <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>预览效果:</div>
+                            <iframe
+                              src={`https://maplibre.org/maplibre-gl-js/examples/3d-buildings.html`}
+                              style={{
+                                width: '100%',
+                                height: '120px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px'
+                              }}
+                              loading="lazy"
+                            />
+                            <div style={{ fontSize: '10px', color: '#999', marginTop: '4px', textAlign: 'center' }}>
+                              实际嵌入时会显示你的地图
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
