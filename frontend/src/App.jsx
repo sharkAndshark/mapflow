@@ -202,11 +202,22 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   function generateIframeCode() {
     if (!file?.publicSlug) return '';
 
-    const width = iframeWidth || '100%';
-    const height = iframeHeight || '400';
+    // Auto-add 'px' unit if user enters a plain number
+    const formatDimension = (val, defaultVal) => {
+      if (!val) return defaultVal;
+      const trimmed = val.trim();
+      // If it's a pure number, add 'px'
+      if (/^\d+(\.\d+)?$/.test(trimmed)) {
+        return `${trimmed}px`;
+      }
+      return trimmed;
+    };
+
+    const formattedWidth = formatDimension(iframeWidth, '100%');
+    const formattedHeight = formatDimension(iframeHeight, '400px');
     const tileUrl = `${window.location.origin}/tiles/${file.publicSlug}/{z}/{x}/{y}`;
 
-    return `<div style="width:${width};height:${height};">
+    return `<div style="width:${formattedWidth};height:${formattedHeight};">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css">
   <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js"><\/script>
   <div id="map" style="width:100%;height:100%;"></div>
@@ -232,7 +243,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   // Copy iframe embed code
   function handleCopyIframe() {
     const code = generateIframeCode();
-    if (!code) return;
+    if (!code) {
+      alert('无法生成嵌入代码，请确保地图已发布');
+      return;
+    }
 
     navigator.clipboard
       .writeText(code)
