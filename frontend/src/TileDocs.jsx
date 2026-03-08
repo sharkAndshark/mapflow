@@ -3,6 +3,10 @@ import { useParams, Link } from 'react-router-dom';
 
 import { PublicTileMap, usePublicTileMeta } from './PublicTileViewer.jsx';
 
+function resolveViewerUrlPath(slug, viewerUrl) {
+  return viewerUrl || `/tiles/${slug}/embed`;
+}
+
 function generateOpenLayersCode(meta, origin) {
   const {
     tileSource,
@@ -20,6 +24,8 @@ function generateOpenLayersCode(meta, origin) {
   const isRaster = tileFormat === 'png';
 
   if (isPmtiles) {
+    const publishedMinZoom = minZoom ?? 0;
+    const publishedMaxZoom = maxZoom ?? 22;
     return `import Map from 'ol/Map.js';
 import View from 'ol/View.js';
 import VectorTileLayer from 'ol/layer/VectorTile.js';
@@ -30,10 +36,16 @@ import { PMTiles, TileType } from 'pmtiles';
 import { Fill, Stroke, Style } from 'ol/style.js';
 
 const archiveUrl = '${tileUrl}';
+const publishedMinZoom = ${publishedMinZoom};
+const publishedMaxZoom = ${publishedMaxZoom};
 
 async function init() {
   const archive = new PMTiles(archiveUrl);
   const header = await archive.getHeader();
+  const initialZoom = Math.min(
+    publishedMaxZoom,
+    Math.max(publishedMinZoom, header.centerZoom ?? publishedMinZoom)
+  );
 
   let layer;
   if (header.tileType === TileType.Mvt) {
@@ -56,9 +68,11 @@ async function init() {
     layers: [layer],
     view: new View({
       center: fromLonLat([header.centerLon, header.centerLat]),
-      zoom: header.centerZoom,
-      minZoom: header.minZoom,
-      maxZoom: header.maxZoom,
+      zoom: initialZoom,
+      minZoom: publishedMinZoom,
+      maxZoom: publishedMaxZoom,
+      constrainResolution: true,
+      smoothResolutionConstraint: false,
     }),
   });
 }
@@ -183,7 +197,7 @@ function generateMarkdownDoc(meta, origin) {
   } = meta;
   const fullTileUrl = `${origin}${tileUrl}`;
   const fullMetaUrl = `${origin}/tiles/${slug}/meta`;
-  const fullViewerUrl = viewerUrl ? `${origin}${viewerUrl}` : null;
+  const fullViewerUrl = `${origin}${resolveViewerUrlPath(slug, viewerUrl)}`;
 
   let md = `## Tile Service: ${name}
 
@@ -271,6 +285,7 @@ export default function TileDocs() {
   const { meta, error, isLoading } = usePublicTileMeta(slug);
 
   const origin = window.location.origin;
+  const viewerUrlPath = meta ? resolveViewerUrlPath(slug, meta.viewerUrl) : null;
 
   const openLayersCode = meta ? generateOpenLayersCode(meta, origin) : '';
   const markdownDoc = meta ? generateMarkdownDoc(meta, origin) : '';
@@ -401,9 +416,9 @@ export default function TileDocs() {
                       }}
                     >
                       {origin}
-                      {meta.viewerUrl}
+                      {viewerUrlPath}
                     </code>
-                    <CopyButton text={`${origin}${meta.viewerUrl}`} label="Copy" />
+                    <CopyButton text={`${origin}${viewerUrlPath}`} label="Copy" />
                   </div>
                 </div>
               </section>

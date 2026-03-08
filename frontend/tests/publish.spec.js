@@ -105,6 +105,24 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
     )
     .toBeGreaterThan(0);
 
+  const docsPage = await publicContext.newPage();
+  await docsPage.route('**/tiles/my-custom-map/meta', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    delete data.viewerUrl;
+    await route.fulfill({
+      response,
+      contentType: 'application/json',
+      body: JSON.stringify(data),
+    });
+  });
+  await docsPage.goto(`${workerServer.url}/tiles/my-custom-map/docs`);
+  await expect(docsPage.getByText('Embed URL')).toBeVisible();
+  await expect(
+    docsPage.locator('code').filter({ hasText: '/tiles/my-custom-map/embed' }).first(),
+  ).toBeVisible();
+  await expect(docsPage.getByText('undefined')).toHaveCount(0);
+
   await publicContext.close();
 
   // Test unpublish
@@ -243,6 +261,11 @@ test('publish PMTiles file exposes working iframe embed', async ({
       { message: 'wait for PMTiles range requests', timeout: 10000 },
     )
     .toBeGreaterThan(0);
+
+  const docsPage = await publicContext.newPage();
+  await docsPage.goto(`${workerServer.url}/tiles/my-pmtiles/docs`);
+  await expect(docsPage.locator('pre code')).toContainText('const publishedMinZoom = 1;');
+  await expect(docsPage.locator('pre code')).toContainText('const publishedMaxZoom = 1;');
 
   await publicContext.close();
 });
