@@ -59,8 +59,9 @@ Axum 0.8, axum-login, tower-sessions, DuckDB, OpenLayers
 - Linux 额外发布 `.deb`（amd64/arm64）用于系统安装分发（Phase 1 不含 systemd 集成）
 - 二进制发布产物内嵌 `spatial.duckdb_extension`（按目标平台编译时注入），支持离线启动
 - Windows 发布包仅暴露 desktop 入口（`mapflow-desktop.exe`），console 入口保留给开发/CI
-- **Homebrew Preview**：手动更新 tap 仓库 (`sharkAndshark/homebrew-mapflow`)
-  - 固定版本 formula，指向特定 nightly 或 preview tag
+- **Homebrew Preview**：Nightly 自动更新 tap 仓库 (`sharkAndshark/homebrew-mapflow`)
+  - 固定版本 formula，指向 nightly（后续可切到 preview tag）
+  - 仅 `main` 分支的 nightly（schedule/workflow_dispatch）允许推送 tap，避免 feature 分支污染发布通道
   - 允许破坏性变更，不保证升级兼容
-  - 生成命令：`bash scripts/release/generate_homebrew_formula.sh --repo sharkAndshark/mapflow --tag <tag>`
+  - 手动兜底命令：`bash scripts/release/generate_homebrew_formula.sh --repo sharkAndshark/mapflow --tag <tag>`
   - 用户安装：`brew tap sharkAndshark/mapflow && brew install mapflow-preview`
