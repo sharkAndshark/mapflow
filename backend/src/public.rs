@@ -599,7 +599,7 @@ pub async fn get_public_tile_meta(
     } else {
         format!("/tiles/{}/{{z}}/{{x}}/{{y}}", slug)
     };
-    let viewer_url = format!("/tiles/{}", slug);
+    let viewer_url = format!("/tiles/{}/embed", slug);
 
     let crs_type = row.crs_type.unwrap_or_else(|| "standard".to_string());
     let data_bounds: Option<DataBounds> = row

@@ -54,6 +54,13 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   await expect(sidebar.getByText('复制地址')).toBeVisible();
   await expect(sidebar.getByText('取消发布')).toBeVisible();
 
+  await sidebar.getByText('嵌入代码').click();
+  await expect(sidebar.locator('.iframe-code-preview')).toContainText('/tiles/my-custom-map/embed');
+  await expect(sidebar.locator('iframe[title="MapFlow embed preview"]')).toHaveAttribute(
+    'src',
+    '/tiles/my-custom-map/embed',
+  );
+
   // Copy public URL (click the button, but don't verify clipboard in test environment)
   const copyButton = sidebar.getByText('复制地址');
   await copyButton.click();
@@ -74,6 +81,29 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   const response = await publicRequest.get(`${workerServer.url}/tiles/my-custom-map/0/0/0`);
   expect(response.headers()['content-type']).toContain('application/vnd.mapbox-vector-tile');
   expect(response.headers()['cache-control']).toContain('public, max-age=300');
+
+  const embedPage = await publicContext.newPage();
+  await embedPage.goto(`${workerServer.url}/tiles/my-custom-map/embed`);
+  await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+  await expect(embedPage.getByText('Back to Files')).toHaveCount(0);
+  await expect
+    .poll(
+      async () => {
+        return embedPage.evaluate((publicSlug) => {
+          return performance
+            .getEntriesByType('resource')
+            .filter(
+              (resource) =>
+                resource.name.includes(`/tiles/${publicSlug}/`) && !resource.name.includes('/meta'),
+            )
+            .map((resource) => resource.responseStatus)
+            .filter((status) => status === 200 || status === 204).length;
+        }, 'my-custom-map');
+      },
+      { message: 'wait for embed page tile requests', timeout: 10000 },
+    )
+    .toBeGreaterThan(0);
+
   await publicContext.close();
 
   // Test unpublish
@@ -106,6 +136,21 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   );
   expect(errorResponse.status()).toBe(404);
   await anonContext.close();
+});
+
+test('public embed page shows a visible error for missing slug', async ({
+  context,
+  workerServer,
+}) => {
+  const publicContext = await context.browser().newContext();
+  const embedPage = await publicContext.newPage();
+
+  await embedPage.goto(`${workerServer.url}/tiles/nonexistent-embed-slug/embed`);
+
+  await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+  await expect(embedPage.locator('.error-alert')).toContainText('Public tile not found');
+
+  await publicContext.close();
 });
 
 test('publish with default slug (empty input)', async ({ page }) => {

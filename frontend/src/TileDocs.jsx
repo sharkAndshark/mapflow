@@ -1,31 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 
-import 'ol/ol.css';
-import OLMap from 'ol/Map';
-import View from 'ol/View';
-import VectorTileLayer from 'ol/layer/VectorTile';
-import VectorTileSource from 'ol/source/VectorTile';
-import TileLayer from 'ol/layer/Tile';
-import XYZ from 'ol/source/XYZ';
-import MVT from 'ol/format/MVT';
-import Projection from 'ol/proj/Projection';
-import TileGrid from 'ol/tilegrid/TileGrid';
-import { transformExtent } from 'ol/proj';
-import { Fill, Stroke, Style, Circle as CircleStyle } from 'ol/style';
-
-function calculateCustomResolutions(dataBounds, maxZoom = 20) {
-  const width = dataBounds[2] - dataBounds[0];
-  const height = dataBounds[3] - dataBounds[1];
-  const maxDim = Math.max(width, height);
-
-  if (maxDim <= 0) {
-    console.warn('Invalid data bounds: zero or negative extent');
-    return Array.from({ length: maxZoom + 1 }, (_, z) => 1 / Math.pow(2, z));
-  }
-
-  return Array.from({ length: maxZoom + 1 }, (_, z) => maxDim / (256 * Math.pow(2, z)));
-}
+import { PublicTileMap, usePublicTileMeta } from './PublicTileViewer.jsx';
 
 function generateOpenLayersCode(meta, origin) {
   const {
@@ -177,7 +153,7 @@ function generateMarkdownDoc(meta, origin) {
 |----------|-----|
 | Tile URL | \`${fullTileUrl}\` |
 | Meta API | \`${fullMetaUrl}\` |
-| Viewer | \`${fullViewerUrl}\` |
+| Embed URL | \`${fullViewerUrl}\` |
 
 ### Configuration
 
@@ -246,209 +222,14 @@ function CopyButton({ text, label }) {
 
 export default function TileDocs() {
   const { slug } = useParams();
-  const mapElement = useRef(null);
-  const mapRef = useRef(null);
-  const vectorLayerRef = useRef(null);
-  const [meta, setMeta] = useState(null);
-  const [error, setError] = useState(null);
   const [showCode, setShowCode] = useState(true);
   const [mdCopied, setMdCopied] = useState(false);
+  const { meta, error, isLoading } = usePublicTileMeta(slug);
 
   const origin = window.location.origin;
 
-  const defaultStyle = useMemo(
-    () =>
-      new Style({
-        fill: new Fill({ color: 'rgba(0, 128, 255, 0.6)' }),
-        stroke: new Stroke({ color: '#0080ff', width: 2 }),
-        image: new CircleStyle({
-          radius: 6,
-          fill: new Fill({ color: '#ff0040' }),
-          stroke: new Stroke({ color: '#fff', width: 1 }),
-        }),
-      }),
-    [],
-  );
-
-  useEffect(() => {
-    async function fetchMeta() {
-      try {
-        const res = await fetch(`/tiles/${slug}/meta`);
-        if (!res.ok) {
-          let message = 'Failed to load tile metadata';
-          try {
-            const data = await res.json();
-            if (data && typeof data.error === 'string') {
-              message = data.error;
-            }
-          } catch (_) {}
-          throw new Error(message);
-        }
-        const data = await res.json();
-        setMeta(data);
-      } catch (err) {
-        setError(err.message);
-      }
-    }
-    fetchMeta();
-  }, [slug]);
-
-  useEffect(() => {
-    if (!mapElement.current || mapRef.current) return;
-
-    const olMap = new OLMap({
-      target: mapElement.current,
-      view: new View({
-        center: [0, 0],
-        zoom: 2,
-        minZoom: 0,
-        maxZoom: 22,
-      }),
-      layers: [],
-    });
-
-    mapRef.current = olMap;
-
-    return () => {
-      olMap.setTarget(null);
-      mapRef.current = null;
-      vectorLayerRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!mapRef.current || !meta) return;
-
-    const map = mapRef.current;
-    const view = map.getView();
-    const isPmtiles = meta.tileSource === 'pmtiles';
-
-    const isCustomCRS = meta.crsType === 'custom' && meta.dataBounds;
-    const tileFormat = meta.tileFormat || 'mvt';
-    const minZoom = meta.minZoom ?? 0;
-    const maxZoom = isCustomCRS ? 20 : (meta.maxZoom ?? 22);
-
-    if (view.getMinZoom() !== minZoom) {
-      view.setMinZoom(minZoom);
-    }
-    if (view.getMaxZoom() !== maxZoom) {
-      view.setMaxZoom(maxZoom);
-    }
-
-    const existingLayer = vectorLayerRef.current;
-    if (existingLayer) {
-      map.removeLayer(existingLayer);
-      vectorLayerRef.current = null;
-    }
-
-    if (isPmtiles) {
-      map.setView(
-        new View({
-          projection: 'EPSG:3857',
-          center: [0, 0],
-          zoom: 2,
-          minZoom: 0,
-          maxZoom: 22,
-        }),
-      );
-      return;
-    }
-
-    const tileUrl = `${origin}${meta.tileUrl}`;
-
-    let tileLayer;
-    let customProjection = null;
-    let customTileGrid = null;
-
-    if (isCustomCRS) {
-      const [minx, miny, maxx, maxy] = meta.dataBounds;
-
-      customProjection = new Projection({
-        code: meta.crs || 'CUSTOM_CRS',
-        units: 'm',
-        extent: [minx, miny, maxx, maxy],
-      });
-
-      const resolutions = calculateCustomResolutions(meta.dataBounds, 20);
-
-      customTileGrid = new TileGrid({
-        extent: [minx, miny, maxx, maxy],
-        origin: [minx, maxy],
-        resolutions: resolutions,
-        tileSize: 256,
-      });
-    }
-
-    if (tileFormat === 'png') {
-      tileLayer = new TileLayer({
-        source: new XYZ({
-          url: tileUrl,
-          projection: customProjection || 'EPSG:3857',
-          tileGrid: customTileGrid,
-        }),
-      });
-    } else {
-      tileLayer = new VectorTileLayer({
-        source: new VectorTileSource({
-          format: new MVT(),
-          url: tileUrl,
-          projection: customProjection || 'EPSG:3857',
-          tileGrid: customTileGrid,
-        }),
-        style: defaultStyle,
-      });
-    }
-
-    vectorLayerRef.current = tileLayer;
-    map.getLayers().insertAt(0, tileLayer);
-
-    if (isCustomCRS && customProjection) {
-      const [minx, miny, maxx, maxy] = meta.dataBounds;
-      const centerX = (minx + maxx) / 2;
-      const centerY = (miny + maxy) / 2;
-
-      map.setView(
-        new View({
-          projection: customProjection,
-          center: [centerX, centerY],
-          zoom: 0,
-          minZoom: minZoom,
-          maxZoom: maxZoom,
-        }),
-      );
-    } else {
-      map.setView(
-        new View({
-          projection: 'EPSG:3857',
-          center: [0, 0],
-          zoom: 2,
-          minZoom: minZoom,
-          maxZoom: maxZoom,
-        }),
-      );
-    }
-
-    if (meta.bbox && meta.bbox.length === 4) {
-      const [minx, miny, maxx, maxy] = meta.bbox;
-
-      let extent;
-      if (isCustomCRS) {
-        extent = [minx, miny, maxx, maxy];
-      } else {
-        extent = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857');
-      }
-
-      map.getView().fit(extent, {
-        padding: [50, 50, 50, 50],
-        duration: 1000,
-        maxZoom: maxZoom,
-      });
-    }
-  }, [meta, defaultStyle, origin]);
-
   const openLayersCode = meta ? generateOpenLayersCode(meta, origin) : '';
   const markdownDoc = meta ? generateMarkdownDoc(meta, origin) : '';
-  const isPmtiles = meta?.tileSource === 'pmtiles';
 
   return (
     <div
@@ -509,7 +290,7 @@ export default function TileDocs() {
             </div>
           )}
 
-          {!meta && !error && (
+          {isLoading && !meta && !error && (
             <div style={{ textAlign: 'center', padding: '40px' }}>
               <div className="spinner"></div>
               <p>Loading documentation...</p>
@@ -564,7 +345,7 @@ export default function TileDocs() {
                     <CopyButton text={`${origin}/tiles/${slug}/meta`} label="Copy" />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>Viewer</span>
+                    <span style={{ fontWeight: '500', width: '80px' }}>Embed URL</span>
                     <code
                       style={{
                         flex: 1,
@@ -742,82 +523,13 @@ export default function TileDocs() {
         </div>
 
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          <div ref={mapElement} style={{ width: '100%', height: '100%', background: '#f5f4f2' }} />
-
-          {!meta && !error && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'rgba(255,255,255,0.8)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                flexDirection: 'column',
-                gap: '10px',
-                zIndex: 10,
-              }}
-            >
-              <div className="spinner"></div>
-              <p>Loading Map...</p>
-            </div>
-          )}
-
-          {isPmtiles && !error && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'rgba(255,255,255,0.92)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                textAlign: 'center',
-                padding: '24px',
-                zIndex: 15,
-              }}
-            >
-              <div style={{ maxWidth: '440px', color: '#444' }}>
-                <strong>PMTiles live preview is not available in this panel.</strong>
-                <p style={{ marginTop: '8px', marginBottom: 0, lineHeight: 1.5 }}>
-                  This endpoint serves PMTiles byte ranges, not XYZ tile URLs. Use a PMTiles-aware
-                  client to preview.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'rgba(255,255,255,0.9)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 20,
-              }}
-            >
-              <div className="alert error-alert">{error}</div>
-            </div>
-          )}
-
-          <div
-            style={{
-              position: 'absolute',
-              top: '12px',
-              right: '12px',
-              background: 'rgba(255,255,255,0.9)',
-              padding: '8px 12px',
-              borderRadius: '4px',
-              fontSize: '12px',
-              color: '#666',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-            }}
-          >
-            Live Preview (Public Endpoint)
-          </div>
+          <PublicTileMap
+            meta={meta}
+            error={error}
+            isLoading={isLoading}
+            dataTestId="tile-docs-map"
+            overlayLabel="Live Preview (Public Endpoint)"
+          />
         </div>
       </div>
     </div>

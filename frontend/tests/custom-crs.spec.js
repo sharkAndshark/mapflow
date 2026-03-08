@@ -456,6 +456,30 @@ test.describe('Custom CRS', () => {
       )
       .toBeGreaterThan(0);
 
+    const embedPage = await publicContext.newPage();
+    await embedPage.goto(`${workerServer.url}/tiles/epsg4490-urn-docs/embed`);
+    await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+    await expect(embedPage.getByText('Back to Files')).toHaveCount(0);
+
+    await expect
+      .poll(
+        async () => {
+          return embedPage.evaluate(() => {
+            return performance
+              .getEntriesByType('resource')
+              .filter(
+                (resource) =>
+                  resource.name.includes('/tiles/epsg4490-urn-docs/') &&
+                  !resource.name.includes('/meta'),
+              )
+              .map((resource) => resource.responseStatus)
+              .filter((status) => status === 200 || status === 204).length;
+          });
+        },
+        { message: 'wait for embed page tile requests', timeout: 10000 },
+      )
+      .toBeGreaterThan(0);
+
     await publicContext.close();
   });
 
