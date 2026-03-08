@@ -188,6 +188,9 @@ test('publish PMTiles file exposes working iframe embed', async ({
 
   const slugInput = sidebar.getByTestId('publish-slug-input');
   await slugInput.fill('my-pmtiles');
+  const publishZoomInputs = sidebar.locator('input[type="number"]');
+  await publishZoomInputs.nth(0).fill('1');
+  await publishZoomInputs.nth(1).fill('1');
   await sidebar.getByText('确认发布').click();
 
   await expect(sidebar.getByText('已发布')).toBeVisible();
@@ -212,6 +215,20 @@ test('publish PMTiles file exposes working iframe embed', async ({
   await embedPage.goto(`${workerServer.url}/tiles/my-pmtiles/embed`);
   await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
   await expect(embedPage.locator('.error-alert')).toHaveCount(0);
+  await expect
+    .poll(
+      async () => {
+        return embedPage.evaluate(() => {
+          const map = window.__mapflowPublicTileMap;
+          const view = map?.getView?.();
+          return view
+            ? { minZoom: view.getMinZoom(), maxZoom: view.getMaxZoom(), zoom: view.getZoom() }
+            : null;
+        });
+      },
+      { message: 'wait for PMTiles embed view to initialize', timeout: 10000 },
+    )
+    .toMatchObject({ minZoom: 1, maxZoom: 1 });
   await expect
     .poll(
       async () => {

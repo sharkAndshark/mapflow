@@ -146,9 +146,13 @@ async fn main() -> Result<()> {
         Err(e) => tracing::warn!(error = %e, "Failed to reconcile processing files on startup"),
     }
 
-    let mut app = backend::build_api_router(state.clone());
     let web_dist = std::env::var("WEB_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
     let web_dist_path = PathBuf::from(&web_dist);
+    let public_viewer_available = web_dist_path.exists() || cfg!(feature = "embed-web-dist");
+    backend::set_public_viewer_available(public_viewer_available);
+
+    let mut app = backend::build_api_router(state.clone());
+
     if web_dist_path.exists() {
         tracing::info!(web_dist = %web_dist, "Serving static files");
         let index_path = web_dist_path.join("index.html");

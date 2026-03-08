@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 mod auth;
 mod auth_routes;
 mod config;
@@ -42,6 +44,16 @@ pub use session_store::DuckDBStore;
 #[cfg(feature = "embed-web-dist")]
 pub use static_assets::serve_embedded_spa;
 pub use validation::{validate_geojson, validate_shapefile_zip};
+
+static PUBLIC_VIEWER_AVAILABLE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_public_viewer_available(value: bool) {
+    PUBLIC_VIEWER_AVAILABLE.store(value, Ordering::Relaxed);
+}
+
+pub fn public_viewer_available() -> bool {
+    PUBLIC_VIEWER_AVAILABLE.load(Ordering::Relaxed)
+}
 
 #[cfg(test)]
 mod tests {

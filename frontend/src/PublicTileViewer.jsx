@@ -210,6 +210,7 @@ export function PublicTileMap({
               declutter: true,
               source: new PMTilesVectorSource({
                 url: meta.tileUrl,
+                tileSize: 256,
               }),
               style: defaultStyle,
             });
@@ -222,6 +223,7 @@ export function PublicTileMap({
             pmtilesLayer = new WebGLTile({
               source: new PMTilesRasterSource({
                 url: meta.tileUrl,
+                tileSize: [256, 256],
               }),
             });
           } else {
@@ -231,12 +233,19 @@ export function PublicTileMap({
           tileLayerRef.current = pmtilesLayer;
           map.getLayers().insertAt(0, pmtilesLayer);
 
+          const viewMinZoom = meta.minZoom ?? header.minZoom ?? 0;
+          const viewMaxZoom = meta.maxZoom ?? header.maxZoom ?? 22;
+          const centerZoom = header.centerZoom ?? viewMinZoom;
+          const initialZoom = Math.min(viewMaxZoom, Math.max(viewMinZoom, centerZoom));
+
           const view = new View({
             projection: 'EPSG:3857',
             center: fromLonLat([header.centerLon, header.centerLat]),
-            zoom: header.centerZoom ?? header.minZoom ?? 0,
-            minZoom: header.minZoom ?? 0,
-            maxZoom: header.maxZoom ?? 22,
+            zoom: initialZoom,
+            minZoom: viewMinZoom,
+            maxZoom: viewMaxZoom,
+            constrainResolution: true,
+            smoothResolutionConstraint: false,
           });
           map.setView(view);
 
@@ -256,9 +265,18 @@ export function PublicTileMap({
 
             view.fit(extent, {
               padding: [40, 40, 40, 40],
-              duration: 1000,
-              maxZoom: header.maxZoom ?? 22,
+              duration: 0,
+              maxZoom: viewMaxZoom,
             });
+          }
+
+          const fittedZoom = view.getZoom();
+          if (fittedZoom != null) {
+            const clampedZoom = Math.min(viewMaxZoom, Math.max(viewMinZoom, fittedZoom));
+            const clampedResolution = view.getResolutionForZoom(clampedZoom);
+            if (clampedResolution != null) {
+              view.setResolution(clampedResolution);
+            }
           }
 
           if (!cancelled) {
