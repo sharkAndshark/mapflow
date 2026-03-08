@@ -1,6 +1,4 @@
 import { test, expect } from './fixtures';
-import fs from 'fs/promises';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loginUser, setupTestUser } from './auth-helper.js';
@@ -8,14 +6,7 @@ import { loginUser, setupTestUser } from './auth-helper.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
 const geojsonPath = path.join(fixturesDir, 'sample.geojson');
-
-async function createPmtilesFixture(name = 'sample-pmtiles') {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mapflow-pmtiles-'));
-  const filePath = path.join(tempDir, `${name}.pmtiles`);
-  const contents = Buffer.concat([Buffer.from('PM'), Buffer.from([0x00, 0x01]), Buffer.alloc(100)]);
-  await fs.writeFile(filePath, contents);
-  return filePath;
-}
+const pmtilesPath = path.join(fixturesDir, 'sample.pmtiles');
 
 test.beforeEach(async ({ workerServer, request }) => {
   await workerServer.reset();
@@ -163,14 +154,12 @@ test('public embed page shows a visible error for missing slug', async ({
   await publicContext.close();
 });
 
-test('publish PMTiles file uses PMTiles public URL and does not advertise iframe embed', async ({
+test('publish PMTiles file exposes working iframe embed', async ({
   page,
   context,
   request,
   workerServer,
 }) => {
-  const pmtilesPath = await createPmtilesFixture();
-
   await page.goto('/');
   await expect(page.locator('.page')).toBeVisible();
   await page.getByTestId('file-input').setInputFiles(pmtilesPath);
@@ -181,17 +170,14 @@ test('publish PMTiles file uses PMTiles public URL and does not advertise iframe
         const response = await request.get('/api/files');
         if (!response.ok()) return null;
         const files = await response.json();
-        const file = files.find((item) => item.name === 'sample-pmtiles');
+        const file = files.find((item) => item.name === 'sample');
         return file?.status;
       },
       { message: 'wait for PMTiles upload to be ready', timeout: 10000 },
     )
     .toBe('ready');
 
-  const row = page
-    .locator('.row', { hasText: 'sample-pmtiles' })
-    .filter({ hasText: '已就绪' })
-    .first();
+  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
   await expect(row).toBeVisible();
   await row.click();
 
@@ -206,9 +192,12 @@ test('publish PMTiles file uses PMTiles public URL and does not advertise iframe
 
   await expect(sidebar.getByText('已发布')).toBeVisible();
   await expect(sidebar.locator('.form-value.code')).toContainText('/tiles/my-pmtiles');
-  await expect(sidebar.getByText('嵌入支持')).toBeVisible();
-  await expect(sidebar.getByText('PMTiles 暂不提供内置 iframe 嵌入页')).toBeVisible();
-  await expect(sidebar.getByText('复制嵌入代码')).toHaveCount(0);
+  await sidebar.getByText('嵌入代码').click();
+  await expect(sidebar.locator('.iframe-code-preview')).toContainText('/tiles/my-pmtiles/embed');
+  await expect(sidebar.locator('iframe[title="MapFlow embed preview"]')).toHaveAttribute(
+    'src',
+    '/tiles/my-pmtiles/embed',
+  );
 
   const publicContext = await context.browser().newContext();
   const headResponse = await publicContext.request.head(`${workerServer.url}/tiles/my-pmtiles`);
@@ -217,7 +206,26 @@ test('publish PMTiles file uses PMTiles public URL and does not advertise iframe
   const metaResponse = await publicContext.request.get(`${workerServer.url}/tiles/my-pmtiles/meta`);
   expect(metaResponse.ok()).toBeTruthy();
   const metaJson = await metaResponse.json();
-  expect(Object.prototype.hasOwnProperty.call(metaJson, 'viewerUrl')).toBeFalsy();
+  expect(metaJson.viewerUrl).toBe('/tiles/my-pmtiles/embed');
+
+  const embedPage = await publicContext.newPage();
+  await embedPage.goto(`${workerServer.url}/tiles/my-pmtiles/embed`);
+  await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+  await expect(embedPage.locator('.error-alert')).toHaveCount(0);
+  await expect
+    .poll(
+      async () => {
+        return embedPage.evaluate(() => {
+          return performance
+            .getEntriesByType('resource')
+            .filter((resource) => resource.name.includes('/tiles/my-pmtiles'))
+            .map((resource) => resource.responseStatus)
+            .filter((status) => status === 200 || status === 206).length;
+        });
+      },
+      { message: 'wait for PMTiles range requests', timeout: 10000 },
+    )
+    .toBeGreaterThan(0);
 
   await publicContext.close();
 });

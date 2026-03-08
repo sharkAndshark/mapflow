@@ -212,7 +212,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
   // Generate iframe embed code
   function generateIframeCode() {
-    if (!file?.publicSlug || isPmtilesFile(file)) return '';
+    if (!file?.publicSlug) return '';
 
     // Auto-add 'px' unit if user enters a plain number
     const formatDimension = (val, defaultVal) => {
@@ -258,7 +258,6 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   }
 
   const publicUrlPath = getPublicUrlPath(file?.publicSlug, file);
-  const supportsIframeEmbed = !isPmtilesFile(file);
 
   async function handlePublishSubmit() {
     if (!file) return;
@@ -890,109 +889,99 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                     </div>
                   </div>
 
-                  {supportsIframeEmbed ? (
-                    <div className="detail-group">
-                      <button
-                        type="button"
-                        className="detail-label"
-                        style={{
-                          width: '100%',
-                          border: 'none',
-                          background: 'none',
-                          padding: 0,
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                        aria-expanded={iframeCodeExpanded}
-                        aria-controls="iframe-embed-panel"
-                        onClick={() => setIframeCodeExpanded((prev) => !prev)}
+                  <div className="detail-group">
+                    <button
+                      type="button"
+                      className="detail-label"
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'none',
+                        padding: 0,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                      aria-expanded={iframeCodeExpanded}
+                      aria-controls="iframe-embed-panel"
+                      onClick={() => setIframeCodeExpanded((prev) => !prev)}
+                    >
+                      <span>嵌入代码</span>
+                      <span style={{ fontSize: '10px', color: '#999' }}>
+                        {iframeCodeExpanded ? '▼' : '▶'}
+                      </span>
+                    </button>
+                    {iframeCodeExpanded && (
+                      <div
+                        id="iframe-embed-panel"
+                        className="detail-value"
+                        style={{ marginTop: '8px' }}
                       >
-                        <span>嵌入代码</span>
-                        <span style={{ fontSize: '10px', color: '#999' }}>
-                          {iframeCodeExpanded ? '▼' : '▶'}
-                        </span>
-                      </button>
-                      {iframeCodeExpanded && (
-                        <div
-                          id="iframe-embed-panel"
-                          className="detail-value"
-                          style={{ marginTop: '8px' }}
-                        >
-                          <div className="iframe-embed-section">
-                            <div className="iframe-size-inputs">
-                              <label>
-                                宽度:
-                                <input
-                                  type="text"
-                                  value={iframeWidth}
-                                  onChange={(e) => setIframeWidth(e.target.value)}
-                                  placeholder="100%"
-                                  className="form-input"
-                                  style={{ width: '70px', fontSize: '12px' }}
-                                />
-                              </label>
-                              <label style={{ marginLeft: '12px' }}>
-                                高度:
-                                <input
-                                  type="text"
-                                  value={iframeHeight}
-                                  onChange={(e) => setIframeHeight(e.target.value)}
-                                  placeholder="400"
-                                  className="form-input"
-                                  style={{ width: '70px', fontSize: '12px' }}
-                                />
-                              </label>
-                            </div>
-
-                            <pre className="iframe-code-preview">{generateIframeCode()}</pre>
-
-                            <button
-                              type="button"
-                              className="btn-primary"
-                              style={{
-                                fontSize: '12px',
-                                padding: '6px 12px',
-                                marginTop: '8px',
-                                width: '100%',
-                              }}
-                              onClick={handleCopyIframe}
-                            >
-                              {copyIframeSuccess ? '✓ 已复制' : '复制嵌入代码'}
-                            </button>
-
-                            <div className="iframe-mini-preview" style={{ marginTop: '12px' }}>
-                              <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>
-                                预览效果:
-                              </div>
-                              <iframe
-                                src={`/tiles/${file.publicSlug}/embed`}
-                                title="MapFlow embed preview"
-                                loading="lazy"
-                                style={{
-                                  width: '100%',
-                                  height: '120px',
-                                  border: '1px solid #ddd',
-                                  borderRadius: '4px',
-                                  background: '#f5f4f2',
-                                }}
+                        <div className="iframe-embed-section">
+                          <div className="iframe-size-inputs">
+                            <label>
+                              宽度:
+                              <input
+                                type="text"
+                                value={iframeWidth}
+                                onChange={(e) => setIframeWidth(e.target.value)}
+                                placeholder="100%"
+                                className="form-input"
+                                style={{ width: '70px', fontSize: '12px' }}
                               />
+                            </label>
+                            <label style={{ marginLeft: '12px' }}>
+                              高度:
+                              <input
+                                type="text"
+                                value={iframeHeight}
+                                onChange={(e) => setIframeHeight(e.target.value)}
+                                placeholder="400"
+                                className="form-input"
+                                style={{ width: '70px', fontSize: '12px' }}
+                              />
+                            </label>
+                          </div>
+
+                          <pre className="iframe-code-preview">{generateIframeCode()}</pre>
+
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            style={{
+                              fontSize: '12px',
+                              padding: '6px 12px',
+                              marginTop: '8px',
+                              width: '100%',
+                            }}
+                            onClick={handleCopyIframe}
+                          >
+                            {copyIframeSuccess ? '✓ 已复制' : '复制嵌入代码'}
+                          </button>
+
+                          <div className="iframe-mini-preview" style={{ marginTop: '12px' }}>
+                            <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>
+                              预览效果:
                             </div>
+                            <iframe
+                              src={`/tiles/${file.publicSlug}/embed`}
+                              title="MapFlow embed preview"
+                              loading="lazy"
+                              style={{
+                                width: '100%',
+                                height: '120px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
+                                background: '#f5f4f2',
+                              }}
+                            />
                           </div>
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="detail-group">
-                      <div className="detail-label">嵌入支持</div>
-                      <div className="detail-value" style={{ fontSize: '12px', lineHeight: 1.5 }}>
-                        PMTiles 暂不提供内置 iframe 嵌入页。请使用支持 PMTiles
-                        的客户端，或查看公开文档了解接入方式。
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </>
               )}
 

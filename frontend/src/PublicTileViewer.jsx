@@ -5,13 +5,16 @@ import MVT from 'ol/format/MVT';
 import OLMap from 'ol/Map';
 import TileLayer from 'ol/layer/Tile';
 import VectorTileLayer from 'ol/layer/VectorTile';
-import { transformExtent } from 'ol/proj';
+import WebGLTile from 'ol/layer/WebGLTile';
+import { fromLonLat, transformExtent } from 'ol/proj';
 import Projection from 'ol/proj/Projection';
 import XYZ from 'ol/source/XYZ';
 import VectorTileSource from 'ol/source/VectorTile';
 import { Circle as CircleStyle, Fill, Stroke, Style } from 'ol/style';
 import TileGrid from 'ol/tilegrid/TileGrid';
 import View from 'ol/View';
+import { PMTilesRasterSource, PMTilesVectorSource } from 'ol-pmtiles';
+import { PMTiles, TileType } from 'pmtiles';
 
 function calculateCustomResolutions(dataBounds, maxZoom = 20) {
   const width = dataBounds[2] - dataBounds[0];
@@ -97,6 +100,8 @@ export function PublicTileMap({
   const mapElement = useRef(null);
   const mapRef = useRef(null);
   const tileLayerRef = useRef(null);
+  const [runtimeMessage, setRuntimeMessage] = useState(null);
+  const [isArchiveLoading, setIsArchiveLoading] = useState(false);
 
   const defaultStyle = useMemo(
     () =>
@@ -154,123 +159,216 @@ export function PublicTileMap({
 
   useEffect(() => {
     if (!mapRef.current) {
-      return;
+      return undefined;
     }
 
+    let cancelled = false;
     const map = mapRef.current;
-    const existingLayer = tileLayerRef.current;
+    async function syncLayer() {
+      const existingLayer = tileLayerRef.current;
 
-    if (existingLayer && (!meta || error)) {
-      map.removeLayer(existingLayer);
-      tileLayerRef.current = null;
-    }
+      if (existingLayer && (!meta || error)) {
+        map.removeLayer(existingLayer);
+        tileLayerRef.current = null;
+      }
 
-    if (!meta || error) {
-      return;
-    }
+      if (!meta || error) {
+        if (!cancelled) {
+          setRuntimeMessage(null);
+          setIsArchiveLoading(false);
+        }
+        return;
+      }
 
-    const isPmtiles = meta.tileSource === 'pmtiles';
-    const isCustomCrs = meta.crsType === 'custom' && Array.isArray(meta.dataBounds);
-    const tileFormat = meta.tileFormat || 'mvt';
-    const minZoom = meta.minZoom ?? 0;
-    const maxZoom = isCustomCrs ? 20 : (meta.maxZoom ?? 22);
+      const isPmtiles = meta.tileSource === 'pmtiles';
+      const isCustomCrs = meta.crsType === 'custom' && Array.isArray(meta.dataBounds);
+      const tileFormat = meta.tileFormat || 'mvt';
+      const minZoom = meta.minZoom ?? 0;
+      const maxZoom = isCustomCrs ? 20 : (meta.maxZoom ?? 22);
 
-    if (existingLayer) {
-      map.removeLayer(existingLayer);
-      tileLayerRef.current = null;
-    }
+      if (existingLayer) {
+        map.removeLayer(existingLayer);
+        tileLayerRef.current = null;
+      }
 
-    if (isPmtiles) {
-      map.setView(
-        new View({
-          projection: 'EPSG:3857',
-          center: [0, 0],
-          zoom: 2,
-          minZoom: 0,
-          maxZoom: 22,
-        }),
-      );
-      return;
-    }
+      if (isPmtiles) {
+        if (!cancelled) {
+          setRuntimeMessage(null);
+          setIsArchiveLoading(true);
+        }
 
-    let customProjection = null;
-    let customTileGrid = null;
+        try {
+          const archive = new PMTiles(meta.tileUrl);
+          const header = await archive.getHeader();
+          if (cancelled) {
+            return;
+          }
 
-    if (isCustomCrs) {
-      const [minX, minY, maxX, maxY] = meta.dataBounds;
+          let pmtilesLayer;
+          if (header.tileType === TileType.Mvt) {
+            pmtilesLayer = new VectorTileLayer({
+              declutter: true,
+              source: new PMTilesVectorSource({
+                url: meta.tileUrl,
+              }),
+              style: defaultStyle,
+            });
+          } else if (
+            header.tileType === TileType.Png ||
+            header.tileType === TileType.Jpeg ||
+            header.tileType === TileType.Webp ||
+            header.tileType === TileType.Avif
+          ) {
+            pmtilesLayer = new WebGLTile({
+              source: new PMTilesRasterSource({
+                url: meta.tileUrl,
+              }),
+            });
+          } else {
+            throw new Error(`Unsupported PMTiles tile type: ${header.tileType}`);
+          }
 
-      customProjection = new Projection({
-        code: meta.crs || 'CUSTOM_CRS',
-        units: 'm',
-        extent: [minX, minY, maxX, maxY],
-      });
+          tileLayerRef.current = pmtilesLayer;
+          map.getLayers().insertAt(0, pmtilesLayer);
 
-      customTileGrid = new TileGrid({
-        extent: [minX, minY, maxX, maxY],
-        origin: [minX, maxY],
-        resolutions: calculateCustomResolutions(meta.dataBounds, 20),
-        tileSize: 256,
-      });
-    }
-
-    const tileUrl = meta.tileUrl;
-    const layerSourceConfig = {
-      url: tileUrl,
-      projection: customProjection || 'EPSG:3857',
-      tileGrid: customTileGrid,
-    };
-
-    const tileLayer =
-      tileFormat === 'png'
-        ? new TileLayer({
-            source: new XYZ(layerSourceConfig),
-          })
-        : new VectorTileLayer({
-            source: new VectorTileSource({
-              ...layerSourceConfig,
-              format: new MVT(),
-            }),
-            style: defaultStyle,
+          const view = new View({
+            projection: 'EPSG:3857',
+            center: fromLonLat([header.centerLon, header.centerLat]),
+            zoom: header.centerZoom ?? header.minZoom ?? 0,
+            minZoom: header.minZoom ?? 0,
+            maxZoom: header.maxZoom ?? 22,
           });
+          map.setView(view);
 
-    tileLayerRef.current = tileLayer;
-    map.getLayers().insertAt(0, tileLayer);
+          if (
+            Number.isFinite(header.minLon) &&
+            Number.isFinite(header.minLat) &&
+            Number.isFinite(header.maxLon) &&
+            Number.isFinite(header.maxLat) &&
+            header.minLon < header.maxLon &&
+            header.minLat < header.maxLat
+          ) {
+            const extent = transformExtent(
+              [header.minLon, header.minLat, header.maxLon, header.maxLat],
+              'EPSG:4326',
+              'EPSG:3857',
+            );
 
-    if (isCustomCrs && customProjection) {
-      const [minX, minY, maxX, maxY] = meta.dataBounds;
-      map.setView(
-        new View({
-          projection: customProjection,
-          center: [(minX + maxX) / 2, (minY + maxY) / 2],
-          zoom: 0,
-          minZoom,
+            view.fit(extent, {
+              padding: [40, 40, 40, 40],
+              duration: 1000,
+              maxZoom: header.maxZoom ?? 22,
+            });
+          }
+
+          if (!cancelled) {
+            setRuntimeMessage(null);
+            setIsArchiveLoading(false);
+          }
+        } catch (loadError) {
+          if (!cancelled) {
+            setRuntimeMessage(
+              loadError instanceof Error ? loadError.message : 'Failed to load PMTiles archive',
+            );
+            setIsArchiveLoading(false);
+          }
+        }
+
+        return;
+      }
+
+      if (!cancelled) {
+        setRuntimeMessage(null);
+        setIsArchiveLoading(false);
+      }
+
+      let customProjection = null;
+      let customTileGrid = null;
+
+      if (isCustomCrs) {
+        const [minX, minY, maxX, maxY] = meta.dataBounds;
+
+        customProjection = new Projection({
+          code: meta.crs || 'CUSTOM_CRS',
+          units: 'm',
+          extent: [minX, minY, maxX, maxY],
+        });
+
+        customTileGrid = new TileGrid({
+          extent: [minX, minY, maxX, maxY],
+          origin: [minX, maxY],
+          resolutions: calculateCustomResolutions(meta.dataBounds, 20),
+          tileSize: 256,
+        });
+      }
+
+      const tileUrl = meta.tileUrl;
+      const layerSourceConfig = {
+        url: tileUrl,
+        projection: customProjection || 'EPSG:3857',
+        tileGrid: customTileGrid,
+      };
+
+      const tileLayer =
+        tileFormat === 'png'
+          ? new TileLayer({
+              source: new XYZ(layerSourceConfig),
+            })
+          : new VectorTileLayer({
+              source: new VectorTileSource({
+                ...layerSourceConfig,
+                format: new MVT(),
+              }),
+              style: defaultStyle,
+            });
+
+      tileLayerRef.current = tileLayer;
+      map.getLayers().insertAt(0, tileLayer);
+
+      if (isCustomCrs && customProjection) {
+        const [minX, minY, maxX, maxY] = meta.dataBounds;
+        map.setView(
+          new View({
+            projection: customProjection,
+            center: [(minX + maxX) / 2, (minY + maxY) / 2],
+            zoom: 0,
+            minZoom,
+            maxZoom,
+          }),
+        );
+      } else {
+        map.setView(
+          new View({
+            projection: 'EPSG:3857',
+            center: [0, 0],
+            zoom: 2,
+            minZoom,
+            maxZoom,
+          }),
+        );
+      }
+
+      if (Array.isArray(meta.bbox) && meta.bbox.length === 4) {
+        const extent = isCustomCrs
+          ? meta.bbox
+          : transformExtent(meta.bbox, 'EPSG:4326', 'EPSG:3857');
+
+        map.getView().fit(extent, {
+          padding: [40, 40, 40, 40],
+          duration: 1000,
           maxZoom,
-        }),
-      );
-    } else {
-      map.setView(
-        new View({
-          projection: 'EPSG:3857',
-          center: [0, 0],
-          zoom: 2,
-          minZoom,
-          maxZoom,
-        }),
-      );
+        });
+      }
     }
 
-    if (Array.isArray(meta.bbox) && meta.bbox.length === 4) {
-      const extent = isCustomCrs ? meta.bbox : transformExtent(meta.bbox, 'EPSG:4326', 'EPSG:3857');
+    syncLayer();
 
-      map.getView().fit(extent, {
-        padding: [40, 40, 40, 40],
-        duration: 1000,
-        maxZoom,
-      });
-    }
+    return () => {
+      cancelled = true;
+    };
   }, [defaultStyle, error, meta]);
 
-  const isPmtiles = meta?.tileSource === 'pmtiles';
+  const displayError = error || runtimeMessage;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
@@ -280,7 +378,7 @@ export function PublicTileMap({
         style={{ width: '100%', height: '100%', background: '#f5f4f2' }}
       />
 
-      {isLoading && !meta && !error && (
+      {((isLoading && !meta) || isArchiveLoading) && !displayError && (
         <div
           style={{
             position: 'absolute',
@@ -299,31 +397,7 @@ export function PublicTileMap({
         </div>
       )}
 
-      {isPmtiles && !error && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'rgba(255,255,255,0.92)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            textAlign: 'center',
-            padding: '24px',
-            zIndex: 15,
-          }}
-        >
-          <div style={{ maxWidth: '440px', color: '#444', lineHeight: 1.5 }}>
-            <strong>PMTiles embed preview is not available in this page.</strong>
-            <p style={{ marginTop: '8px', marginBottom: 0 }}>
-              This dataset is exposed as a PMTiles byte-range endpoint. Use a PMTiles-aware client
-              if you need a live preview.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {error && (
+      {displayError && (
         <div
           style={{
             position: 'absolute',
@@ -336,7 +410,7 @@ export function PublicTileMap({
             zIndex: 20,
           }}
         >
-          <div className="alert error-alert">{error}</div>
+          <div className="alert error-alert">{displayError}</div>
         </div>
       )}
 

@@ -20,10 +20,50 @@ function generateOpenLayersCode(meta, origin) {
   const isRaster = tileFormat === 'png';
 
   if (isPmtiles) {
-    return `// PMTiles requires a PMTiles-aware client (e.g. maplibre + pmtiles protocol).
-// The /tiles/{slug} endpoint is a byte-range endpoint, not XYZ tiles.
-// See: https://docs.protomaps.com/pmtiles/
-`;
+    return `import Map from 'ol/Map.js';
+import View from 'ol/View.js';
+import VectorTileLayer from 'ol/layer/VectorTile.js';
+import WebGLTile from 'ol/layer/WebGLTile.js';
+import { fromLonLat } from 'ol/proj.js';
+import { PMTilesRasterSource, PMTilesVectorSource } from 'ol-pmtiles';
+import { PMTiles, TileType } from 'pmtiles';
+import { Fill, Stroke, Style } from 'ol/style.js';
+
+const archiveUrl = '${tileUrl}';
+
+async function init() {
+  const archive = new PMTiles(archiveUrl);
+  const header = await archive.getHeader();
+
+  let layer;
+  if (header.tileType === TileType.Mvt) {
+    layer = new VectorTileLayer({
+      declutter: true,
+      source: new PMTilesVectorSource({ url: archiveUrl }),
+      style: new Style({
+        fill: new Fill({ color: 'rgba(0, 128, 255, 0.6)' }),
+        stroke: new Stroke({ color: '#0080ff', width: 2 }),
+      }),
+    });
+  } else {
+    layer = new WebGLTile({
+      source: new PMTilesRasterSource({ url: archiveUrl }),
+    });
+  }
+
+  new Map({
+    target: 'map',
+    layers: [layer],
+    view: new View({
+      center: fromLonLat([header.centerLon, header.centerLat]),
+      zoom: header.centerZoom,
+      minZoom: header.minZoom,
+      maxZoom: header.maxZoom,
+    }),
+  });
+}
+
+init();`;
   }
 
   let code = '';
@@ -153,13 +193,9 @@ function generateMarkdownDoc(meta, origin) {
 |----------|-----|
 | Tile URL | \`${fullTileUrl}\` |
 | Meta API | \`${fullMetaUrl}\` |
+| Embed URL | \`${fullViewerUrl}\` |
 
 `;
-
-  if (fullViewerUrl) {
-    md += `| Embed URL | \`${fullViewerUrl}\` |
-`;
-  }
 
   md += `
 
@@ -180,12 +216,6 @@ function generateMarkdownDoc(meta, origin) {
 
   if (bbox) {
     md += `| BBox (WGS84) | [${bbox.map((n) => n.toFixed(4)).join(', ')}] |
-`;
-  }
-
-  if (!fullViewerUrl && tileSource === 'pmtiles') {
-    md += `
-PMTiles does not expose a built-in iframe embed URL. Use a PMTiles-aware client for live embedding.
 `;
   }
 
@@ -358,32 +388,24 @@ export default function TileDocs() {
                     </code>
                     <CopyButton text={`${origin}/tiles/${slug}/meta`} label="Copy" />
                   </div>
-                  {meta.viewerUrl && (
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <span style={{ fontWeight: '500', width: '80px' }}>Embed URL</span>
-                      <code
-                        style={{
-                          flex: 1,
-                          background: '#e9ecef',
-                          padding: '6px 10px',
-                          borderRadius: '4px',
-                          fontSize: '13px',
-                          wordBreak: 'break-all',
-                        }}
-                      >
-                        {origin}
-                        {meta.viewerUrl}
-                      </code>
-                      <CopyButton text={`${origin}${meta.viewerUrl}`} label="Copy" />
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ fontWeight: '500', width: '80px' }}>Embed URL</span>
+                    <code
+                      style={{
+                        flex: 1,
+                        background: '#e9ecef',
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        fontSize: '13px',
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      {origin}
+                      {meta.viewerUrl}
+                    </code>
+                    <CopyButton text={`${origin}${meta.viewerUrl}`} label="Copy" />
+                  </div>
                 </div>
-                {!meta.viewerUrl && meta.tileSource === 'pmtiles' && (
-                  <p style={{ marginTop: '12px', marginBottom: 0, color: '#666', lineHeight: 1.5 }}>
-                    PMTiles currently does not provide a built-in iframe embed URL. Use a
-                    PMTiles-aware client for live embedding.
-                  </p>
-                )}
               </section>
 
               <section style={{ marginBottom: '24px' }}>
