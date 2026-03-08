@@ -143,7 +143,7 @@ function generateMarkdownDoc(meta, origin) {
   } = meta;
   const fullTileUrl = `${origin}${tileUrl}`;
   const fullMetaUrl = `${origin}/tiles/${slug}/meta`;
-  const fullViewerUrl = `${origin}${viewerUrl}`;
+  const fullViewerUrl = viewerUrl ? `${origin}${viewerUrl}` : null;
 
   let md = `## Tile Service: ${name}
 
@@ -153,7 +153,15 @@ function generateMarkdownDoc(meta, origin) {
 |----------|-----|
 | Tile URL | \`${fullTileUrl}\` |
 | Meta API | \`${fullMetaUrl}\` |
-| Embed URL | \`${fullViewerUrl}\` |
+
+`;
+
+  if (fullViewerUrl) {
+    md += `| Embed URL | \`${fullViewerUrl}\` |
+`;
+  }
+
+  md += `
 
 ### Configuration
 
@@ -172,6 +180,12 @@ function generateMarkdownDoc(meta, origin) {
 
   if (bbox) {
     md += `| BBox (WGS84) | [${bbox.map((n) => n.toFixed(4)).join(', ')}] |
+`;
+  }
+
+  if (!fullViewerUrl && tileSource === 'pmtiles') {
+    md += `
+PMTiles does not expose a built-in iframe embed URL. Use a PMTiles-aware client for live embedding.
 `;
   }
 
@@ -344,24 +358,32 @@ export default function TileDocs() {
                     </code>
                     <CopyButton text={`${origin}/tiles/${slug}/meta`} label="Copy" />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>Embed URL</span>
-                    <code
-                      style={{
-                        flex: 1,
-                        background: '#e9ecef',
-                        padding: '6px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {origin}
-                      {meta.viewerUrl}
-                    </code>
-                    <CopyButton text={`${origin}${meta.viewerUrl}`} label="Copy" />
-                  </div>
+                  {meta.viewerUrl && (
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <span style={{ fontWeight: '500', width: '80px' }}>Embed URL</span>
+                      <code
+                        style={{
+                          flex: 1,
+                          background: '#e9ecef',
+                          padding: '6px 10px',
+                          borderRadius: '4px',
+                          fontSize: '13px',
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {origin}
+                        {meta.viewerUrl}
+                      </code>
+                      <CopyButton text={`${origin}${meta.viewerUrl}`} label="Copy" />
+                    </div>
+                  )}
                 </div>
+                {!meta.viewerUrl && meta.tileSource === 'pmtiles' && (
+                  <p style={{ marginTop: '12px', marginBottom: 0, color: '#666', lineHeight: 1.5 }}>
+                    PMTiles currently does not provide a built-in iframe embed URL. Use a
+                    PMTiles-aware client for live embedding.
+                  </p>
+                )}
               </section>
 
               <section style={{ marginBottom: '24px' }}>

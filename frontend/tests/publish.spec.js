@@ -1,4 +1,6 @@
 import { test, expect } from './fixtures';
+import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loginUser, setupTestUser } from './auth-helper.js';
@@ -6,6 +8,14 @@ import { loginUser, setupTestUser } from './auth-helper.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
 const geojsonPath = path.join(fixturesDir, 'sample.geojson');
+
+async function createPmtilesFixture(name = 'sample-pmtiles') {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mapflow-pmtiles-'));
+  const filePath = path.join(tempDir, `${name}.pmtiles`);
+  const contents = Buffer.concat([Buffer.from('PM'), Buffer.from([0x00, 0x01]), Buffer.alloc(100)]);
+  await fs.writeFile(filePath, contents);
+  return filePath;
+}
 
 test.beforeEach(async ({ workerServer, request }) => {
   await workerServer.reset();
@@ -149,6 +159,65 @@ test('public embed page shows a visible error for missing slug', async ({
 
   await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
   await expect(embedPage.locator('.error-alert')).toContainText('Public tile not found');
+
+  await publicContext.close();
+});
+
+test('publish PMTiles file uses PMTiles public URL and does not advertise iframe embed', async ({
+  page,
+  context,
+  request,
+  workerServer,
+}) => {
+  const pmtilesPath = await createPmtilesFixture();
+
+  await page.goto('/');
+  await expect(page.locator('.page')).toBeVisible();
+  await page.getByTestId('file-input').setInputFiles(pmtilesPath);
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/files');
+        if (!response.ok()) return null;
+        const files = await response.json();
+        const file = files.find((item) => item.name === 'sample-pmtiles');
+        return file?.status;
+      },
+      { message: 'wait for PMTiles upload to be ready', timeout: 10000 },
+    )
+    .toBe('ready');
+
+  const row = page
+    .locator('.row', { hasText: 'sample-pmtiles' })
+    .filter({ hasText: '已就绪' })
+    .first();
+  await expect(row).toBeVisible();
+  await row.click();
+
+  const sidebar = page.locator('.detail-sidebar');
+  await expect(sidebar).toBeVisible();
+  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByText('发布', { exact: true }).click();
+
+  const slugInput = sidebar.getByTestId('publish-slug-input');
+  await slugInput.fill('my-pmtiles');
+  await sidebar.getByText('确认发布').click();
+
+  await expect(sidebar.getByText('已发布')).toBeVisible();
+  await expect(sidebar.locator('.form-value.code')).toContainText('/tiles/my-pmtiles');
+  await expect(sidebar.getByText('嵌入支持')).toBeVisible();
+  await expect(sidebar.getByText('PMTiles 暂不提供内置 iframe 嵌入页')).toBeVisible();
+  await expect(sidebar.getByText('复制嵌入代码')).toHaveCount(0);
+
+  const publicContext = await context.browser().newContext();
+  const headResponse = await publicContext.request.head(`${workerServer.url}/tiles/my-pmtiles`);
+  expect(headResponse.status()).toBe(200);
+
+  const metaResponse = await publicContext.request.get(`${workerServer.url}/tiles/my-pmtiles/meta`);
+  expect(metaResponse.ok()).toBeTruthy();
+  const metaJson = await metaResponse.json();
+  expect(Object.prototype.hasOwnProperty.call(metaJson, 'viewerUrl')).toBeFalsy();
 
   await publicContext.close();
 });
