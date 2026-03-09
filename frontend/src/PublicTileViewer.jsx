@@ -184,7 +184,7 @@ export function PublicTileMap({
       const isCustomCrs = meta.crsType === 'custom' && Array.isArray(meta.dataBounds);
       const tileFormat = meta.tileFormat || 'mvt';
       const minZoom = meta.minZoom ?? 0;
-      const maxZoom = isCustomCrs ? 20 : (meta.maxZoom ?? 22);
+      const maxZoom = meta.maxZoom ?? (isCustomCrs ? 20 : 22);
 
       if (existingLayer) {
         map.removeLayer(existingLayer);

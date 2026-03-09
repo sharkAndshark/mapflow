@@ -206,6 +206,8 @@ test('publish PMTiles file exposes working iframe embed', async ({
 
   const slugInput = sidebar.getByTestId('publish-slug-input');
   await slugInput.fill('my-pmtiles');
+  await expect(sidebar.locator('.form-value.code')).toContainText('/tiles/my-pmtiles');
+  await expect(sidebar.locator('.form-value.code')).not.toContainText('{z}/{x}/{y}');
   const publishZoomInputs = sidebar.locator('input[type="number"]');
   await publishZoomInputs.nth(0).fill('1');
   await publishZoomInputs.nth(1).fill('1');

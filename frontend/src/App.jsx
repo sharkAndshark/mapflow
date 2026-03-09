@@ -183,7 +183,11 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   }, [file?.id]);
 
   function isPmtilesFile(fileItem) {
-    return fileItem?.tileSource === 'pmtiles' || fileItem?.type === 'pmtiles';
+    return (
+      fileItem?.tileSource === 'pmtiles' ||
+      fileItem?.type === 'pmtiles' ||
+      fileItem?.fileType === 'pmtiles'
+    );
   }
 
   function getPublicUrlPath(slug, fileItem) {
@@ -809,7 +813,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           公开地址
                         </label>
                         <div className="form-value code" style={{ fontSize: '12px' }}>
-                          /tiles/{publishSlug.trim() || file.id}/{'{z}/{x}/{y}'}
+                          {getPublicUrlPath(publishSlug.trim() || file.id, file)}
                         </div>
                       </div>
 

@@ -527,4 +527,51 @@ test.describe('Custom CRS', () => {
     await newPage.waitForTimeout(1500);
     expect(osmRequestCount).toBe(0);
   });
+
+  test('custom CRS public docs and embed honor published maxZoom', async ({
+    page,
+    request,
+    context,
+    workerServer,
+  }) => {
+    test.setTimeout(120000);
+
+    const testFile = path.join(customCrsDir, 'sf_buildings_no_crs.geojson');
+
+    await page.goto('/');
+    await page.getByTestId('file-input').setInputFiles(testFile);
+    await waitForFileReady(request, 'sf_buildings_no_crs');
+
+    const fileData = await getFileByName(request, 'sf_buildings_no_crs');
+    expect(fileData).toBeDefined();
+
+    const publishResponse = await request.post(`/api/files/${fileData.id}/publish`, {
+      data: { slug: 'custom-crs-maxzoom-1', minZoom: 0, maxZoom: 1 },
+    });
+    expect(publishResponse.ok()).toBeTruthy();
+
+    const publicContext = await context.browser().newContext();
+
+    const docsPage = await publicContext.newPage();
+    await docsPage.goto(`${workerServer.url}/tiles/custom-crs-maxzoom-1/docs`);
+    await expect(docsPage.locator('pre code')).toContainText('maxZoom = 1');
+
+    const embedPage = await publicContext.newPage();
+    await embedPage.goto(`${workerServer.url}/tiles/custom-crs-maxzoom-1/embed`);
+    await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          return embedPage.evaluate(() => {
+            const map = window.__mapflowPublicTileMap;
+            const view = map?.getView?.();
+            return view ? view.getMaxZoom() : null;
+          });
+        },
+        { message: 'wait for custom CRS embed maxZoom', timeout: 10000 },
+      )
+      .toBe(1);
+
+    await publicContext.close();
+  });
 });
