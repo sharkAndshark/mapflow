@@ -210,7 +210,6 @@ export function PublicTileMap({
               declutter: true,
               source: new PMTilesVectorSource({
                 url: meta.tileUrl,
-                tileSize: 256,
               }),
               style: defaultStyle,
             });

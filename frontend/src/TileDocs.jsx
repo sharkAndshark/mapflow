@@ -51,7 +51,7 @@ async function init() {
   if (header.tileType === TileType.Mvt) {
     layer = new VectorTileLayer({
       declutter: true,
-      source: new PMTilesVectorSource({ url: archiveUrl, tileSize: 256 }),
+      source: new PMTilesVectorSource({ url: archiveUrl }),
       style: new Style({
         fill: new Fill({ color: 'rgba(0, 128, 255, 0.6)' }),
         stroke: new Stroke({ color: '#0080ff', width: 2 }),
