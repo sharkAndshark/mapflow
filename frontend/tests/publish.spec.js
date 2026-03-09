@@ -307,11 +307,13 @@ test('PMTiles docs code falls back to archive zoom bounds when publish zoom is u
   const publicContext = await context.browser().newContext();
   const docsPage = await publicContext.newPage();
   await docsPage.goto(`${workerServer.url}/tiles/my-pmtiles-default-zoom/docs`);
+  await expect(docsPage.locator('pre code')).toContainText('const publishedMinZoom = null;');
+  await expect(docsPage.locator('pre code')).toContainText('const publishedMaxZoom = null;');
   await expect(docsPage.locator('pre code')).toContainText(
-    'const publishedMinZoom = header.minZoom ?? 0;',
+    'const resolvedMinZoom = publishedMinZoom ?? header.minZoom ?? 0;',
   );
   await expect(docsPage.locator('pre code')).toContainText(
-    'const publishedMaxZoom = header.maxZoom ?? 22;',
+    'const resolvedMaxZoom = publishedMaxZoom ?? header.maxZoom ?? 22;',
   );
   await publicContext.close();
 });
