@@ -272,6 +272,50 @@ test('publish PMTiles file exposes working iframe embed', async ({
   await publicContext.close();
 });
 
+test('PMTiles docs code falls back to archive zoom bounds when publish zoom is unset', async ({
+  page,
+  context,
+  request,
+  workerServer,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('.page')).toBeVisible();
+  await page.getByTestId('file-input').setInputFiles(pmtilesPath);
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/files');
+        if (!response.ok()) return null;
+        const files = await response.json();
+        const file = files.find((item) => item.name === 'sample');
+        return file?.status;
+      },
+      { message: 'wait for PMTiles upload to be ready', timeout: 10000 },
+    )
+    .toBe('ready');
+
+  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  await row.click();
+
+  const sidebar = page.locator('.detail-sidebar');
+  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByText('发布', { exact: true }).click();
+  await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-default-zoom');
+  await sidebar.getByText('确认发布').click();
+
+  const publicContext = await context.browser().newContext();
+  const docsPage = await publicContext.newPage();
+  await docsPage.goto(`${workerServer.url}/tiles/my-pmtiles-default-zoom/docs`);
+  await expect(docsPage.locator('pre code')).toContainText(
+    'const publishedMinZoom = header.minZoom ?? 0;',
+  );
+  await expect(docsPage.locator('pre code')).toContainText(
+    'const publishedMaxZoom = header.maxZoom ?? 22;',
+  );
+  await publicContext.close();
+});
+
 test('publish with default slug (empty input)', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.page')).toBeVisible();

@@ -24,8 +24,8 @@ function generateOpenLayersCode(meta, origin) {
   const isRaster = tileFormat === 'png';
 
   if (isPmtiles) {
-    const publishedMinZoom = minZoom ?? 0;
-    const publishedMaxZoom = maxZoom ?? 22;
+    const publishedMinZoom = minZoom == null ? 'header.minZoom ?? 0' : minZoom;
+    const publishedMaxZoom = maxZoom == null ? 'header.maxZoom ?? 22' : maxZoom;
     return `import Map from 'ol/Map.js';
 import View from 'ol/View.js';
 import VectorTileLayer from 'ol/layer/VectorTile.js';

@@ -92,6 +92,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [publishSlug, setPublishSlug] = useState('');
   const [publishMinZoom, setPublishMinZoom] = useState(0);
   const [publishMaxZoom, setPublishMaxZoom] = useState(22);
+  const [publishZoomTouched, setPublishZoomTouched] = useState(false);
   const [publishUseAliases, setPublishUseAliases] = useState(true);
   const [publishError, setPublishError] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
@@ -169,6 +170,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
       setPublishSlug('');
       setPublishMinZoom(file.minZoom ?? 0);
       setPublishMaxZoom(file.maxZoom ?? 22);
+      setPublishZoomTouched(false);
       setPublishUseAliases(true);
       setPublishError('');
       setCopySuccess(false);
@@ -274,7 +276,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
         slug: publishSlug.trim() || undefined,
         useAliases: publishUseAliases,
       };
-      if (!isTileFile) {
+      if (!isTileFile && (!isPmtilesFile(file) || publishZoomTouched)) {
         options.minZoom = publishMinZoom;
         options.maxZoom = publishMaxZoom;
       }
@@ -646,7 +648,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         type="button"
                         className="btn-primary"
                         style={{ fontSize: '12px', padding: '4px 12px' }}
-                        onClick={() => setEditPublish(true)}
+                        onClick={() => {
+                          setPublishZoomTouched(false);
+                          setEditPublish(true);
+                        }}
                       >
                         发布
                       </button>
@@ -717,7 +722,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                 min="0"
                                 max="22"
                                 value={publishMinZoom}
-                                onChange={(e) => setPublishMinZoom(parseInt(e.target.value) || 0)}
+                                onChange={(e) => {
+                                  setPublishZoomTouched(true);
+                                  setPublishMinZoom(parseInt(e.target.value) || 0);
+                                }}
                                 className="form-input"
                                 style={{ width: '100%' }}
                               />
@@ -733,7 +741,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                 min="0"
                                 max="22"
                                 value={publishMaxZoom}
-                                onChange={(e) => setPublishMaxZoom(parseInt(e.target.value) || 22)}
+                                onChange={(e) => {
+                                  setPublishZoomTouched(true);
+                                  setPublishMaxZoom(parseInt(e.target.value) || 22);
+                                }}
                                 className="form-input"
                                 style={{ width: '100%' }}
                               />
@@ -843,6 +854,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             setPublishSlug('');
                             setPublishMinZoom(file.minZoom ?? 0);
                             setPublishMaxZoom(file.maxZoom ?? 22);
+                            setPublishZoomTouched(false);
                             setPublishError('');
                           }}
                         >

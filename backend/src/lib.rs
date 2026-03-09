@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 mod auth;
@@ -53,6 +54,10 @@ pub fn set_public_viewer_available(value: bool) {
 
 pub fn public_viewer_available() -> bool {
     PUBLIC_VIEWER_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub fn detect_public_viewer_available(web_dist_path: &Path) -> bool {
+    web_dist_path.join("index.html").is_file() || cfg!(feature = "embed-web-dist")
 }
 
 #[cfg(test)]
@@ -137,6 +142,18 @@ mod tests {
         };
 
         (state, temp_dir)
+    }
+
+    #[test]
+    fn detect_public_viewer_available_requires_index_file() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        assert_eq!(
+            detect_public_viewer_available(temp_dir.path()),
+            cfg!(feature = "embed-web-dist")
+        );
+
+        std::fs::write(temp_dir.path().join("index.html"), "ok").expect("write index");
+        assert!(detect_public_viewer_available(temp_dir.path()));
     }
 
     async fn response_json<T: serde::de::DeserializeOwned>(

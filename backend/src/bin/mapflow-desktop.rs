@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
 
     let web_dist = std::env::var("WEB_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
     let web_dist_path = PathBuf::from(&web_dist);
-    let public_viewer_available = web_dist_path.exists() || cfg!(feature = "embed-web-dist");
+    let public_viewer_available = backend::detect_public_viewer_available(&web_dist_path);
     backend::set_public_viewer_available(public_viewer_available);
 
     let mut app = backend::build_api_router(state.clone());
