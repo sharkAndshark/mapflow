@@ -16,7 +16,7 @@ import View from 'ol/View';
 import { PMTilesRasterSource, PMTilesVectorSource } from 'ol-pmtiles';
 import { PMTiles, TileType } from 'pmtiles';
 
-function calculateCustomResolutions(dataBounds, maxZoom = 20) {
+function calculateCustomResolutions(dataBounds, maxZoom = 22) {
   const width = dataBounds[2] - dataBounds[0];
   const height = dataBounds[3] - dataBounds[1];
   const maxDimension = Math.max(width, height);
@@ -27,6 +27,15 @@ function calculateCustomResolutions(dataBounds, maxZoom = 20) {
   }
 
   return Array.from({ length: maxZoom + 1 }, (_, zoom) => maxDimension / (256 * Math.pow(2, zoom)));
+}
+
+function normalizeZoom(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.floor(parsed));
 }
 
 export function usePublicTileMeta(slug) {
@@ -183,8 +192,9 @@ export function PublicTileMap({
       const isPmtiles = meta.tileSource === 'pmtiles';
       const isCustomCrs = meta.crsType === 'custom' && Array.isArray(meta.dataBounds);
       const tileFormat = meta.tileFormat || 'mvt';
-      const minZoom = meta.minZoom ?? 0;
-      const maxZoom = meta.maxZoom ?? (isCustomCrs ? 20 : 22);
+      const minZoom = normalizeZoom(meta.minZoom, 0);
+      const maxZoom = normalizeZoom(meta.maxZoom, 22);
+      const customGridMaxZoom = Math.max(0, Math.floor(maxZoom));
 
       if (existingLayer) {
         map.removeLayer(existingLayer);
@@ -314,7 +324,7 @@ export function PublicTileMap({
         customTileGrid = new TileGrid({
           extent: [minX, minY, maxX, maxY],
           origin: [minX, maxY],
-          resolutions: calculateCustomResolutions(meta.dataBounds, 20),
+          resolutions: calculateCustomResolutions(meta.dataBounds, customGridMaxZoom),
           tileSize: 256,
         });
       }

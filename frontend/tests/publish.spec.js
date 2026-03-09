@@ -318,6 +318,124 @@ test('PMTiles docs code falls back to archive zoom bounds when publish zoom is u
   await publicContext.close();
 });
 
+test('publish PMTiles with one zoom edit keeps the other bound unset', async ({
+  page,
+  context,
+  request,
+  workerServer,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('.page')).toBeVisible();
+  await page.getByTestId('file-input').setInputFiles(pmtilesPath);
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/files');
+        if (!response.ok()) return null;
+        const files = await response.json();
+        const file = files.find((item) => item.name === 'sample');
+        return file?.status;
+      },
+      { message: 'wait for PMTiles upload to be ready', timeout: 10000 },
+    )
+    .toBe('ready');
+
+  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  await row.click();
+
+  const sidebar = page.locator('.detail-sidebar');
+  let publishPayload = null;
+  await page.route('**/api/files/*/publish', async (route) => {
+    publishPayload = route.request().postDataJSON();
+    await route.continue();
+  });
+  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByText('发布', { exact: true }).click();
+  await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-min-only');
+  const publishZoomInputs = sidebar.locator('input[type="number"]');
+  await publishZoomInputs.nth(0).fill('1');
+  await sidebar.getByText('确认发布').click();
+
+  await expect(sidebar.getByText('已发布')).toBeVisible();
+  expect(publishPayload).toBeTruthy();
+  expect(publishPayload.minZoom).toBe(1);
+  expect(Object.prototype.hasOwnProperty.call(publishPayload, 'maxZoom')).toBeFalsy();
+  await page.unroute('**/api/files/*/publish');
+
+  const publicContext = await context.browser().newContext();
+  const metaResponse = await publicContext.request.get(
+    `${workerServer.url}/tiles/my-pmtiles-min-only/meta`,
+  );
+  expect(metaResponse.ok()).toBeTruthy();
+  const metaJson = await metaResponse.json();
+  expect(metaJson.minZoom).toBe(1);
+
+  const docsPage = await publicContext.newPage();
+  await docsPage.goto(`${workerServer.url}/tiles/my-pmtiles-min-only/docs`);
+  await expect(docsPage.locator('pre code')).toContainText('const publishedMinZoom = 1;');
+  await publicContext.close();
+});
+
+test('publish PMTiles with only max zoom edit keeps min bound unset', async ({
+  page,
+  context,
+  request,
+  workerServer,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('.page')).toBeVisible();
+  await page.getByTestId('file-input').setInputFiles(pmtilesPath);
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/files');
+        if (!response.ok()) return null;
+        const files = await response.json();
+        const file = files.find((item) => item.name === 'sample');
+        return file?.status;
+      },
+      { message: 'wait for PMTiles upload to be ready', timeout: 10000 },
+    )
+    .toBe('ready');
+
+  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  await row.click();
+
+  const sidebar = page.locator('.detail-sidebar');
+  let publishPayload = null;
+  await page.route('**/api/files/*/publish', async (route) => {
+    publishPayload = route.request().postDataJSON();
+    await route.continue();
+  });
+  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByText('发布', { exact: true }).click();
+  await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-max-only');
+  const publishZoomInputs = sidebar.locator('input[type="number"]');
+  await publishZoomInputs.nth(1).fill('5');
+  await sidebar.getByText('确认发布').click();
+
+  await expect(sidebar.getByText('已发布')).toBeVisible();
+  expect(publishPayload).toBeTruthy();
+  expect(publishPayload.maxZoom).toBe(5);
+  expect(Object.prototype.hasOwnProperty.call(publishPayload, 'minZoom')).toBeFalsy();
+  await page.unroute('**/api/files/*/publish');
+
+  const publicContext = await context.browser().newContext();
+  const metaResponse = await publicContext.request.get(
+    `${workerServer.url}/tiles/my-pmtiles-max-only/meta`,
+  );
+  expect(metaResponse.ok()).toBeTruthy();
+  const metaJson = await metaResponse.json();
+  expect(metaJson.maxZoom).toBe(5);
+
+  const docsPage = await publicContext.newPage();
+  await docsPage.goto(`${workerServer.url}/tiles/my-pmtiles-max-only/docs`);
+  await expect(docsPage.locator('pre code')).toContainText('const publishedMaxZoom = 5;');
+  await publicContext.close();
+});
+
 test('publish with default slug (empty input)', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.page')).toBeVisible();

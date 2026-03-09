@@ -574,4 +574,55 @@ test.describe('Custom CRS', () => {
 
     await publicContext.close();
   });
+
+  test('custom CRS embed supports published maxZoom above 20', async ({
+    page,
+    request,
+    context,
+    workerServer,
+  }) => {
+    test.setTimeout(120000);
+
+    const testFile = path.join(customCrsDir, 'sf_buildings_no_crs.geojson');
+
+    await page.goto('/');
+    await page.getByTestId('file-input').setInputFiles(testFile);
+    await waitForFileReady(request, 'sf_buildings_no_crs');
+
+    const fileData = await getFileByName(request, 'sf_buildings_no_crs');
+    expect(fileData).toBeDefined();
+
+    const publishResponse = await request.post(`/api/files/${fileData.id}/publish`, {
+      data: { slug: 'custom-crs-maxzoom-22', minZoom: 0, maxZoom: 22 },
+    });
+    expect(publishResponse.ok()).toBeTruthy();
+
+    const publicContext = await context.browser().newContext();
+    const embedPage = await publicContext.newPage();
+    await embedPage.goto(`${workerServer.url}/tiles/custom-crs-maxzoom-22/embed`);
+    await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          return embedPage.evaluate(() => {
+            const map = window.__mapflowPublicTileMap;
+            const view = map?.getView?.();
+            const layer = map?.getLayers?.().item(0);
+            const source = layer?.getSource?.();
+            const tileGrid = source?.getTileGrid?.();
+            const resolutions =
+              tileGrid && typeof tileGrid.getResolutions === 'function'
+                ? tileGrid.getResolutions()
+                : null;
+            return view && Array.isArray(resolutions)
+              ? { maxZoom: view.getMaxZoom(), resolutionCount: resolutions.length }
+              : null;
+          });
+        },
+        { message: 'wait for custom CRS embed tile grid max zoom', timeout: 10000 },
+      )
+      .toMatchObject({ maxZoom: 22, resolutionCount: 23 });
+
+    await publicContext.close();
+  });
 });
