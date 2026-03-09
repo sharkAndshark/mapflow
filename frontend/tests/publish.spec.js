@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loginUser, setupTestUser } from './auth-helper.js';
@@ -7,6 +8,32 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
 const geojsonPath = path.join(fixturesDir, 'sample.geojson');
 const pmtilesPath = path.join(fixturesDir, 'sample.pmtiles');
+
+async function readPmtilesHeaderSummary(filePath) {
+  const buffer = await fs.readFile(filePath);
+  return {
+    tileType: buffer.readUInt8(99),
+    minZoom: buffer.readUInt8(100),
+    maxZoom: buffer.readUInt8(101),
+  };
+}
+
+function tileTypeLabel(tileType) {
+  switch (tileType) {
+    case 1:
+      return 'MVT';
+    case 2:
+      return 'PNG';
+    case 3:
+      return 'JPEG';
+    case 4:
+      return 'WEBP';
+    case 5:
+      return 'AVIF';
+    default:
+      return 'MVT';
+  }
+}
 
 test.beforeEach(async ({ workerServer, request }) => {
   await workerServer.reset();
@@ -278,6 +305,8 @@ test('PMTiles docs code falls back to archive zoom bounds when publish zoom is u
   request,
   workerServer,
 }) => {
+  const pmtilesHeader = await readPmtilesHeaderSummary(pmtilesPath);
+
   await page.goto('/');
   await expect(page.locator('.page')).toBeVisible();
   await page.getByTestId('file-input').setInputFiles(pmtilesPath);
@@ -315,6 +344,79 @@ test('PMTiles docs code falls back to archive zoom bounds when publish zoom is u
   await expect(docsPage.locator('pre code')).toContainText(
     'const resolvedMaxZoom = publishedMaxZoom ?? header.maxZoom ?? 22;',
   );
+  const configTable = docsPage.locator('table').first();
+  await expect(configTable.locator('tr', { hasText: 'Zoom Range' })).toContainText(
+    `${pmtilesHeader.minZoom} - ${pmtilesHeader.maxZoom}`,
+  );
+  await expect(configTable.locator('tr', { hasText: 'Format' })).toContainText(
+    tileTypeLabel(pmtilesHeader.tileType),
+  );
+  await publicContext.close();
+});
+
+test('PMTiles embed view clamps published zoom bounds to archive header', async ({
+  page,
+  context,
+  request,
+  workerServer,
+}) => {
+  const pmtilesHeader = await readPmtilesHeaderSummary(pmtilesPath);
+  const publishMinZoom = Math.min(22, pmtilesHeader.maxZoom + 5);
+  const publishMaxZoom = Math.min(22, pmtilesHeader.maxZoom + 8);
+
+  await page.goto('/');
+  await expect(page.locator('.page')).toBeVisible();
+  await page.getByTestId('file-input').setInputFiles(pmtilesPath);
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/files');
+        if (!response.ok()) return null;
+        const files = await response.json();
+        const file = files.find((item) => item.name === 'sample');
+        return file?.status;
+      },
+      { message: 'wait for PMTiles upload to be ready', timeout: 10000 },
+    )
+    .toBe('ready');
+
+  const filesResponse = await request.get('/api/files');
+  expect(filesResponse.ok()).toBeTruthy();
+  const files = await filesResponse.json();
+  const file = files.find((item) => item.name === 'sample');
+  expect(file).toBeDefined();
+
+  const publishResponse = await request.post(`/api/files/${file.id}/publish`, {
+    data: {
+      slug: 'my-pmtiles-clamped-zoom',
+      minZoom: publishMinZoom,
+      maxZoom: publishMaxZoom,
+    },
+  });
+  expect(publishResponse.ok()).toBeTruthy();
+
+  const publicContext = await context.browser().newContext();
+  const embedPage = await publicContext.newPage();
+  await embedPage.goto(`${workerServer.url}/tiles/my-pmtiles-clamped-zoom/embed`);
+  await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+
+  await expect
+    .poll(
+      async () => {
+        return embedPage.evaluate(() => {
+          const map = window.__mapflowPublicTileMap;
+          const view = map?.getView?.();
+          return view ? { minZoom: view.getMinZoom(), maxZoom: view.getMaxZoom() } : null;
+        });
+      },
+      { message: 'wait for PMTiles embed zoom bounds to initialize', timeout: 10000 },
+    )
+    .toMatchObject({
+      minZoom: pmtilesHeader.maxZoom,
+      maxZoom: pmtilesHeader.maxZoom,
+    });
+
   await publicContext.close();
 });
 

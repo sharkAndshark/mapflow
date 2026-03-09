@@ -38,6 +38,34 @@ function normalizeZoom(value, fallback) {
   return Math.max(0, Math.floor(parsed));
 }
 
+function clampZoom(value, minZoom, maxZoom) {
+  return Math.min(maxZoom, Math.max(minZoom, value));
+}
+
+function resolvePmtilesViewZoomRange(meta, header) {
+  const headerMinZoom = normalizeZoom(header.minZoom, 0);
+  const headerMaxZoom = Math.max(headerMinZoom, normalizeZoom(header.maxZoom, 22));
+
+  const publishedMinZoom =
+    meta.minZoom == null
+      ? null
+      : clampZoom(normalizeZoom(meta.minZoom, headerMinZoom), headerMinZoom, headerMaxZoom);
+  const publishedMaxZoom =
+    meta.maxZoom == null
+      ? null
+      : clampZoom(normalizeZoom(meta.maxZoom, headerMaxZoom), headerMinZoom, headerMaxZoom);
+
+  let viewMinZoom = publishedMinZoom ?? headerMinZoom;
+  let viewMaxZoom = publishedMaxZoom ?? headerMaxZoom;
+
+  if (viewMinZoom > viewMaxZoom) {
+    viewMinZoom = headerMinZoom;
+    viewMaxZoom = headerMaxZoom;
+  }
+
+  return { viewMinZoom, viewMaxZoom };
+}
+
 export function usePublicTileMeta(slug) {
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState(null);
@@ -242,8 +270,7 @@ export function PublicTileMap({
           tileLayerRef.current = pmtilesLayer;
           map.getLayers().insertAt(0, pmtilesLayer);
 
-          const viewMinZoom = meta.minZoom ?? header.minZoom ?? 0;
-          const viewMaxZoom = meta.maxZoom ?? header.maxZoom ?? 22;
+          const { viewMinZoom, viewMaxZoom } = resolvePmtilesViewZoomRange(meta, header);
           const centerZoom = header.centerZoom ?? viewMinZoom;
           const initialZoom = Math.min(viewMaxZoom, Math.max(viewMinZoom, centerZoom));
 

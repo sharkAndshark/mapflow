@@ -1,10 +1,44 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { PMTiles, TileType } from 'pmtiles';
 
 import { PublicTileMap, usePublicTileMeta } from './PublicTileViewer.jsx';
 
 function resolveViewerUrlPath(slug, viewerUrl) {
   return viewerUrl || `/tiles/${slug}/embed`;
+}
+
+function resolvePmtilesFormat(tileType) {
+  switch (tileType) {
+    case TileType.Mvt:
+      return 'mvt';
+    case TileType.Png:
+      return 'png';
+    case TileType.Jpeg:
+      return 'jpeg';
+    case TileType.Webp:
+      return 'webp';
+    case TileType.Avif:
+      return 'avif';
+    default:
+      return null;
+  }
+}
+
+function resolveDocsConfig(meta, pmtilesHeader) {
+  if (meta.tileSource === 'pmtiles') {
+    return {
+      minZoom: meta.minZoom ?? pmtilesHeader?.minZoom ?? 0,
+      maxZoom: meta.maxZoom ?? pmtilesHeader?.maxZoom ?? 22,
+      tileFormat: meta.tileFormat ?? resolvePmtilesFormat(pmtilesHeader?.tileType) ?? 'mvt',
+    };
+  }
+
+  return {
+    minZoom: meta.minZoom ?? 0,
+    maxZoom: meta.maxZoom ?? 22,
+    tileFormat: meta.tileFormat ?? 'mvt',
+  };
 }
 
 function generateOpenLayersCode(meta, origin) {
@@ -182,21 +216,9 @@ const map = new Map({
   return code;
 }
 
-function generateMarkdownDoc(meta, origin) {
-  const {
-    slug,
-    name,
-    tileSource,
-    tileUrl,
-    viewerUrl,
-    crs,
-    crsType,
-    bbox,
-    dataBounds,
-    tileFormat,
-    minZoom,
-    maxZoom,
-  } = meta;
+function generateMarkdownDoc(meta, origin, docsConfig) {
+  const { slug, name, tileSource, tileUrl, viewerUrl, crs, crsType, bbox, dataBounds } = meta;
+  const { minZoom, maxZoom, tileFormat } = docsConfig;
   const fullTileUrl = `${origin}${tileUrl}`;
   const fullMetaUrl = `${origin}/tiles/${slug}/meta`;
   const fullViewerUrl = `${origin}${resolveViewerUrlPath(slug, viewerUrl)}`;
@@ -285,12 +307,50 @@ export default function TileDocs() {
   const [showCode, setShowCode] = useState(true);
   const [mdCopied, setMdCopied] = useState(false);
   const { meta, error, isLoading } = usePublicTileMeta(slug);
+  const [pmtilesHeader, setPmtilesHeader] = useState(null);
 
   const origin = window.location.origin;
   const viewerUrlPath = meta ? resolveViewerUrlPath(slug, meta.viewerUrl) : null;
 
+  useEffect(() => {
+    if (!meta || meta.tileSource !== 'pmtiles') {
+      setPmtilesHeader(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadPmtilesHeader() {
+      try {
+        const archive = new PMTiles(meta.tileUrl);
+        const header = await archive.getHeader();
+        if (!cancelled) {
+          setPmtilesHeader(header);
+        }
+      } catch (loadError) {
+        console.warn('Failed to load PMTiles header for docs display', loadError);
+        if (!cancelled) {
+          setPmtilesHeader(null);
+        }
+      }
+    }
+
+    loadPmtilesHeader();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [meta?.tileSource, meta?.tileUrl]);
+
+  const docsConfig = useMemo(() => {
+    if (!meta) {
+      return null;
+    }
+
+    return resolveDocsConfig(meta, pmtilesHeader);
+  }, [meta, pmtilesHeader]);
+
   const openLayersCode = meta ? generateOpenLayersCode(meta, origin) : '';
-  const markdownDoc = meta ? generateMarkdownDoc(meta, origin) : '';
+  const markdownDoc = meta && docsConfig ? generateMarkdownDoc(meta, origin, docsConfig) : '';
 
   return (
     <div
@@ -326,7 +386,7 @@ export default function TileDocs() {
               className="badge"
               style={{ backgroundColor: '#5cb85c', color: '#fff', marginLeft: '4px' }}
             >
-              {meta.tileFormat?.toUpperCase() || 'MVT'}
+              {docsConfig?.tileFormat?.toUpperCase() || 'MVT'}
             </span>
           </div>
         )}
@@ -443,7 +503,7 @@ export default function TileDocs() {
                         Zoom Range
                       </td>
                       <td style={{ padding: '8px 0' }}>
-                        {meta.minZoom ?? 0} - {meta.maxZoom ?? 22}
+                        {docsConfig?.minZoom ?? 0} - {docsConfig?.maxZoom ?? 22}
                       </td>
                     </tr>
                     <tr>
@@ -469,7 +529,7 @@ export default function TileDocs() {
                     <tr>
                       <td style={{ padding: '8px 0', fontWeight: '500' }}>Format</td>
                       <td style={{ padding: '8px 0' }}>
-                        {meta.tileFormat?.toUpperCase() || 'MVT'}
+                        {docsConfig?.tileFormat?.toUpperCase() || 'MVT'}
                       </td>
                     </tr>
                     <tr>

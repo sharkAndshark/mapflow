@@ -9,10 +9,31 @@ use include_dir::{include_dir, Dir};
 
 #[cfg(feature = "embed-web-dist")]
 static EMBEDDED_WEB_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../frontend/dist");
+#[cfg(feature = "embed-web-dist")]
+const EMBED_VIEWER_ROUTE_MARKERS: [&str; 2] = ["/tiles/:slug/embed", "tile-embed-page"];
 
 #[cfg(feature = "embed-web-dist")]
 pub fn embedded_spa_available() -> bool {
-    EMBEDDED_WEB_DIST.get_file("index.html").is_some()
+    EMBEDDED_WEB_DIST.get_file("index.html").is_some() && embedded_bundle_has_embed_marker()
+}
+
+#[cfg(feature = "embed-web-dist")]
+fn embedded_bundle_has_embed_marker() -> bool {
+    EMBEDDED_WEB_DIST
+        .files()
+        .filter(|file| {
+            let path = file.path().to_string_lossy();
+            path.ends_with(".js") || path.ends_with(".mjs")
+        })
+        .any(|file| {
+            std::str::from_utf8(file.contents())
+                .map(|content| {
+                    EMBED_VIEWER_ROUTE_MARKERS
+                        .iter()
+                        .any(|marker| content.contains(marker))
+                })
+                .unwrap_or(false)
+        })
 }
 
 #[cfg(feature = "embed-web-dist")]
