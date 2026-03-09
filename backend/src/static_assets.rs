@@ -11,6 +11,11 @@ use include_dir::{include_dir, Dir};
 static EMBEDDED_WEB_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../frontend/dist");
 
 #[cfg(feature = "embed-web-dist")]
+pub fn embedded_spa_available() -> bool {
+    EMBEDDED_WEB_DIST.get_file("index.html").is_some()
+}
+
+#[cfg(feature = "embed-web-dist")]
 pub async fn serve_embedded_spa(uri: Uri) -> Response {
     let request_path = normalize_request_path(uri.path());
 

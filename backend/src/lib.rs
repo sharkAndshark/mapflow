@@ -43,7 +43,7 @@ pub use password::{hash_password, validate_password_complexity, verify_password,
 pub use routes::{build_api_router, build_test_router};
 pub use session_store::DuckDBStore;
 #[cfg(feature = "embed-web-dist")]
-pub use static_assets::serve_embedded_spa;
+pub use static_assets::{embedded_spa_available, serve_embedded_spa};
 pub use validation::{validate_geojson, validate_shapefile_zip};
 
 static PUBLIC_VIEWER_AVAILABLE: AtomicBool = AtomicBool::new(false);
@@ -57,7 +57,19 @@ pub fn public_viewer_available() -> bool {
 }
 
 pub fn detect_public_viewer_available(web_dist_path: &Path) -> bool {
-    web_dist_path.join("index.html").is_file() || cfg!(feature = "embed-web-dist")
+    if web_dist_path.join("index.html").is_file() {
+        return true;
+    }
+
+    #[cfg(feature = "embed-web-dist")]
+    {
+        return embedded_spa_available();
+    }
+
+    #[cfg(not(feature = "embed-web-dist"))]
+    {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -147,9 +159,19 @@ mod tests {
     #[test]
     fn detect_public_viewer_available_requires_index_file() {
         let temp_dir = TempDir::new().expect("temp dir");
+        let expected_without_web_dist = {
+            #[cfg(feature = "embed-web-dist")]
+            {
+                embedded_spa_available()
+            }
+            #[cfg(not(feature = "embed-web-dist"))]
+            {
+                false
+            }
+        };
         assert_eq!(
             detect_public_viewer_available(temp_dir.path()),
-            cfg!(feature = "embed-web-dist")
+            expected_without_web_dist
         );
 
         std::fs::write(temp_dir.path().join("index.html"), "ok").expect("write index");

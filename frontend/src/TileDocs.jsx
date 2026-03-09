@@ -24,8 +24,8 @@ function generateOpenLayersCode(meta, origin) {
   const isRaster = tileFormat === 'png';
 
   if (isPmtiles) {
-    const publishedMinZoom = minZoom == null ? 'header.minZoom ?? 0' : minZoom;
-    const publishedMaxZoom = maxZoom == null ? 'header.maxZoom ?? 22' : maxZoom;
+    const publishedMinZoom = minZoom == null ? 'null' : minZoom;
+    const publishedMaxZoom = maxZoom == null ? 'null' : maxZoom;
     return `import Map from 'ol/Map.js';
 import View from 'ol/View.js';
 import VectorTileLayer from 'ol/layer/VectorTile.js';
@@ -42,9 +42,11 @@ const publishedMaxZoom = ${publishedMaxZoom};
 async function init() {
   const archive = new PMTiles(archiveUrl);
   const header = await archive.getHeader();
+  const resolvedMinZoom = publishedMinZoom ?? header.minZoom ?? 0;
+  const resolvedMaxZoom = publishedMaxZoom ?? header.maxZoom ?? 22;
   const initialZoom = Math.min(
-    publishedMaxZoom,
-    Math.max(publishedMinZoom, header.centerZoom ?? publishedMinZoom)
+    resolvedMaxZoom,
+    Math.max(resolvedMinZoom, header.centerZoom ?? resolvedMinZoom)
   );
 
   let layer;
@@ -69,8 +71,8 @@ async function init() {
     view: new View({
       center: fromLonLat([header.centerLon, header.centerLat]),
       zoom: initialZoom,
-      minZoom: publishedMinZoom,
-      maxZoom: publishedMaxZoom,
+      minZoom: resolvedMinZoom,
+      maxZoom: resolvedMaxZoom,
       constrainResolution: true,
       smoothResolutionConstraint: false,
     }),
