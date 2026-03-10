@@ -114,10 +114,10 @@ jobs:
           echo "archive_url=${url}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build image (smoke)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -320,10 +320,10 @@ jobs:
           echo "name=ghcr.io/${owner_lc}/mapflow" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -339,7 +339,7 @@ jobs:
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -383,10 +383,10 @@ jobs:
           path: /tmp/digests
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -394,7 +394,7 @@ jobs:
 
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
@@ -454,3 +454,32 @@ jobs:
             release-assets/**/*.tar.gz
             release-assets/**/*.zip
             release-assets/**/*.deb
+
+  update_homebrew_tap:
+    runs-on: ubuntu-latest
+    needs:
+      - github_release
+      - meta
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Generate formula
+        run: |
+          bash scripts/release/generate_homebrew_formula.sh \
+            --repo ${{ github.repository }} \
+            --tag ${{ needs.meta.outputs.release_tag }} \
+            --output /tmp/mapflow-preview.rb
+
+      - name: Update tap repository
+        run: |
+          git clone https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/sharkAndshark/homebrew-mapflow.git /tmp/tap
+          cd /tmp/tap
+          mkdir -p Formula
+          cp /tmp/mapflow-preview.rb Formula/mapflow-preview.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/mapflow-preview.rb
+          git commit -m "Update mapflow-preview to ${{ needs.meta.outputs.release_tag }}" || echo "No changes to commit"
+          git push
