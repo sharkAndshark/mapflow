@@ -3783,6 +3783,7 @@ async fn test_pmtiles_meta_endpoint() {
     assert_eq!(meta_json["name"], "meta_test");
     assert_eq!(meta_json["tileSource"], "pmtiles");
     assert_eq!(meta_json["tileUrl"], "/tiles/meta-test");
+    // Test builds do not bundle the frontend viewer, so public meta omits viewerUrl here.
     assert!(meta_json.get("viewerUrl").is_none());
 }
 
@@ -4536,6 +4537,7 @@ async fn test_public_tile_meta_includes_extended_fields() {
         .as_str()
         .unwrap()
         .contains("/tiles/meta-extended-test/"));
+    // Test builds do not bundle the frontend viewer, so public meta omits viewerUrl here.
     assert!(meta_json.get("viewerUrl").is_none());
     assert_eq!(meta_json["crsType"], "standard");
 }
