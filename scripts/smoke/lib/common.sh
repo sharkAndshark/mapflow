@@ -118,7 +118,9 @@ upload_file() {
 
   smoke_log "uploading ${file_path}"
   local resp
-  resp=$(curl_with_retry -fsS -b "$cookie_jar" -F "file=@${file_path}" "${base_url}/api/uploads")
+  # Disable Expect: 100-continue for multipart uploads to avoid flaky
+  # Windows runner behavior when the server rejects large request bodies.
+  resp=$(curl_with_retry -fsS -b "$cookie_jar" -H "Expect:" -F "file=@${file_path}" "${base_url}/api/uploads")
 
   echo "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'
 }
@@ -342,7 +344,7 @@ verify_invalid_upload_rejected() {
 
   local http_code
   http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
-    -F "file=@${file_path}" "${base_url}/api/uploads" || true)
+    -H "Expect:" -F "file=@${file_path}" "${base_url}/api/uploads" || true)
 
   if [ "$http_code" != "400" ]; then
     local body
@@ -777,14 +779,24 @@ verify_oversize_upload_rejected() {
   response_file="$(mktemp)"
 
   local http_code
+  local curl_exit=0
   http_code=$(curl -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
-    -F "file=@${file_path}" "${base_url}/api/uploads" || true)
+    -H "Expect:" -F "file=@${file_path}" "${base_url}/api/uploads") || curl_exit=$?
+
+  # Some Windows runners occasionally report an interim 100 with a transport
+  # abort for oversized multipart bodies. Retry once with explicit HTTP/1.1.
+  if [ "$http_code" != "413" ] && { [ "$http_code" = "100" ] || [ "$http_code" = "000" ] || [ "$curl_exit" -ne 0 ]; }; then
+    smoke_log "oversize upload first attempt unstable (status=${http_code}, curl_exit=${curl_exit}), retrying once"
+    curl_exit=0
+    http_code=$(curl --http1.1 -sS -o "$response_file" -w "%{http_code}" -b "$cookie_jar" \
+      -H "Expect:" -F "file=@${file_path}" "${base_url}/api/uploads") || curl_exit=$?
+  fi
 
   if [ "$http_code" != "413" ]; then
     local body
     body="$(cat "$response_file" 2>/dev/null || true)"
     rm -f "$response_file"
-    smoke_fail "expected oversize upload status 413, got ${http_code}, body=${body}"
+    smoke_fail "expected oversize upload status 413, got ${http_code}, curl_exit=${curl_exit}, body=${body}"
   fi
 
   if ! grep -q "File too large" "$response_file"; then
