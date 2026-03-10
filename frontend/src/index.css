@@ -716,3 +716,45 @@ h1 {
 .layer-section:last-child {
   margin-bottom: 0;
 }
+
+/* Iframe embed styles */
+.iframe-embed-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.iframe-size-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.iframe-size-inputs label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #666;
+}
+
+.iframe-code-preview {
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px;
+  font-family: "Consolas", "Monaco", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #333;
+  margin: 0;
+}
+
+.iframe-mini-preview {
+  padding: 8px;
+  background: #fafafa;
+  border-radius: 6px;
+}

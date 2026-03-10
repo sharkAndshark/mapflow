@@ -152,8 +152,8 @@ pub struct PublicTileMeta {
     pub tile_source: String,
     #[serde(rename = "tileUrl")]
     pub tile_url: String,
-    #[serde(rename = "viewerUrl")]
-    pub viewer_url: String,
+    #[serde(rename = "viewerUrl", skip_serializing_if = "Option::is_none")]
+    pub viewer_url: Option<String>,
     pub crs: Option<String>,
     #[serde(rename = "crsType")]
     pub crs_type: String,

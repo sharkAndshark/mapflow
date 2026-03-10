@@ -1,3 +1,6 @@
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 mod auth;
 mod auth_routes;
 mod config;
@@ -40,8 +43,74 @@ pub use password::{hash_password, validate_password_complexity, verify_password,
 pub use routes::{build_api_router, build_test_router};
 pub use session_store::DuckDBStore;
 #[cfg(feature = "embed-web-dist")]
-pub use static_assets::serve_embedded_spa;
+pub use static_assets::{embedded_spa_available, serve_embedded_spa};
 pub use validation::{validate_geojson, validate_shapefile_zip};
+
+static PUBLIC_VIEWER_AVAILABLE: AtomicBool = AtomicBool::new(false);
+const EMBED_VIEWER_ROUTE_MARKERS: [&str; 2] = ["/tiles/:slug/embed", "tile-embed-page"];
+
+pub fn set_public_viewer_available(value: bool) {
+    PUBLIC_VIEWER_AVAILABLE.store(value, Ordering::Relaxed);
+}
+
+pub fn public_viewer_available() -> bool {
+    PUBLIC_VIEWER_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub fn detect_public_viewer_available(web_dist_path: &Path) -> bool {
+    if web_dist_path.join("index.html").is_file() {
+        return web_dist_contains_embed_viewer_bundle(web_dist_path);
+    }
+
+    #[cfg(feature = "embed-web-dist")]
+    {
+        return embedded_spa_available();
+    }
+
+    #[cfg(not(feature = "embed-web-dist"))]
+    {
+        false
+    }
+}
+
+fn web_dist_contains_embed_viewer_bundle(web_dist_path: &Path) -> bool {
+    let mut pending_dirs = vec![web_dist_path.to_path_buf()];
+
+    while let Some(dir) = pending_dirs.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+
+        for entry_result in entries {
+            let Ok(entry) = entry_result else {
+                continue;
+            };
+            let path = entry.path();
+
+            if path.is_dir() {
+                pending_dirs.push(path);
+                continue;
+            }
+
+            let extension = path.extension().and_then(|ext| ext.to_str());
+            if !matches!(extension, Some("js" | "mjs")) {
+                continue;
+            }
+
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if EMBED_VIEWER_ROUTE_MARKERS
+                .iter()
+                .any(|marker| content.contains(marker))
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
 
 #[cfg(test)]
 mod tests {
@@ -125,6 +194,41 @@ mod tests {
         };
 
         (state, temp_dir)
+    }
+
+    #[test]
+    fn detect_public_viewer_available_requires_embed_route_marker() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let expected_without_web_dist = {
+            #[cfg(feature = "embed-web-dist")]
+            {
+                embedded_spa_available()
+            }
+            #[cfg(not(feature = "embed-web-dist"))]
+            {
+                false
+            }
+        };
+        assert_eq!(
+            detect_public_viewer_available(temp_dir.path()),
+            expected_without_web_dist
+        );
+
+        std::fs::write(temp_dir.path().join("index.html"), "ok").expect("write index");
+        assert!(!detect_public_viewer_available(temp_dir.path()));
+
+        let assets_dir = temp_dir.path().join("assets");
+        std::fs::create_dir_all(&assets_dir).expect("create assets dir");
+        std::fs::write(
+            assets_dir.join("index.js"),
+            "console.log('/tiles/:slug/embed'); console.log('tile-embed-page');",
+        )
+        .expect("write js marker");
+        assert!(detect_public_viewer_available(temp_dir.path()));
+
+        std::fs::write(assets_dir.join("index.js"), "console.log('legacy bundle');")
+            .expect("rewrite js");
+        assert!(!detect_public_viewer_available(temp_dir.path()));
     }
 
     async fn response_json<T: serde::de::DeserializeOwned>(

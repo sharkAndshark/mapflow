@@ -456,6 +456,30 @@ test.describe('Custom CRS', () => {
       )
       .toBeGreaterThan(0);
 
+    const embedPage = await publicContext.newPage();
+    await embedPage.goto(`${workerServer.url}/tiles/epsg4490-urn-docs/embed`);
+    await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+    await expect(embedPage.getByText('Back to Files')).toHaveCount(0);
+
+    await expect
+      .poll(
+        async () => {
+          return embedPage.evaluate(() => {
+            return performance
+              .getEntriesByType('resource')
+              .filter(
+                (resource) =>
+                  resource.name.includes('/tiles/epsg4490-urn-docs/') &&
+                  !resource.name.includes('/meta'),
+              )
+              .map((resource) => resource.responseStatus)
+              .filter((status) => status === 200 || status === 204).length;
+          });
+        },
+        { message: 'wait for embed page tile requests', timeout: 10000 },
+      )
+      .toBeGreaterThan(0);
+
     await publicContext.close();
   });
 
@@ -502,5 +526,103 @@ test.describe('Custom CRS', () => {
     await expect(newPage.getByLabel('Show OSM Basemap')).toHaveCount(0);
     await newPage.waitForTimeout(1500);
     expect(osmRequestCount).toBe(0);
+  });
+
+  test('custom CRS public docs and embed honor published maxZoom', async ({
+    page,
+    request,
+    context,
+    workerServer,
+  }) => {
+    test.setTimeout(120000);
+
+    const testFile = path.join(customCrsDir, 'sf_buildings_no_crs.geojson');
+
+    await page.goto('/');
+    await page.getByTestId('file-input').setInputFiles(testFile);
+    await waitForFileReady(request, 'sf_buildings_no_crs');
+
+    const fileData = await getFileByName(request, 'sf_buildings_no_crs');
+    expect(fileData).toBeDefined();
+
+    const publishResponse = await request.post(`/api/files/${fileData.id}/publish`, {
+      data: { slug: 'custom-crs-maxzoom-1', minZoom: 0, maxZoom: 1 },
+    });
+    expect(publishResponse.ok()).toBeTruthy();
+
+    const publicContext = await context.browser().newContext();
+
+    const docsPage = await publicContext.newPage();
+    await docsPage.goto(`${workerServer.url}/tiles/custom-crs-maxzoom-1/docs`);
+    await expect(docsPage.locator('pre code')).toContainText('maxZoom = 1');
+
+    const embedPage = await publicContext.newPage();
+    await embedPage.goto(`${workerServer.url}/tiles/custom-crs-maxzoom-1/embed`);
+    await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          return embedPage.evaluate(() => {
+            const map = window.__mapflowPublicTileMap;
+            const view = map?.getView?.();
+            return view ? view.getMaxZoom() : null;
+          });
+        },
+        { message: 'wait for custom CRS embed maxZoom', timeout: 10000 },
+      )
+      .toBe(1);
+
+    await publicContext.close();
+  });
+
+  test('custom CRS embed supports published maxZoom above 20', async ({
+    page,
+    request,
+    context,
+    workerServer,
+  }) => {
+    test.setTimeout(120000);
+
+    const testFile = path.join(customCrsDir, 'sf_buildings_no_crs.geojson');
+
+    await page.goto('/');
+    await page.getByTestId('file-input').setInputFiles(testFile);
+    await waitForFileReady(request, 'sf_buildings_no_crs');
+
+    const fileData = await getFileByName(request, 'sf_buildings_no_crs');
+    expect(fileData).toBeDefined();
+
+    const publishResponse = await request.post(`/api/files/${fileData.id}/publish`, {
+      data: { slug: 'custom-crs-maxzoom-22', minZoom: 0, maxZoom: 22 },
+    });
+    expect(publishResponse.ok()).toBeTruthy();
+
+    const publicContext = await context.browser().newContext();
+    const embedPage = await publicContext.newPage();
+    await embedPage.goto(`${workerServer.url}/tiles/custom-crs-maxzoom-22/embed`);
+    await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          return embedPage.evaluate(() => {
+            const map = window.__mapflowPublicTileMap;
+            const view = map?.getView?.();
+            const layer = map?.getLayers?.().item(0);
+            const source = layer?.getSource?.();
+            const tileGrid = source?.getTileGrid?.();
+            const resolutions =
+              tileGrid && typeof tileGrid.getResolutions === 'function'
+                ? tileGrid.getResolutions()
+                : null;
+            return view && Array.isArray(resolutions)
+              ? { maxZoom: view.getMaxZoom(), resolutionCount: resolutions.length }
+              : null;
+          });
+        },
+        { message: 'wait for custom CRS embed tile grid max zoom', timeout: 10000 },
+      )
+      .toMatchObject({ maxZoom: 22, resolutionCount: 23 });
+
+    await publicContext.close();
   });
 });

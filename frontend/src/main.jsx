@@ -8,6 +8,7 @@ import Login from './Login.jsx';
 import Init from './Init.jsx';
 import Preview from './Preview.jsx';
 import Settings from './Settings.jsx';
+import TileEmbed from './TileEmbed.jsx';
 import TileDocs from './TileDocs.jsx';
 import './index.css';
 
@@ -43,6 +44,7 @@ root.render(
           }
         />
         <Route path="/tiles/:slug/docs" element={<TileDocs />} />
+        <Route path="/tiles/:slug/embed" element={<TileEmbed />} />
       </Routes>
     </AuthProvider>
   </BrowserRouter>,
