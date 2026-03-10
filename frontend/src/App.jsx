@@ -65,6 +65,12 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [isSavingAlias, setIsSavingAlias] = useState(false);
   const aliasEditRef = useRef(null);
 
+  // Iframe embed states
+  const [iframeCodeExpanded, setIframeCodeExpanded] = useState(false);
+  const [iframeWidth, setIframeWidth] = useState('100%');
+  const [iframeHeight, setIframeHeight] = useState('400');
+  const [copyIframeSuccess, setCopyIframeSuccess] = useState(false);
+
   // Handle click outside to cancel alias editing
   useEffect(() => {
     if (!editingAlias) return;
@@ -86,6 +92,8 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [publishSlug, setPublishSlug] = useState('');
   const [publishMinZoom, setPublishMinZoom] = useState(0);
   const [publishMaxZoom, setPublishMaxZoom] = useState(22);
+  const [publishMinZoomTouched, setPublishMinZoomTouched] = useState(false);
+  const [publishMaxZoomTouched, setPublishMaxZoomTouched] = useState(false);
   const [publishUseAliases, setPublishUseAliases] = useState(true);
   const [publishError, setPublishError] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
@@ -100,7 +108,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const isTileFile = file?.tileFormat != null;
   const zoomValidationError = useMemo(() => {
     if (isTileFile) return null;
-    return publishMinZoom > publishMaxZoom ? '最小层级不能大于最大层级' : null;
+    const minZoom = publishMinZoom === '' ? 0 : publishMinZoom;
+    const maxZoom = publishMaxZoom === '' ? 22 : publishMaxZoom;
+    return minZoom > maxZoom ? '最小层级不能大于最大层级' : null;
   }, [publishMinZoom, publishMaxZoom, isTileFile]);
 
   useEffect(() => {
@@ -161,8 +171,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
       // Reset publish-related state when file changes
       setEditPublish(false);
       setPublishSlug('');
-      setPublishMinZoom(file.minZoom ?? 0);
-      setPublishMaxZoom(file.maxZoom ?? 22);
+      setPublishMinZoom(getInitialPublishMinZoom(file));
+      setPublishMaxZoom(getInitialPublishMaxZoom(file));
+      setPublishMinZoomTouched(false);
+      setPublishMaxZoomTouched(false);
       setPublishUseAliases(true);
       setPublishError('');
       setCopySuccess(false);
@@ -176,11 +188,41 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
     setActiveTab('basic');
   }, [file?.id]);
 
-  function copyPublicUrl(slug) {
+  function isPmtilesFile(fileItem) {
+    return (
+      fileItem?.tileSource === 'pmtiles' ||
+      fileItem?.type === 'pmtiles' ||
+      fileItem?.fileType === 'pmtiles'
+    );
+  }
+
+  function getInitialPublishMinZoom(fileItem) {
+    if (isPmtilesFile(fileItem) && fileItem?.minZoom == null) {
+      return '';
+    }
+    return fileItem?.minZoom ?? 0;
+  }
+
+  function getInitialPublishMaxZoom(fileItem) {
+    if (isPmtilesFile(fileItem) && fileItem?.maxZoom == null) {
+      return '';
+    }
+    return fileItem?.maxZoom ?? 22;
+  }
+
+  function getPublicUrlPath(slug, fileItem) {
+    if (!slug) {
+      return '';
+    }
+
+    return isPmtilesFile(fileItem) ? `/tiles/${slug}` : `/tiles/${slug}/{z}/{x}/{y}`;
+  }
+
+  function copyPublicUrl(slug, fileItem) {
     if (!slug) {
       return;
     }
-    const url = `${window.location.origin}/tiles/${slug}/{z}/{x}/{y}`;
+    const url = `${window.location.origin}${getPublicUrlPath(slug, fileItem)}`;
     navigator.clipboard
       .writeText(url)
       .then(() => {
@@ -191,6 +233,55 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
         alert('复制失败，请手动复制地址');
       });
   }
+
+  // Generate iframe embed code
+  function generateIframeCode() {
+    if (!file?.publicSlug) return '';
+
+    // Auto-add 'px' unit if user enters a plain number
+    const formatDimension = (val, defaultVal) => {
+      if (typeof val !== 'string') return defaultVal;
+      const trimmed = val.trim();
+      if (!trimmed) return defaultVal;
+      // If it's a pure number, add 'px'
+      if (/^\d+(\.\d+)?$/.test(trimmed)) {
+        return `${trimmed}px`;
+      }
+      return trimmed;
+    };
+
+    const formattedWidth = formatDimension(iframeWidth, '100%');
+    const formattedHeight = formatDimension(iframeHeight, '400px');
+    const embedUrl = `${window.location.origin}/tiles/${file.publicSlug}/embed`;
+
+    return `<iframe
+  src="${embedUrl}"
+  title="MapFlow map"
+  loading="lazy"
+  style="width:${formattedWidth};height:${formattedHeight};border:0;"
+></iframe>`;
+  }
+
+  // Copy iframe embed code
+  function handleCopyIframe() {
+    const code = generateIframeCode();
+    if (!code) {
+      alert('无法生成嵌入代码，请确保地图已发布');
+      return;
+    }
+
+    navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        setCopyIframeSuccess(true);
+        setTimeout(() => setCopyIframeSuccess(false), 2000);
+      })
+      .catch(() => {
+        alert('复制失败，请手动复制代码');
+      });
+  }
+
+  const publicUrlPath = getPublicUrlPath(file?.publicSlug, file);
 
   async function handlePublishSubmit() {
     if (!file) return;
@@ -204,8 +295,17 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
         useAliases: publishUseAliases,
       };
       if (!isTileFile) {
-        options.minZoom = publishMinZoom;
-        options.maxZoom = publishMaxZoom;
+        if (isPmtilesFile(file)) {
+          if (publishMinZoomTouched && publishMinZoom !== '') {
+            options.minZoom = publishMinZoom;
+          }
+          if (publishMaxZoomTouched && publishMaxZoom !== '') {
+            options.maxZoom = publishMaxZoom;
+          }
+        } else {
+          options.minZoom = publishMinZoom === '' ? 0 : publishMinZoom;
+          options.maxZoom = publishMaxZoom === '' ? 22 : publishMaxZoom;
+        }
       }
       await onPublish(file.id, options);
       setEditPublish(false);
@@ -575,7 +675,14 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         type="button"
                         className="btn-primary"
                         style={{ fontSize: '12px', padding: '4px 12px' }}
-                        onClick={() => setEditPublish(true)}
+                        onClick={() => {
+                          setPublishSlug('');
+                          setPublishMinZoom(getInitialPublishMinZoom(file));
+                          setPublishMaxZoom(getInitialPublishMaxZoom(file));
+                          setPublishMinZoomTouched(false);
+                          setPublishMaxZoomTouched(false);
+                          setEditPublish(true);
+                        }}
                       >
                         发布
                       </button>
@@ -646,7 +753,16 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                 min="0"
                                 max="22"
                                 value={publishMinZoom}
-                                onChange={(e) => setPublishMinZoom(parseInt(e.target.value) || 0)}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setPublishMinZoomTouched(true);
+                                  if (isPmtilesFile(file) && value === '') {
+                                    setPublishMinZoom('');
+                                    return;
+                                  }
+                                  const parsed = Number.parseInt(value, 10);
+                                  setPublishMinZoom(Number.isNaN(parsed) ? 0 : parsed);
+                                }}
                                 className="form-input"
                                 style={{ width: '100%' }}
                               />
@@ -662,7 +778,16 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                 min="0"
                                 max="22"
                                 value={publishMaxZoom}
-                                onChange={(e) => setPublishMaxZoom(parseInt(e.target.value) || 22)}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setPublishMaxZoomTouched(true);
+                                  if (isPmtilesFile(file) && value === '') {
+                                    setPublishMaxZoom('');
+                                    return;
+                                  }
+                                  const parsed = Number.parseInt(value, 10);
+                                  setPublishMaxZoom(Number.isNaN(parsed) ? 22 : parsed);
+                                }}
                                 className="form-input"
                                 style={{ width: '100%' }}
                               />
@@ -742,7 +867,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           公开地址
                         </label>
                         <div className="form-value code" style={{ fontSize: '12px' }}>
-                          /tiles/{publishSlug.trim() || file.id}/{'{z}/{x}/{y}'}
+                          {getPublicUrlPath(publishSlug.trim() || file.id, file)}
                         </div>
                       </div>
 
@@ -770,8 +895,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           onClick={() => {
                             setEditPublish(false);
                             setPublishSlug('');
-                            setPublishMinZoom(file.minZoom ?? 0);
-                            setPublishMaxZoom(file.maxZoom ?? 22);
+                            setPublishMinZoom(getInitialPublishMinZoom(file));
+                            setPublishMaxZoom(getInitialPublishMaxZoom(file));
+                            setPublishMinZoomTouched(false);
+                            setPublishMaxZoomTouched(false);
                             setPublishError('');
                           }}
                         >
@@ -797,14 +924,14 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                     <div className="detail-value">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div className="form-value code" style={{ fontSize: '12px' }}>
-                          /tiles/{file.publicSlug}/{'{z}/{x}/{y}'}
+                          {publicUrlPath}
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                           <button
                             type="button"
                             className="btn-text"
                             style={{ fontSize: '12px', padding: 0, textAlign: 'left' }}
-                            onClick={() => copyPublicUrl(file.publicSlug)}
+                            onClick={() => copyPublicUrl(file.publicSlug, file)}
                           >
                             {copySuccess ? '已复制' : '复制地址'}
                           </button>
@@ -820,6 +947,100 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="detail-group">
+                    <button
+                      type="button"
+                      className="detail-label"
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'none',
+                        padding: 0,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                      aria-expanded={iframeCodeExpanded}
+                      aria-controls="iframe-embed-panel"
+                      onClick={() => setIframeCodeExpanded((prev) => !prev)}
+                    >
+                      <span>嵌入代码</span>
+                      <span style={{ fontSize: '10px', color: '#999' }}>
+                        {iframeCodeExpanded ? '▼' : '▶'}
+                      </span>
+                    </button>
+                    {iframeCodeExpanded && (
+                      <div
+                        id="iframe-embed-panel"
+                        className="detail-value"
+                        style={{ marginTop: '8px' }}
+                      >
+                        <div className="iframe-embed-section">
+                          <div className="iframe-size-inputs">
+                            <label>
+                              宽度:
+                              <input
+                                type="text"
+                                value={iframeWidth}
+                                onChange={(e) => setIframeWidth(e.target.value)}
+                                placeholder="100%"
+                                className="form-input"
+                                style={{ width: '70px', fontSize: '12px' }}
+                              />
+                            </label>
+                            <label style={{ marginLeft: '12px' }}>
+                              高度:
+                              <input
+                                type="text"
+                                value={iframeHeight}
+                                onChange={(e) => setIframeHeight(e.target.value)}
+                                placeholder="400"
+                                className="form-input"
+                                style={{ width: '70px', fontSize: '12px' }}
+                              />
+                            </label>
+                          </div>
+
+                          <pre className="iframe-code-preview">{generateIframeCode()}</pre>
+
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            style={{
+                              fontSize: '12px',
+                              padding: '6px 12px',
+                              marginTop: '8px',
+                              width: '100%',
+                            }}
+                            onClick={handleCopyIframe}
+                          >
+                            {copyIframeSuccess ? '✓ 已复制' : '复制嵌入代码'}
+                          </button>
+
+                          <div className="iframe-mini-preview" style={{ marginTop: '12px' }}>
+                            <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>
+                              预览效果:
+                            </div>
+                            <iframe
+                              src={`/tiles/${file.publicSlug}/embed`}
+                              title="MapFlow embed preview"
+                              loading="lazy"
+                              style={{
+                                width: '100%',
+                                height: '120px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
+                                background: '#f5f4f2',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

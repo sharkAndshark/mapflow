@@ -82,6 +82,11 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+if [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; then
+  echo "GH_TOKEN or GITHUB_TOKEN is required for gh CLI release access" >&2
+  exit 1
+fi
+
 release_json="$(gh release view "$TAG" --repo "$REPO" --json tagName,assets)"
 tag_name="$(printf '%s' "$release_json" | jq -r '.tagName')"
 if [ -z "$tag_name" ] || [ "$tag_name" = "null" ]; then

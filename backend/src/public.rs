@@ -599,7 +599,11 @@ pub async fn get_public_tile_meta(
     } else {
         format!("/tiles/{}/{{z}}/{{x}}/{{y}}", slug)
     };
-    let viewer_url = format!("/tiles/{}", slug);
+    let viewer_url = if crate::public_viewer_available() {
+        Some(format!("/tiles/{}/embed", slug))
+    } else {
+        None
+    };
 
     let crs_type = row.crs_type.unwrap_or_else(|| "standard".to_string());
     let data_bounds: Option<DataBounds> = row

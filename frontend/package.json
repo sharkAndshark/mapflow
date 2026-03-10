@@ -16,12 +16,14 @@
   },
   "dependencies": {
     "ol": "^10.8.0",
+    "ol-pmtiles": "^2.0.2",
+    "pmtiles": "^4.4.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.4",
+    "@biomejs/biome": "^2.4.6",
     "@playwright/test": "^1.50.0",
     "@vitejs/plugin-react": "^5.1.4",
     "vite": "^7.3.1",
