@@ -466,6 +466,8 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Generate formula
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash scripts/release/generate_homebrew_formula.sh \
             --repo ${{ github.repository }} \
