@@ -25,12 +25,61 @@ function resolvePmtilesFormat(tileType) {
   }
 }
 
+function normalizeZoom(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.floor(parsed));
+}
+
+function clampZoom(value, minZoom, maxZoom) {
+  return Math.min(maxZoom, Math.max(minZoom, value));
+}
+
+function resolvePmtilesZoomRange(publishedMinZoom, publishedMaxZoom, headerMinZoom, headerMaxZoom) {
+  const publishedMinZoomClamped =
+    publishedMinZoom == null
+      ? null
+      : clampZoom(normalizeZoom(publishedMinZoom, headerMinZoom), headerMinZoom, headerMaxZoom);
+  const publishedMaxZoomClamped =
+    publishedMaxZoom == null
+      ? null
+      : clampZoom(normalizeZoom(publishedMaxZoom, headerMaxZoom), headerMinZoom, headerMaxZoom);
+
+  let minZoom = publishedMinZoomClamped ?? headerMinZoom;
+  let maxZoom = publishedMaxZoomClamped ?? headerMaxZoom;
+  if (minZoom > maxZoom) {
+    minZoom = headerMinZoom;
+    maxZoom = headerMaxZoom;
+  }
+
+  return { minZoom, maxZoom };
+}
+
 function resolveDocsConfig(meta, pmtilesHeader) {
   if (meta.tileSource === 'pmtiles') {
+    if (pmtilesHeader != null) {
+      const headerMinZoom = normalizeZoom(pmtilesHeader.minZoom, 0);
+      const headerMaxZoom = Math.max(headerMinZoom, normalizeZoom(pmtilesHeader.maxZoom, 22));
+      const { minZoom, maxZoom } = resolvePmtilesZoomRange(
+        meta.minZoom,
+        meta.maxZoom,
+        headerMinZoom,
+        headerMaxZoom,
+      );
+
+      return {
+        minZoom,
+        maxZoom,
+        tileFormat: meta.tileFormat ?? resolvePmtilesFormat(pmtilesHeader.tileType) ?? 'mvt',
+      };
+    }
+
     return {
-      minZoom: meta.minZoom ?? pmtilesHeader?.minZoom ?? 0,
-      maxZoom: meta.maxZoom ?? pmtilesHeader?.maxZoom ?? 22,
-      tileFormat: meta.tileFormat ?? resolvePmtilesFormat(pmtilesHeader?.tileType) ?? 'mvt',
+      minZoom: meta.minZoom ?? 0,
+      maxZoom: meta.maxZoom ?? 22,
+      tileFormat: meta.tileFormat ?? 'mvt',
     };
   }
 
@@ -76,8 +125,32 @@ const publishedMaxZoom = ${publishedMaxZoom};
 async function init() {
   const archive = new PMTiles(archiveUrl);
   const header = await archive.getHeader();
-  const resolvedMinZoom = publishedMinZoom ?? header.minZoom ?? 0;
-  const resolvedMaxZoom = publishedMaxZoom ?? header.maxZoom ?? 22;
+  const normalizeZoom = (value, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.floor(parsed));
+  };
+  const clampZoom = (value, minZoom, maxZoom) => Math.min(maxZoom, Math.max(minZoom, value));
+
+  const headerMinZoom = normalizeZoom(header.minZoom, 0);
+  const headerMaxZoom = Math.max(headerMinZoom, normalizeZoom(header.maxZoom, 22));
+
+  const publishedMinZoomClamped =
+    publishedMinZoom == null
+      ? null
+      : clampZoom(normalizeZoom(publishedMinZoom, headerMinZoom), headerMinZoom, headerMaxZoom);
+  const publishedMaxZoomClamped =
+    publishedMaxZoom == null
+      ? null
+      : clampZoom(normalizeZoom(publishedMaxZoom, headerMaxZoom), headerMinZoom, headerMaxZoom);
+
+  let resolvedMinZoom = publishedMinZoomClamped ?? headerMinZoom;
+  let resolvedMaxZoom = publishedMaxZoomClamped ?? headerMaxZoom;
+  if (resolvedMinZoom > resolvedMaxZoom) {
+    resolvedMinZoom = headerMinZoom;
+    resolvedMaxZoom = headerMaxZoom;
+  }
+
   const initialZoom = Math.min(
     resolvedMaxZoom,
     Math.max(resolvedMinZoom, header.centerZoom ?? resolvedMinZoom)

@@ -339,10 +339,10 @@ test('PMTiles docs code falls back to archive zoom bounds when publish zoom is u
   await expect(docsPage.locator('pre code')).toContainText('const publishedMinZoom = null;');
   await expect(docsPage.locator('pre code')).toContainText('const publishedMaxZoom = null;');
   await expect(docsPage.locator('pre code')).toContainText(
-    'const resolvedMinZoom = publishedMinZoom ?? header.minZoom ?? 0;',
+    'let resolvedMinZoom = publishedMinZoomClamped ?? headerMinZoom;',
   );
   await expect(docsPage.locator('pre code')).toContainText(
-    'const resolvedMaxZoom = publishedMaxZoom ?? header.maxZoom ?? 22;',
+    'let resolvedMaxZoom = publishedMaxZoomClamped ?? headerMaxZoom;',
   );
   const configTable = docsPage.locator('table').first();
   await expect(configTable.locator('tr', { hasText: 'Zoom Range' })).toContainText(
@@ -416,6 +416,17 @@ test('PMTiles embed view clamps published zoom bounds to archive header', async 
       minZoom: pmtilesHeader.maxZoom,
       maxZoom: pmtilesHeader.maxZoom,
     });
+
+  const docsPage = await publicContext.newPage();
+  await docsPage.goto(`${workerServer.url}/tiles/my-pmtiles-clamped-zoom/docs`);
+  const configTable = docsPage.locator('table').first();
+  await expect(configTable.locator('tr', { hasText: 'Zoom Range' })).toContainText(
+    `${pmtilesHeader.maxZoom} - ${pmtilesHeader.maxZoom}`,
+  );
+  await expect(docsPage.locator('pre code')).toContainText('const publishedMinZoomClamped =');
+  await expect(docsPage.locator('pre code')).toContainText(
+    'if (resolvedMinZoom > resolvedMaxZoom)',
+  );
 
   await publicContext.close();
 });

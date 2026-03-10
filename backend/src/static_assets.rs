@@ -5,7 +5,7 @@ use axum::{
 };
 
 #[cfg(feature = "embed-web-dist")]
-use include_dir::{include_dir, Dir};
+use include_dir::{include_dir, Dir, DirEntry};
 
 #[cfg(feature = "embed-web-dist")]
 static EMBEDDED_WEB_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../frontend/dist");
@@ -19,21 +19,25 @@ pub fn embedded_spa_available() -> bool {
 
 #[cfg(feature = "embed-web-dist")]
 fn embedded_bundle_has_embed_marker() -> bool {
-    EMBEDDED_WEB_DIST
-        .files()
-        .filter(|file| {
+    dir_has_embed_marker(&EMBEDDED_WEB_DIST)
+}
+
+#[cfg(feature = "embed-web-dist")]
+fn dir_has_embed_marker(dir: &Dir<'_>) -> bool {
+    dir.entries().iter().any(|entry| match entry {
+        DirEntry::File(file) => {
             let path = file.path().to_string_lossy();
-            path.ends_with(".js") || path.ends_with(".mjs")
-        })
-        .any(|file| {
-            std::str::from_utf8(file.contents())
-                .map(|content| {
-                    EMBED_VIEWER_ROUTE_MARKERS
-                        .iter()
-                        .any(|marker| content.contains(marker))
-                })
-                .unwrap_or(false)
-        })
+            (path.ends_with(".js") || path.ends_with(".mjs"))
+                && std::str::from_utf8(file.contents())
+                    .map(|content| {
+                        EMBED_VIEWER_ROUTE_MARKERS
+                            .iter()
+                            .any(|marker| content.contains(marker))
+                    })
+                    .unwrap_or(false)
+        }
+        DirEntry::Dir(sub_dir) => dir_has_embed_marker(sub_dir),
+    })
 }
 
 #[cfg(feature = "embed-web-dist")]
@@ -111,5 +115,37 @@ fn content_type_for(path: &str) -> &'static str {
         "text/plain; charset=utf-8"
     } else {
         "application/octet-stream"
+    }
+}
+
+#[cfg(all(test, feature = "embed-web-dist"))]
+mod tests {
+    use super::*;
+    use include_dir::File;
+
+    #[test]
+    fn dir_has_embed_marker_recurses_into_nested_dirs() {
+        static NESTED_ENTRIES: [DirEntry<'_>; 1] = [DirEntry::File(File::new(
+            "assets/app.js",
+            b"console.log('/tiles/:slug/embed');",
+        ))];
+        static ROOT_ENTRIES: [DirEntry<'_>; 2] = [
+            DirEntry::File(File::new("index.html", b"<html></html>")),
+            DirEntry::Dir(Dir::new("assets", &NESTED_ENTRIES)),
+        ];
+        static ROOT_DIR: Dir<'_> = Dir::new("", &ROOT_ENTRIES);
+
+        assert!(dir_has_embed_marker(&ROOT_DIR));
+    }
+
+    #[test]
+    fn dir_has_embed_marker_returns_false_without_markers() {
+        static ENTRIES: [DirEntry<'_>; 1] = [DirEntry::File(File::new(
+            "assets/app.js",
+            b"console.log('legacy bundle');",
+        ))];
+        static ROOT_DIR: Dir<'_> = Dir::new("", &ENTRIES);
+
+        assert!(!dir_has_embed_marker(&ROOT_DIR));
     }
 }
