@@ -323,8 +323,6 @@ async fn test_postgis_register_preview_publish_flow() {
         return;
     };
 
-    std::env::set_var("APP_SECRET", "postgis-integration-secret");
-
     let (app, _tmp, db) = setup_app().await;
     let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
@@ -457,8 +455,6 @@ async fn test_postgis_view_registration_succeeds() {
         return;
     };
 
-    std::env::set_var("APP_SECRET", "postgis-integration-secret");
-
     let (app, _tmp, db) = setup_app().await;
     let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
@@ -503,8 +499,6 @@ async fn test_postgis_empty_relation_registration_succeeds() {
         return;
     };
 
-    std::env::set_var("APP_SECRET", "postgis-integration-secret");
-
     let (app, _tmp, db) = setup_app().await;
     let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
@@ -532,8 +526,6 @@ async fn test_postgis_rejects_composite_unique_fid_index() {
     let Some(cfg) = PostgisEnv::maybe_from_env() else {
         return;
     };
-
-    std::env::set_var("APP_SECRET", "postgis-integration-secret");
 
     let (app, _tmp, db) = setup_app().await;
     let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
@@ -569,8 +561,6 @@ async fn test_postgis_rejects_include_only_fid_index() {
         return;
     };
 
-    std::env::set_var("APP_SECRET", "postgis-integration-secret");
-
     let (app, _tmp, db) = setup_app().await;
     let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
 
@@ -604,8 +594,6 @@ async fn test_postgis_quoted_property_identifiers_and_aliases_work() {
     let Some(cfg) = PostgisEnv::maybe_from_env() else {
         return;
     };
-
-    std::env::set_var("APP_SECRET", "postgis-integration-secret");
 
     let (app, _tmp, db) = setup_app().await;
     let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;

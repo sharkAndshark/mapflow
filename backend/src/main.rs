@@ -104,10 +104,8 @@ async fn main() -> Result<()> {
     let db_path = PathBuf::from(db_path);
     let conn = backend::init_database(&db_path);
 
-    if std::env::var("APP_SECRET").is_err() {
-        let secret = backend::ensure_app_secret(&conn).expect("Failed to ensure APP_SECRET");
-        std::env::set_var("APP_SECRET", &secret);
-    }
+    let secret = backend::ensure_app_secret(&conn).expect("Failed to ensure APP_SECRET");
+    std::env::set_var("APP_SECRET", &secret);
 
     let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string());
     tracing::info!(upload_dir = %upload_dir, "Using upload directory");
