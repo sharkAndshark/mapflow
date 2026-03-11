@@ -258,17 +258,19 @@ pub async fn list_files(
 }
 
 pub async fn get_preview_meta(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
     let conn = state.db.lock().await;
 
     let mut stmt = conn
-        .prepare("SELECT name, crs, crs_type, data_bounds, status, table_name, tile_format, tile_bounds, minzoom, maxzoom, tile_source FROM files WHERE id = ?")
+        .prepare("SELECT name, crs, crs_type, data_bounds, status, table_name, tile_format, tile_bounds, minzoom, maxzoom, tile_source FROM files WHERE id = ? AND workspace_id = ?")
         .map_err(internal_error)?;
 
     let meta: Option<FileMetadata> = stmt
-        .query_row(duckdb::params![id], |row| {
+        .query_row(duckdb::params![id, workspace_id], |row| {
             Ok((
                 row.get(0)?,
                 row.get(1)?,
@@ -401,18 +403,21 @@ pub async fn get_preview_meta(
 }
 
 pub async fn get_tile(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath((id, z, x, y)): AxumPath<(String, i32, i32, i32)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     validate_tile_coords(z, x, y)?;
 
-    tracing::debug!(file_id = %id, z, x, y, "Tile request received");
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
+    tracing::debug!(file_id = %id, z, x, y, workspace_id = %workspace_id, "Tile request received");
     let conn = state.db.lock().await;
 
     let meta: TileFileMetadata = conn
         .query_row(
-            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path, tile_source FROM files WHERE id = ?",
-            duckdb::params![id],
+            "SELECT crs, crs_type, data_bounds, status, table_name, tile_format, path, tile_source FROM files WHERE id = ? AND workspace_id = ?",
+            duckdb::params![id, workspace_id],
             |row| {
                 Ok((
                     row.get(0)?,
@@ -561,9 +566,11 @@ pub async fn get_tile(
 }
 
 pub async fn get_feature_properties(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath((id, fid)): AxumPath<(String, i64)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
     let conn = state.db.lock().await;
 
     let (status, table_name, tile_format, tile_source): (
@@ -573,8 +580,8 @@ pub async fn get_feature_properties(
         Option<String>,
     ) = conn
         .query_row(
-            "SELECT status, table_name, tile_format, tile_source FROM files WHERE id = ?",
-            duckdb::params![id],
+            "SELECT status, table_name, tile_format, tile_source FROM files WHERE id = ? AND workspace_id = ?",
+            duckdb::params![id, workspace_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|_| {
@@ -717,15 +724,17 @@ pub async fn get_feature_properties(
 }
 
 pub async fn get_file_schema(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
     let conn = state.db.lock().await;
 
     let (status, tile_format, file_path): (String, Option<String>, String) = conn
         .query_row(
-            "SELECT status, tile_format, path FROM files WHERE id = ?",
-            duckdb::params![id],
+            "SELECT status, tile_format, path FROM files WHERE id = ? AND workspace_id = ?",
+            duckdb::params![id, workspace_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|_| {

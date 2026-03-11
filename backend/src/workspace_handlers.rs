@@ -552,6 +552,255 @@ pub async fn switch_workspace(
     }))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateWorkspaceRequest {
+    pub name: String,
+}
+
+pub async fn update_workspace(
+    auth_session: AuthSession<AuthBackend>,
+    State(state): State<AppState>,
+    AxumPath(workspace_id): AxumPath<String>,
+    Json(req): Json<UpdateWorkspaceRequest>,
+) -> ApiResult<impl IntoResponse> {
+    let user = require_user(&auth_session).await?;
+    let name = validate_workspace_name(&req.name).map_err(|e| bad_req(&e))?;
+    let conn = state.db.lock().await;
+
+    let owner_id: Option<String> = conn
+        .query_row(
+            "SELECT owner_id FROM workspaces WHERE id = ?",
+            duckdb::params![&workspace_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(internal_err)?;
+
+    let owner_id = owner_id.ok_or_else(|| not_found("Workspace not found"))?;
+
+    if user.id != owner_id {
+        return Err(forbidden("Only workspace owner can update workspace"));
+    }
+
+    let is_personal: bool = conn
+        .query_row(
+            "SELECT is_personal FROM workspaces WHERE id = ?",
+            duckdb::params![&workspace_id],
+            |row| row.get(0),
+        )
+        .map_err(internal_err)?;
+
+    if is_personal {
+        return Err(bad_req("Cannot rename personal workspace"));
+    }
+
+    let existing: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM workspaces WHERE name = ? AND id != ? AND deleted_at IS NULL",
+            duckdb::params![&name, &workspace_id],
+            |row| row.get(0),
+        )
+        .map_err(internal_err)?;
+
+    if existing > 0 {
+        return Err(bad_req("工作空间名称已被使用"));
+    }
+
+    conn.execute(
+        "UPDATE workspaces SET name = ? WHERE id = ?",
+        duckdb::params![&name, &workspace_id],
+    )
+    .map_err(internal_err)?;
+
+    info!(workspace_id = %workspace_id, name = %name, "Workspace updated");
+
+    Ok(Json(json!({ "id": workspace_id, "name": name })))
+}
+
+pub async fn delete_workspace(
+    auth_session: AuthSession<AuthBackend>,
+    State(state): State<AppState>,
+    AxumPath(workspace_id): AxumPath<String>,
+) -> ApiResult<impl IntoResponse> {
+    let user = require_user(&auth_session).await?;
+    let conn = state.db.lock().await;
+
+    let workspace_info: Option<(String, bool)> = conn
+        .query_row(
+            "SELECT owner_id, is_personal FROM workspaces WHERE id = ?",
+            duckdb::params![&workspace_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(internal_err)?;
+
+    let (owner_id, is_personal) = workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
+
+    if user.id != owner_id {
+        return Err(forbidden("Only workspace owner can delete workspace"));
+    }
+
+    if is_personal {
+        return Err(bad_req("Cannot delete personal workspace"));
+    }
+
+    let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    conn.execute(
+        "UPDATE workspaces SET deleted_at = ? WHERE id = ?",
+        duckdb::params![&now, &workspace_id],
+    )
+    .map_err(internal_err)?;
+
+    info!(workspace_id = %workspace_id, deleted_by = %user.id, "Workspace deleted (soft)");
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RestoreWorkspaceRequest {
+    pub name: Option<String>,
+}
+
+pub async fn restore_workspace(
+    auth_session: AuthSession<AuthBackend>,
+    State(state): State<AppState>,
+    AxumPath(workspace_id): AxumPath<String>,
+    Json(req): Json<RestoreWorkspaceRequest>,
+) -> ApiResult<impl IntoResponse> {
+    let user = require_user(&auth_session).await?;
+    let conn = state.db.lock().await;
+
+    let workspace_info: Option<(String, bool)> = conn
+        .query_row(
+            "SELECT owner_id, is_personal FROM workspaces WHERE id = ?",
+            duckdb::params![&workspace_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(internal_err)?;
+
+    let (owner_id, _is_personal) =
+        workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
+
+    if user.id != owner_id {
+        return Err(forbidden("Only workspace owner can restore workspace"));
+    }
+
+    if let Some(new_name) = &req.name {
+        let name = validate_workspace_name(new_name).map_err(|e| bad_req(&e))?;
+
+        let existing: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM workspaces WHERE name = ? AND id != ? AND deleted_at IS NULL",
+                duckdb::params![&name, &workspace_id],
+                |row| row.get(0),
+            )
+            .map_err(internal_err)?;
+
+        if existing > 0 {
+            return Err(bad_req("工作空间名称已被使用"));
+        }
+
+        conn.execute(
+            "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
+            duckdb::params![&name, &workspace_id],
+        )
+        .map_err(internal_err)?;
+
+        info!(workspace_id = %workspace_id, name = %name, "Workspace restored with new name");
+
+        Ok(Json(json!({ "id": workspace_id, "name": name })))
+    } else {
+        conn.execute(
+            "UPDATE workspaces SET deleted_at = NULL WHERE id = ?",
+            duckdb::params![&workspace_id],
+        )
+        .map_err(internal_err)?;
+
+        let name: String = conn
+            .query_row(
+                "SELECT name FROM workspaces WHERE id = ?",
+                duckdb::params![&workspace_id],
+                |row| row.get(0),
+            )
+            .map_err(internal_err)?;
+
+        info!(workspace_id = %workspace_id, "Workspace restored");
+
+        Ok(Json(json!({ "id": workspace_id, "name": name })))
+    }
+}
+
+pub async fn list_archived_workspaces(
+    auth_session: AuthSession<AuthBackend>,
+    State(state): State<AppState>,
+) -> ApiResult<impl IntoResponse> {
+    let user = require_user(&auth_session).await?;
+    let conn = state.db.lock().await;
+
+    let mut stmt = conn
+        .prepare(
+            r"
+            SELECT w.id, w.name, w.owner_id, w.is_personal, w.deleted_at, w.created_at
+            FROM workspaces w
+            JOIN workspace_members wm ON w.id = wm.workspace_id
+            WHERE wm.user_id = ? AND w.deleted_at IS NOT NULL
+            ORDER BY w.deleted_at DESC
+            ",
+        )
+        .map_err(internal_err)?;
+
+    let rows: Result<Vec<_>, _> = stmt
+        .query_map(duckdb::params![&user.id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, bool>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(internal_err)?
+        .collect();
+
+    let rows = rows.map_err(internal_err)?;
+
+    let workspaces: Result<Vec<serde_json::Value>, String> = rows
+        .into_iter()
+        .map(
+            |(id, name, owner_id, is_personal, deleted_at_str, created_at_str)| {
+                let deleted_at = deleted_at_str
+                    .map(|s| {
+                        chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
+                            .map(|dt| dt.and_utc())
+                            .map_err(|e| format!("Failed to parse deleted_at: {}", e))
+                    })
+                    .transpose()?;
+
+                let created_at =
+                    chrono::NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S")
+                        .map_err(|e| format!("Failed to parse created_at: {}", e))?
+                        .and_utc();
+
+                Ok(json!({
+                    "id": id,
+                    "name": name,
+                    "ownerId": owner_id,
+                    "isPersonal": is_personal,
+                    "deletedAt": deleted_at,
+                    "createdAt": created_at
+                }))
+            },
+        )
+        .collect();
+
+    let workspaces = workspaces.map_err(internal_err)?;
+
+    Ok(Json(workspaces))
+}
+
 pub async fn get_current_workspace(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,

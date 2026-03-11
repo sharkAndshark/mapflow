@@ -1091,11 +1091,42 @@ async fn test_schema_endpoint_returns_409_for_non_ready_file() {
     let app = build_test_router(state.clone());
 
     // Insert a file in 'processing' state directly to avoid race condition
+    // Note: In test mode, workspace_id is created on-demand, so we use a test workspace
     {
         let conn = state.db.lock().await;
+        // First ensure test user exists
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error)\
-             VALUES (?1, ?2, ?3, ?4, NOW(), ?5, ?6, ?7, ?8, ?9)",
+            "INSERT OR IGNORE INTO users (id, username, password_hash, role, created_at)\
+             VALUES ('test-user', 'testuser', 'testhash', 'user', NOW())",
+            [],
+        )
+        .expect("insert test user");
+
+        // Then create a test workspace
+        conn.execute(
+            "INSERT OR IGNORE INTO workspaces (id, name, owner_id, is_personal, created_at)\
+             VALUES ('test-workspace', 'Test Workspace', 'test-user', TRUE, NOW())",
+            [],
+        )
+        .expect("insert test workspace");
+
+        conn.execute(
+            "INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, joined_at)\
+             VALUES ('test-workspace', 'test-user', NOW())",
+            [],
+        )
+        .expect("insert test workspace member");
+
+        // Update test user's current workspace
+        conn.execute(
+            "UPDATE users SET current_workspace_id = 'test-workspace' WHERE id = 'test-user'",
+            [],
+        )
+        .expect("update test user workspace");
+
+        conn.execute(
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, workspace_id)\
+             VALUES (?1, ?2, ?3, ?4, NOW(), ?5, ?6, ?7, ?8, ?9, 'test-workspace')",
             duckdb::params![
                 "test-processing-file",
                 "test.geojson",
