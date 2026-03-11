@@ -90,7 +90,10 @@ test('mbtiles file has zoom limits', async ({ page, workerServer, request }) => 
 
   // Wait for upload to complete
   await expect(
-    page.locator('.row', { hasText: /sample/ }).getByText(/已就绪|等待处理/),
+    page
+      .locator('.row', { hasText: /sample/ })
+      .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+      .first(),
   ).toBeVisible();
 
   // Poll for file to be ready
@@ -132,7 +135,7 @@ test('mbtiles file has zoom limits', async ({ page, workerServer, request }) => 
   const row = page.locator('.row', { hasText: /sample/ });
   await expect(row).toBeVisible();
 
-  const previewLink = row.getByRole('link', { name: '查看' });
+  const previewLink = row.getByTestId('preview-link');
   await expect(previewLink).toBeVisible();
 
   // Click preview link and wait for new page
@@ -185,7 +188,10 @@ test('dynamic table has no zoom limits', async ({ page, workerServer, request })
 
   // Wait for upload to complete
   await expect(
-    page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/),
+    page
+      .locator('.row', { hasText: 'sample' })
+      .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+      .first(),
   ).toBeVisible();
 
   // Poll for file to be ready
@@ -225,7 +231,7 @@ test('dynamic table has no zoom limits', async ({ page, workerServer, request })
   const row = page.locator('.row', { hasText: 'sample' });
   await expect(row).toBeVisible();
 
-  const previewLink = row.getByRole('link', { name: '查看' });
+  const previewLink = row.getByTestId('preview-link');
   await expect(previewLink).toBeVisible();
 
   // Click preview link and wait for new page

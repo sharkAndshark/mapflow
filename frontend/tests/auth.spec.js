@@ -13,7 +13,9 @@ test.describe('Authentication Flow', () => {
 
     // Check init page elements
     await expect(page.locator('h1')).toContainText('MapFlow');
-    await expect(page.locator('.login-header p')).toContainText('首次使用');
+    await expect(page.locator('.login-header p')).toContainText(
+      /首次使用|Create an admin account to get started/,
+    );
 
     // Fill init form
     await page.fill('#username', 'admin');
@@ -26,7 +28,9 @@ test.describe('Authentication Flow', () => {
     // Should redirect to login page
     await expect(page).toHaveURL(/\/login/);
     await expect(page.locator('h1')).toContainText('MapFlow');
-    await expect(page.locator('.login-header p')).toContainText('请登录以继续');
+    await expect(page.locator('.login-header p')).toContainText(
+      /请登录以继续|Sign in to continue|Please login to continue/,
+    );
   });
 
   test('login with correct credentials', async ({ page, request }) => {

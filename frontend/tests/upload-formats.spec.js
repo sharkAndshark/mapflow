@@ -24,7 +24,7 @@ test('upload geojsonseq and show in list', async ({ page }) => {
 
   const row = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ hasText: /已就绪|等待处理/ })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
     .first();
 
   await expect(row).toBeVisible();
