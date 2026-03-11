@@ -156,6 +156,7 @@ async fn upload_geojson_file(app: &axum::Router) -> String {
 
 // Helper to setup the app for testing
 async fn setup_app() -> (axum::Router, TempDir) {
+    ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
     std::fs::create_dir_all(&upload_dir).expect("create upload dir");
@@ -709,9 +710,17 @@ async fn test_upload_geojson_lifecycle() {
 
     // Clone app for reuse since oneshot consumes it
     let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
-
+    let status = response.status();
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    if !status.is_success() {
+        eprintln!(
+            "DEBUG: Upload failed with status {}: {}",
+            status,
+            String::from_utf8_lossy(&body_bytes)
+        );
+    }
+    assert_eq!(status, axum::http::StatusCode::CREATED);
+
     let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
 
     assert_eq!(file_item.name, "points");
@@ -1809,7 +1818,14 @@ fn test_users_schema() {
 
     assert_eq!(
         columns,
-        vec!["id", "username", "password_hash", "role", "created_at"]
+        vec![
+            "id",
+            "username",
+            "password_hash",
+            "role",
+            "current_workspace_id",
+            "created_at"
+        ]
     );
 }
 

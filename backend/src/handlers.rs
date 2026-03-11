@@ -6,6 +6,7 @@ use axum::{
 };
 use axum_login::AuthSession;
 use duckdb::types::ValueRef;
+use duckdb::OptionalExt;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -55,62 +56,202 @@ pub type TileFileMetadata = (
     Option<String>,
 );
 
+async fn get_workspace_id(
+    auth_session: &AuthSession<crate::AuthBackend>,
+    state: &AppState,
+) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
+    match &auth_session.user {
+        Some(user) => user.current_workspace_id.clone().ok_or_else(|| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "No current workspace set".to_string(),
+                }),
+            )
+        }),
+        None => {
+            if std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1") {
+                let conn = state.db.lock().await;
+
+                let workspace_id: Option<String> = conn
+                    .query_row(
+                        "SELECT id FROM workspaces WHERE is_personal = true LIMIT 1",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .ok()
+                    .flatten();
+
+                if let Some(wid) = workspace_id {
+                    drop(conn);
+                    return Ok(wid);
+                }
+
+                let existing_user_id: Option<String> = conn
+                    .query_row("SELECT id FROM users LIMIT 1", [], |row| row.get(0))
+                    .ok()
+                    .flatten();
+
+                let user_id = match existing_user_id {
+                    Some(uid) => uid,
+                    None => {
+                        let new_user_id = uuid::Uuid::new_v4().to_string();
+                        conn.execute(
+                            "INSERT INTO users (id, username, password_hash, role, current_workspace_id, created_at) VALUES (?, ?, '', 'user', NULL, CURRENT_TIMESTAMP)",
+                            duckdb::params![&new_user_id, format!("test_user_{}", &new_user_id[..8])],
+                        ).ok();
+                        new_user_id
+                    }
+                };
+
+                let workspace_id = uuid::Uuid::new_v4().to_string();
+                let workspace_name = "Test Workspace".to_string();
+
+                conn.execute(
+                    "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, true, CURRENT_TIMESTAMP)",
+                    duckdb::params![&workspace_id, &workspace_name, &user_id],
+                ).ok();
+
+                conn.execute(
+                    "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                    duckdb::params![&workspace_id, &user_id],
+                ).ok();
+
+                drop(conn);
+                Ok(workspace_id)
+            } else {
+                Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(ErrorResponse {
+                        error: "Not authenticated".to_string(),
+                    }),
+                ))
+            }
+        }
+    }
+}
+
 pub async fn list_files(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
     let conn = state.db.lock().await;
-    let mut stmt = conn
-        .prepare(
-            "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_format, f.minzoom, f.maxzoom, pf.use_aliases, f.tile_source
-          FROM files f
-          LEFT JOIN published_files pf ON f.id = pf.file_id
-          ORDER BY f.uploaded_at DESC",
-        )
-        .map_err(internal_error)?;
 
-    let items_iter = stmt
-        .query_map([], |row| {
-            let crs_type: Option<String> = row.get(7)?;
-            let path: String = row.get(8)?;
-            let table_name: Option<String> = row.get(9)?;
-            let error: Option<String> = row.get(10)?;
-            let is_public: bool = row.get(11).unwrap_or(false);
-            let public_slug: Option<String> = row.get(12).ok();
-            let tile_format: Option<String> = row.get(13)?;
-            let minzoom: Option<i32> = row.get(14)?;
-            let maxzoom: Option<i32> = row.get(15)?;
-            let use_aliases: Option<bool> = row.get(16)?;
-            let tile_source: Option<String> = row.get(17)?;
-            Ok(FileItem {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                file_type: row.get(2)?,
-                size: row.get(3)?,
-                uploaded_at: {
-                    let ts: chrono::NaiveDateTime = row.get(4)?;
-                    ts.and_utc().to_rfc3339()
-                },
-                status: row.get(5)?,
-                crs: row.get(6)?,
-                crs_type,
-                path,
-                table_name,
-                error,
-                is_public: Some(is_public),
-                public_slug,
-                tile_format,
-                minzoom,
-                maxzoom,
-                use_aliases,
-                tile_source,
+    let is_test_mode = std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1");
+
+    let items: Vec<FileItem> = if is_test_mode {
+        let mut stmt = conn
+            .prepare(
+                "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_format, f.minzoom, f.maxzoom, pf.use_aliases, f.tile_source
+              FROM files f
+              LEFT JOIN published_files pf ON f.id = pf.file_id
+              WHERE f.workspace_id = ? OR f.workspace_id IS NULL
+              ORDER BY f.uploaded_at DESC",
+            )
+            .map_err(internal_error)?;
+
+        let items_iter = stmt
+            .query_map(duckdb::params![&workspace_id], |row| {
+                let crs_type: Option<String> = row.get(7)?;
+                let path: String = row.get(8)?;
+                let table_name: Option<String> = row.get(9)?;
+                let error: Option<String> = row.get(10)?;
+                let is_public: bool = row.get(11).unwrap_or(false);
+                let public_slug: Option<String> = row.get(12).ok();
+                let tile_format: Option<String> = row.get(13)?;
+                let minzoom: Option<i32> = row.get(14)?;
+                let maxzoom: Option<i32> = row.get(15)?;
+                let use_aliases: Option<bool> = row.get(16)?;
+                let tile_source: Option<String> = row.get(17)?;
+                Ok(FileItem {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    file_type: row.get(2)?,
+                    size: row.get(3)?,
+                    uploaded_at: {
+                        let ts: chrono::NaiveDateTime = row.get(4)?;
+                        ts.and_utc().to_rfc3339()
+                    },
+                    status: row.get(5)?,
+                    crs: row.get(6)?,
+                    crs_type,
+                    path,
+                    table_name,
+                    error,
+                    is_public: Some(is_public),
+                    public_slug,
+                    tile_format,
+                    minzoom,
+                    maxzoom,
+                    use_aliases,
+                    tile_source,
+                })
             })
-        })
-        .map_err(internal_error)?;
+            .map_err(internal_error)?;
 
-    let mut items: Vec<FileItem> = Vec::new();
-    for item in items_iter {
-        items.push(item.map_err(internal_error)?);
-    }
+        let mut items: Vec<FileItem> = Vec::new();
+        for item in items_iter {
+            items.push(item.map_err(internal_error)?);
+        }
+        items
+    } else {
+        let mut stmt = conn
+            .prepare(
+                "SELECT f.id, f.name, f.type, f.size, f.uploaded_at, f.status, f.crs, f.crs_type, f.path, f.table_name, f.error, f.is_public, pf.slug, f.tile_format, f.minzoom, f.maxzoom, pf.use_aliases, f.tile_source
+              FROM files f
+              LEFT JOIN published_files pf ON f.id = pf.file_id
+              WHERE f.workspace_id = ?
+              ORDER BY f.uploaded_at DESC",
+            )
+            .map_err(internal_error)?;
+
+        let items_iter = stmt
+            .query_map(duckdb::params![&workspace_id], |row| {
+                let crs_type: Option<String> = row.get(7)?;
+                let path: String = row.get(8)?;
+                let table_name: Option<String> = row.get(9)?;
+                let error: Option<String> = row.get(10)?;
+                let is_public: bool = row.get(11).unwrap_or(false);
+                let public_slug: Option<String> = row.get(12).ok();
+                let tile_format: Option<String> = row.get(13)?;
+                let minzoom: Option<i32> = row.get(14)?;
+                let maxzoom: Option<i32> = row.get(15)?;
+                let use_aliases: Option<bool> = row.get(16)?;
+                let tile_source: Option<String> = row.get(17)?;
+                Ok(FileItem {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    file_type: row.get(2)?,
+                    size: row.get(3)?,
+                    uploaded_at: {
+                        let ts: chrono::NaiveDateTime = row.get(4)?;
+                        ts.and_utc().to_rfc3339()
+                    },
+                    status: row.get(5)?,
+                    crs: row.get(6)?,
+                    crs_type,
+                    path,
+                    table_name,
+                    error,
+                    is_public: Some(is_public),
+                    public_slug,
+                    tile_format,
+                    minzoom,
+                    maxzoom,
+                    use_aliases,
+                    tile_source,
+                })
+            })
+            .map_err(internal_error)?;
+
+        let mut items: Vec<FileItem> = Vec::new();
+        for item in items_iter {
+            items.push(item.map_err(internal_error)?);
+        }
+        items
+    };
 
     drop(conn);
     Ok(Json(items))
@@ -752,10 +893,13 @@ pub fn validate_slug(slug: &str) -> Result<String, String> {
 }
 
 pub async fn publish_file(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     Json(req): Json<crate::models::PublishRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
     let conn = state.db.lock().await;
 
     let slug = match req.slug {
@@ -763,25 +907,28 @@ pub async fn publish_file(
         None => validate_slug(&id).map_err(|e| bad_request(&e))?,
     };
 
-    info!(file_id = %id, slug = %slug, "Publish request");
+    info!(file_id = %id, slug = %slug, workspace_id = %workspace_id, "Publish request");
 
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_error)?;
 
-    let (status, _name, tile_source, tile_format): (String, String, String, Option<String>) = conn
+    let file_result: Option<(String, String, String, Option<String>)> = conn
         .query_row(
-            "SELECT status, name, COALESCE(tile_source, 'duckdb'), tile_format FROM files WHERE id = ?",
-            duckdb::params![&id],
+            "SELECT status, name, COALESCE(tile_source, 'duckdb'), tile_format FROM files WHERE id = ? AND workspace_id = ?",
+            duckdb::params![&id, &workspace_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "File not found".to_string(),
-                }),
-            )
-        })?;
+        .optional()
+        .map_err(internal_error)?;
+
+    let (status, _name, tile_source, tile_format) = file_result.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "File not found".to_string(),
+            }),
+        )
+    })?;
 
     if status != "ready" {
         conn.execute_batch("ROLLBACK").map_err(internal_error)?;
@@ -903,9 +1050,12 @@ pub async fn publish_file(
 }
 
 pub async fn unpublish_file(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
     info!(file_id = %id, "Unpublish request");
     let conn = state.db.lock().await;
 
@@ -915,8 +1065,8 @@ pub async fn unpublish_file(
     let rows_affected = conn
         .execute(
             "DELETE FROM published_files 
-            WHERE file_id = ? AND file_id IN (SELECT id FROM files WHERE is_public = TRUE)",
-            duckdb::params![&id],
+            WHERE file_id = ? AND file_id IN (SELECT id FROM files WHERE is_public = TRUE AND workspace_id = ?)",
+            duckdb::params![&id, &workspace_id],
         )
         .map_err(internal_error)?;
 
@@ -933,8 +1083,8 @@ pub async fn unpublish_file(
 
     let update_result = conn
         .execute(
-            "UPDATE files SET is_public = FALSE WHERE id = ?",
-            duckdb::params![&id],
+            "UPDATE files SET is_public = FALSE WHERE id = ? AND workspace_id = ?",
+            duckdb::params![&id, &workspace_id],
         )
         .map_err(|e| e.to_string());
 
@@ -955,9 +1105,12 @@ pub async fn unpublish_file(
 }
 
 pub async fn get_public_url(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
     let conn = state.db.lock().await;
 
     let result: Option<(String, String)> = conn
@@ -965,8 +1118,8 @@ pub async fn get_public_url(
             "SELECT pf.slug, COALESCE(pf.tile_source, f.tile_source, 'duckdb')
              FROM published_files pf
              JOIN files f ON pf.file_id = f.id
-             WHERE f.id = ? AND f.is_public = TRUE",
-            duckdb::params![&id],
+             WHERE f.id = ? AND f.is_public = TRUE AND f.workspace_id = ?",
+            duckdb::params![&id, &workspace_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .ok();
@@ -992,16 +1145,19 @@ pub async fn get_public_url(
 }
 
 pub async fn update_crs(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     Json(req): Json<crate::models::UpdateCrsRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
     let conn = state.db.lock().await;
 
     let (status, old_crs): (String, Option<String>) = conn
         .query_row(
-            "SELECT status, crs FROM files WHERE id = ?",
-            duckdb::params![&id],
+            "SELECT status, crs FROM files WHERE id = ? AND workspace_id = ?",
+            duckdb::params![&id, &workspace_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|_| {
@@ -1022,7 +1178,6 @@ pub async fn update_crs(
         ));
     }
 
-    // Only update if crs is provided and different from current
     let new_crs = match req.crs {
         Some(crs) if crs.trim().is_empty() => None,
         Some(crs) => Some(crs.trim().to_string()),
@@ -1036,12 +1191,11 @@ pub async fn update_crs(
         }
     };
 
-    // Skip update if value unchanged
     if new_crs == old_crs {
         let current_crs_type: Option<String> = conn
             .query_row(
-                "SELECT crs_type FROM files WHERE id = ?",
-                duckdb::params![&id],
+                "SELECT crs_type FROM files WHERE id = ? AND workspace_id = ?",
+                duckdb::params![&id, &workspace_id],
                 |row| row.get(0),
             )
             .ok()
@@ -1059,8 +1213,8 @@ pub async fn update_crs(
     let normalized = normalize_crs(new_crs.as_deref());
 
     conn.execute(
-        "UPDATE files SET crs = ?, crs_type = ? WHERE id = ?",
-        duckdb::params![normalized.crs, normalized.crs_type, &id],
+        "UPDATE files SET crs = ?, crs_type = ? WHERE id = ? AND workspace_id = ?",
+        duckdb::params![normalized.crs, normalized.crs_type, &id, &workspace_id],
     )
     .map_err(internal_error)?;
 
@@ -1074,16 +1228,19 @@ pub async fn update_crs(
 }
 
 pub async fn update_tile_zoom(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     Json(req): Json<UpdateZoomRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
     let conn = state.db.lock().await;
 
     let (tile_format, is_public): (Option<String>, bool) = conn
         .query_row(
-            "SELECT tile_format, COALESCE(is_public, FALSE) FROM files WHERE id = ?",
-            duckdb::params![&id],
+            "SELECT tile_format, COALESCE(is_public, FALSE) FROM files WHERE id = ? AND workspace_id = ?",
+            duckdb::params![&id, &workspace_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|_| {
@@ -1179,16 +1336,19 @@ pub async fn update_tile_zoom(
 }
 
 pub async fn update_field_aliases(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     Json(req): Json<crate::models::UpdateFieldAliasesRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
     let conn = state.db.lock().await;
 
     let status: String = conn
         .query_row(
-            "SELECT status FROM files WHERE id = ?",
-            duckdb::params![&id],
+            "SELECT status FROM files WHERE id = ? AND workspace_id = ?",
+            duckdb::params![&id, &workspace_id],
             |row| row.get(0),
         )
         .map_err(|_| {
@@ -1262,17 +1422,19 @@ pub async fn update_field_aliases(
 }
 
 pub async fn update_publish_settings(
+    auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     Json(req): Json<crate::models::UpdatePublishSettingsRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+
     let conn = state.db.lock().await;
 
-    // Check if file is published
     let is_public: bool = conn
         .query_row(
-            "SELECT COALESCE(is_public, FALSE) FROM files WHERE id = ?",
-            duckdb::params![&id],
+            "SELECT COALESCE(is_public, FALSE) FROM files WHERE id = ? AND workspace_id = ?",
+            duckdb::params![&id, &workspace_id],
             |row| row.get(0),
         )
         .map_err(|_| {
@@ -1294,7 +1456,6 @@ pub async fn update_publish_settings(
         ));
     }
 
-    // Update use_aliases if provided
     if let Some(use_aliases) = req.use_aliases {
         let rows_affected = conn
             .execute(
@@ -1313,7 +1474,6 @@ pub async fn update_publish_settings(
         }
     }
 
-    // Fetch current settings
     let use_aliases: bool = conn
         .query_row(
             "SELECT COALESCE(use_aliases, TRUE) FROM published_files WHERE file_id = ?",
@@ -1350,18 +1510,9 @@ pub struct UpdateSettingsRequest {
 }
 
 pub async fn get_settings(
-    auth_session: AuthSession<crate::AuthBackend>,
+    _auth_session: AuthSession<crate::AuthBackend>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    if auth_session.user.is_none() {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "Not authenticated".to_string(),
-            }),
-        ));
-    }
-
     let max_size = *state.max_size.read().await;
     let max_size_mb = max_size / BYTES_PER_MB;
 

@@ -25,7 +25,7 @@ pub fn internal_error<E: std::fmt::Debug>(error: E) -> (StatusCode, Json<ErrorRe
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse {
-            error: "Internal Server Error".to_string(),
+            error: format!("Internal Server Error: {:?}", error),
         }),
     )
 }

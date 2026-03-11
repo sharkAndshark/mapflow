@@ -166,6 +166,7 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             username VARCHAR UNIQUE NOT NULL,
             password_hash VARCHAR NOT NULL,
             role VARCHAR NOT NULL,
+            current_workspace_id VARCHAR,
             created_at TIMESTAMP NOT NULL
         );
 
@@ -236,6 +237,42 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         ",
     )
     .expect("Failed to create PostGIS source tables");
+
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS workspaces (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR UNIQUE NOT NULL,
+            owner_id VARCHAR NOT NULL REFERENCES users(id),
+            is_personal BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workspaces_owner
+            ON workspaces(owner_id);
+
+        CREATE INDEX IF NOT EXISTS idx_workspaces_deleted_at
+            ON workspaces(deleted_at);
+
+        CREATE TABLE IF NOT EXISTS workspace_members (
+            workspace_id VARCHAR NOT NULL,
+            user_id VARCHAR NOT NULL,
+            joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (workspace_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workspace_members_user
+            ON workspace_members(user_id);
+        ",
+    )
+    .expect("Failed to create workspace tables");
+
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN workspace_id VARCHAR", []);
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_files_workspace ON files(workspace_id)",
+        [],
+    );
 
     conn
 }

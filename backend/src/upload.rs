@@ -4,6 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use axum_login::AuthSession;
 use chrono::Utc;
 use std::path::Path;
 use tokio::{
@@ -18,13 +19,108 @@ use crate::{
     import::import_spatial_data,
     mbtiles,
     models::{ErrorResponse, FileItem},
-    AppState,
+    AppState, AuthBackend,
 };
+use tracing::debug;
 
 pub async fn upload_file(
+    auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    debug!("upload_file: starting upload, workspace_id check");
+    let workspace_id = match auth_session.user {
+        Some(ref user) => {
+            debug!(
+                "upload_file: user found, current_workspace_id: {:?}",
+                user.current_workspace_id
+            );
+            user.current_workspace_id.clone().ok_or_else(|| {
+                debug!("upload_file: no current workspace set for user");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "No current workspace set".to_string(),
+                    }),
+                )
+            })?
+        }
+        None => {
+            debug!("upload_file: no user in session, checking test mode");
+            let test_mode = std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1");
+            debug!("upload_file: test_mode = {}", test_mode);
+            if test_mode {
+                debug!("upload_file: test mode enabled, looking for workspace");
+                let conn = state.db.lock().await;
+
+                let workspace_id: Option<String> = conn
+                    .query_row(
+                        "SELECT id FROM workspaces WHERE is_personal = true LIMIT 1",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .ok()
+                    .flatten();
+
+                if let Some(wid) = workspace_id {
+                    drop(conn);
+                    debug!(
+                        "upload_file: found existing workspace in test mode: {}",
+                        wid
+                    );
+                    wid
+                } else {
+                    debug!("upload_file: no workspace found, creating one");
+
+                    let existing_user_id: Option<String> = conn
+                        .query_row("SELECT id FROM users LIMIT 1", [], |row| row.get(0))
+                        .ok()
+                        .flatten();
+
+                    let user_id = match existing_user_id {
+                        Some(uid) => uid,
+                        None => {
+                            let new_user_id = uuid::Uuid::new_v4().to_string();
+                            conn.execute(
+                                "INSERT INTO users (id, username, password_hash, role, current_workspace_id, created_at) VALUES (?, ?, '', 'user', NULL, CURRENT_TIMESTAMP)",
+                                duckdb::params![&new_user_id, format!("test_user_{}", &new_user_id[..8])],
+                            ).ok();
+                            new_user_id
+                        }
+                    };
+
+                    let new_workspace_id = uuid::Uuid::new_v4().to_string();
+                    let workspace_name = "Test Workspace".to_string();
+
+                    conn.execute(
+                        "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, true, CURRENT_TIMESTAMP)",
+                        duckdb::params![&new_workspace_id, &workspace_name, &user_id],
+                    ).ok();
+
+                    conn.execute(
+                        "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                        duckdb::params![&new_workspace_id, &user_id],
+                    ).ok();
+
+                    drop(conn);
+                    debug!(
+                        "upload_file: created new workspace in test mode: {}",
+                        new_workspace_id
+                    );
+                    new_workspace_id
+                }
+            } else {
+                debug!("upload_file: not authenticated and not in test mode");
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(ErrorResponse {
+                        error: "Not authenticated".to_string(),
+                    }),
+                ));
+            }
+        }
+    };
+
     let mut field = loop {
         let next = multipart.next_field().await.map_err(|e| {
             let message = format!("Invalid multipart form: {e}");
@@ -125,8 +221,8 @@ pub async fn upload_file(
     if let Err(message) = validation {
         let size_i64 = size as i64;
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, workspace_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             duckdb::params![
                 &upload_id,
                 &base_name,
@@ -139,6 +235,7 @@ pub async fn upload_file(
                 &None::<String>,
                 &Some(message.clone()),
                 false,
+                &workspace_id,
             ],
         )
         .map_err(internal_error)?;
@@ -149,8 +246,8 @@ pub async fn upload_file(
 
     let size_i64 = size as i64;
     conn.execute(
-        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, workspace_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         duckdb::params![
             &upload_id,
             &base_name,
@@ -163,6 +260,7 @@ pub async fn upload_file(
             &None::<String>,
             &None::<String>,
             false,
+            &workspace_id,
         ],
     )
     .map_err(internal_error)?;

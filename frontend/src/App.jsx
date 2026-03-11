@@ -12,6 +12,8 @@ import {
   updateTileZoom,
   updateFieldAliases,
   updatePublishSettings,
+  listWorkspaces,
+  switchWorkspace,
 } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 
@@ -1303,6 +1305,10 @@ export default function App() {
   const [postgisMessage, setPostgisMessage] = useState('');
   const [isTestingPostgis, setIsTestingPostgis] = useState(false);
   const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
+  const [workspaces, setWorkspaces] = useState([]);
+  const [currentWorkspace, setCurrentWorkspace] = useState(user?.currentWorkspace || null);
+  const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
 
   async function refreshFiles(nextSelectedId = null) {
     const res = await fetch('/api/files');
@@ -1328,6 +1334,21 @@ export default function App() {
       window.location.href = '/login';
     } catch (error) {
       console.error('Logout failed:', error);
+    }
+  }
+
+  async function handleSwitchWorkspace(workspace) {
+    setWorkspaceLoading(true);
+    try {
+      await switchWorkspace(workspace.id);
+      setCurrentWorkspace(workspace);
+      setShowWorkspaceDropdown(false);
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to switch workspace:', err);
+      alert(err.message);
+    } finally {
+      setWorkspaceLoading(false);
     }
   }
 
@@ -1467,6 +1488,46 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    async function loadWorkspaces() {
+      try {
+        const data = await listWorkspaces();
+        if (!cancelled) {
+          setWorkspaces(data);
+          if (user.currentWorkspace) {
+            setCurrentWorkspace(user.currentWorkspace);
+          } else if (data.length > 0) {
+            setCurrentWorkspace(data[0]);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load workspaces:', err);
+      }
+    }
+
+    loadWorkspaces();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!showWorkspaceDropdown) return;
+
+    function handleClickOutside(event) {
+      if (!event.target.closest('.workspace-dropdown-container')) {
+        setShowWorkspaceDropdown(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showWorkspaceDropdown]);
+
   const orderedFiles = useMemo(() => {
     return [...files].sort((a, b) => {
       if (!a.uploadedAt || !b.uploadedAt) return 0;
@@ -1529,6 +1590,71 @@ export default function App() {
           <h1>MapFlow</h1>
           <p className="subtitle">数据源管理与列表</p>
         </div>
+
+        <div className="workspace-dropdown-container" style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowWorkspaceDropdown(!showWorkspaceDropdown)}
+            disabled={workspaceLoading}
+            style={{ minWidth: '150px', textAlign: 'left' }}
+          >
+            {currentWorkspace ? currentWorkspace.name : '选择工作空间'} ▾
+          </button>
+          {showWorkspaceDropdown && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                marginTop: '4px',
+                background: 'white',
+                border: '1px solid #e0e0e0',
+                borderRadius: '8px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                minWidth: '200px',
+                zIndex: 1000,
+              }}
+            >
+              {workspaces.map((ws) => (
+                <button
+                  key={ws.id}
+                  type="button"
+                  onClick={() => handleSwitchWorkspace(ws)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    textAlign: 'left',
+                    border: 'none',
+                    background: currentWorkspace?.id === ws.id ? '#f0f7ff' : 'transparent',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                  }}
+                >
+                  {currentWorkspace?.id === ws.id && '✓ '} {ws.name}
+                  {ws.isPersonal && (
+                    <span style={{ color: '#888', marginLeft: '8px' }}>(个人)</span>
+                  )}
+                </button>
+              ))}
+              <div style={{ borderTop: '1px solid #e0e0e0' }}>
+                <a
+                  href="/settings"
+                  style={{
+                    display: 'block',
+                    padding: '10px 16px',
+                    fontSize: '14px',
+                    color: '#0066cc',
+                    textDecoration: 'none',
+                  }}
+                >
+                  管理工作空间...
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {user && (
             <span style={{ fontSize: '14px', color: '#666' }}>

@@ -148,3 +148,137 @@ export async function registerPostgisSource(payload) {
   }
   return res.json();
 }
+
+export async function listWorkspaces() {
+  const res = await fetchWithAuth('/api/workspaces');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '获取工作空间列表失败');
+  }
+  return res.json();
+}
+
+export async function createWorkspace(name) {
+  const res = await fetchWithAuth('/api/workspaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '创建工作空间失败');
+  }
+  return res.json();
+}
+
+export async function updateWorkspace(workspaceId, name) {
+  const res = await fetchWithAuth(`/api/workspaces/${workspaceId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '更新工作空间失败');
+  }
+  return res.json();
+}
+
+export async function deleteWorkspace(workspaceId) {
+  const res = await fetchWithAuth(`/api/workspaces/${workspaceId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '删除工作空间失败');
+  }
+  return res.json();
+}
+
+export async function restoreWorkspace(workspaceId, newName) {
+  const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newName }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '恢复工作空间失败');
+  }
+  return res.json();
+}
+
+export async function listArchivedWorkspaces() {
+  const res = await fetchWithAuth('/api/workspaces/archived');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '获取已归档工作空间失败');
+  }
+  return res.json();
+}
+
+export async function switchWorkspace(workspaceId) {
+  const res = await fetchWithAuth('/api/workspaces/current', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspaceId }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '切换工作空间失败');
+  }
+  return res.json();
+}
+
+export async function getCurrentWorkspace() {
+  const res = await fetchWithAuth('/api/workspaces/current');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '获取当前工作空间失败');
+  }
+  return res.json();
+}
+
+export async function listWorkspaceMembers(workspaceId) {
+  const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/members`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '获取成员列表失败');
+  }
+  return res.json();
+}
+
+export async function inviteWorkspaceMember(workspaceId, username) {
+  const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '邀请成员失败');
+  }
+  return res.json();
+}
+
+export async function removeWorkspaceMember(workspaceId, userId) {
+  const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/members/${userId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '移除成员失败');
+  }
+  return res.json();
+}
+
+export async function leaveWorkspace(workspaceId) {
+  const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/leave`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '离开工作空间失败');
+  }
+  return res.json();
+}

@@ -4,13 +4,19 @@
 
 ## 概览
 
-**目标：** 提供安全的、基于认证的空间数据管理平台，允许管理员上传文件或注册 PostGIS 数据源，并进行列表、预览和**公开发布**。
+**目标：** 提供安全的、基于认证的空间数据管理平台，支持**多工作空间数据隔离**，允许用户上传、列表、预览和**公开发布**空间数据。
 
 **访问控制：**
 - 所有管理功能需要认证
 - 支持首次设置和用户管理
 - 基于角色的权限控制（admin/user）
+- **工作空间隔离**：用户只能访问所属工作空间的数据
 - **公开瓦片服务**：发布后的文件可通过公共 URL 访问，无需认证
+
+**核心概念：**
+- **工作空间**：数据隔离单元，每个文件属于一个工作空间
+- **个人工作空间**：注册时自动创建，不可删除
+- **成员**：任意成员可邀请新成员
 
 **支持的格式：**
 - **Shapefile：** 必须是包含 `.shp`、`.shx`、`.dbf` 的 `.zip` 压缩包
@@ -109,6 +115,15 @@
 | OSM-004 | 瓦片生成（simple polygons） | OSM sf_simple_polygons（10,000 简单多边形，Polygon几何）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_simple_polygons_samples` | Integration | P1 |
 | OSM-005 | 瓦片生成（multipoints） | OSM sf_multipoints（402 多点要素，MultiPoint几何）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_multipoints_samples` | Integration | P1 |
 | OSM-006 | 瓦片生成（multilinestrings） | OSM sf_multilinestrings（511 多线要素，MultiLineString几何）数据集生成正确瓦片（z=0,10,14 各 5 个样本） | 特征计数匹配 golden 配置 | `cargo test test_tile_golden_osm_multilinestrings_samples` | Integration | P1 |
+| WS-001 | 工作空间创建 | POST /api/workspaces 创建工作空间，名称全局唯一（3-50字符），创建者自动成为 owner 和成员 | 201 + `{id,name,ownerId,isPersonal}` / 400（名称无效） / 409（名称冲突） / 401 | `cargo test test_create_workspace` | Integration | P0 |
+| WS-002 | 工作空间列表 | GET /api/workspaces 返回用户所属的所有工作空间（不含已删除） | 200 + `[{id,name,ownerId,isPersonal,memberCount,createdAt}]` / 401 | `cargo test test_list_workspaces` | Integration | P0 |
+| WS-003 | 工作空间删除 | DELETE /api/workspaces/:id 软删除工作空间（设置 deleted_at，重命名释放原名），仅 owner 可操作，个人工作空间不可删除 | 204 / 401 / 403（非owner/个人空间） / 404 | `cargo test test_delete_workspace` | Integration | P0 |
+| WS-004 | 工作空间恢复 | POST /api/workspaces/:id/restore 恢复已删除工作空间，若原名被占用需提供新名称 | 200 + `{id,name}` / 400（未删除/名称冲突） / 401 / 403 / 404 | `cargo test test_restore_workspace` | Integration | P1 |
+| WS-005 | 工作空间切换 | PUT /api/session/workspace 切换当前工作空间，更新 session 中的 currentWorkspaceId | 200 + `{workspaceId}` / 401 / 403（不属于该工作空间） / 404 | `cargo test test_switch_workspace` | Integration | P0 |
+| WS-006 | 成员邀请 | POST /api/workspaces/:id/members 通过用户名邀请成员，任意成员可邀请 | 201 + `{userId,username}` / 400（缺少用户名） / 404（用户不存在） / 409（已是成员） / 401 / 403 | `cargo test test_invite_member` | Integration | P0 |
+| WS-007 | 成员移除 | DELETE /api/workspaces/:id/members/:userId 移除成员。Owner 可移除任何人（除自己），成员可移除自己（离开） | 204 / 401 / 403（移除owner） / 404 | `cargo test test_remove_member` | Integration | P0 |
+| WS-008 | 数据隔离 | 文件 API（上传/列表/预览/瓦片/发布）自动过滤 currentWorkspaceId，跨工作空间访问返回 404 | 404 / 401 | `cargo test test_workspace_data_isolation` | Integration | P0 |
+| WS-009 | 个人工作空间 | POST /api/auth/init 注册成功后自动创建个人工作空间（名称：`{username}的个人空间`），用户成为 owner 和成员 | 201 + 用户信息，含工作空间 | `cargo test test_init_creates_personal_workspace` | Integration | P0 |
 
 ## 参考
 

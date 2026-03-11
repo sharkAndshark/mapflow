@@ -6,6 +6,7 @@ use axum::{
     Router,
 };
 use axum_login::AuthSession;
+use duckdb::OptionalExt;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -29,6 +30,14 @@ pub struct InitRequest {
 pub struct LoginResponse {
     username: String,
     role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current_workspace: Option<CurrentWorkspace>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CurrentWorkspace {
+    id: String,
+    name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,6 +60,7 @@ pub fn build_auth_router() -> Router<AppState> {
 
 async fn login(
     mut auth_session: AuthSession<crate::AuthBackend>,
+    State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, Response> {
     let user = auth_session
@@ -85,9 +95,31 @@ async fn login(
             .into_response()
     })?;
 
+    let current_workspace = if let Some(ref workspace_id) = user.current_workspace_id {
+        let conn = state.db.lock().await;
+        let workspace_info: Option<(String,)> = conn
+            .query_row(
+                "SELECT name FROM workspaces WHERE id = ? AND deleted_at IS NULL",
+                duckdb::params![workspace_id],
+                |row| Ok((row.get(0)?,)),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        drop(conn);
+
+        workspace_info.map(|(name,)| CurrentWorkspace {
+            id: workspace_id.clone(),
+            name,
+        })
+    } else {
+        None
+    };
+
     Ok(Json(LoginResponse {
         username: user.username,
         role: user.role,
+        current_workspace,
     }))
 }
 
@@ -98,13 +130,40 @@ async fn logout(mut auth_session: AuthSession<crate::AuthBackend>) -> impl IntoR
     StatusCode::NO_CONTENT
 }
 
-async fn check_auth(auth_session: AuthSession<crate::AuthBackend>) -> impl IntoResponse {
+async fn check_auth(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
     match auth_session.user {
-        Some(user) => Json(LoginResponse {
-            username: user.username,
-            role: user.role,
-        })
-        .into_response(),
+        Some(user) => {
+            let current_workspace = if let Some(ref workspace_id) = user.current_workspace_id {
+                let conn = state.db.lock().await;
+                let workspace_info: Option<(String,)> = conn
+                    .query_row(
+                        "SELECT name FROM workspaces WHERE id = ? AND deleted_at IS NULL",
+                        duckdb::params![workspace_id],
+                        |row| Ok((row.get(0)?,)),
+                    )
+                    .optional()
+                    .ok()
+                    .flatten();
+                drop(conn);
+
+                workspace_info.map(|(name,)| CurrentWorkspace {
+                    id: workspace_id.clone(),
+                    name,
+                })
+            } else {
+                None
+            };
+
+            Json(LoginResponse {
+                username: user.username,
+                role: user.role,
+                current_workspace,
+            })
+            .into_response()
+        }
         None => StatusCode::UNAUTHORIZED.into_response(),
     }
 }
@@ -220,6 +279,41 @@ async fn init_system(
         )
             .into_response()
     })?;
+
+    let workspace_id = uuid::Uuid::new_v4().to_string();
+    let workspace_name = crate::workspace::make_personal_workspace_name(&req.username);
+
+    conn.execute(
+        "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, ?)",
+        duckdb::params![&workspace_id, &workspace_name, &user_id, &created_at],
+    )
+    .map_err(|e| {
+        conn.execute("ROLLBACK", []).ok();
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to create personal workspace: {}", e),
+            }),
+        )
+            .into_response()
+    })?;
+
+    conn.execute(
+        "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?)",
+        duckdb::params![&workspace_id, &user_id, &created_at],
+    )
+    .map_err(|e| {
+        conn.execute("ROLLBACK", []).ok();
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to add user to workspace: {}", e),
+            }),
+        )
+            .into_response()
+    })?;
+
+    tracing::info!(user_id = %user_id, username = %req.username, workspace_id = %workspace_id, "Admin user and personal workspace created");
 
     // Mark system as initialized
     set_initialized(&conn).map_err(|e| {
