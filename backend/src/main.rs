@@ -96,14 +96,6 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    if std::env::var("APP_SECRET").is_err() {
-        let default_secret = "mapflow-default-secret-change-in-production";
-        std::env::set_var("APP_SECRET", default_secret);
-        tracing::info!(
-            "APP_SECRET not set, using default secret for PostGIS credential encryption"
-        );
-    }
-
     #[cfg(windows)]
     windows_console::install_close_handler()?;
 
@@ -111,6 +103,11 @@ async fn main() -> Result<()> {
     tracing::info!(db_path = %db_path, "Initializing database");
     let db_path = PathBuf::from(db_path);
     let conn = backend::init_database(&db_path);
+
+    if std::env::var("APP_SECRET").is_err() {
+        let secret = backend::ensure_app_secret(&conn).expect("Failed to ensure APP_SECRET");
+        std::env::set_var("APP_SECRET", &secret);
+    }
 
     let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string());
     tracing::info!(upload_dir = %upload_dir, "Using upload directory");

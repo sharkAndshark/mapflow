@@ -807,6 +807,42 @@ pub fn set_initialized(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
     Ok(())
 }
 
+pub fn ensure_app_secret(conn: &duckdb::Connection) -> Result<String, String> {
+    let mut stmt = conn
+        .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+        .map_err(|e| format!("Failed to prepare app_secret query: {}", e))?;
+
+    let existing: Option<String> = stmt.query_row([], |row| row.get(0)).ok();
+
+    if let Some(secret) = existing {
+        return Ok(secret);
+    }
+
+    let new_secret = generate_random_secret();
+    conn.execute(
+        "INSERT INTO system_settings (key, value) VALUES ('app_secret', ?)",
+        duckdb::params![&new_secret],
+    )
+    .map_err(|e| format!("Failed to store app_secret: {}", e))?;
+
+    tracing::info!("Generated and stored new APP_SECRET for PostGIS credential encryption");
+    Ok(new_secret)
+}
+
+fn generate_random_secret() -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const SECRET_LENGTH: usize = 64;
+
+    let mut rng = rand::thread_rng();
+    (0..SECRET_LENGTH)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
