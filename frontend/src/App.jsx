@@ -1306,7 +1306,9 @@ export default function App() {
   const [isTestingPostgis, setIsTestingPostgis] = useState(false);
   const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
-  const [currentWorkspace, setCurrentWorkspace] = useState(user?.currentWorkspace || null);
+  const [currentWorkspace, setCurrentWorkspace] = useState(
+    user?.current_workspace || user?.currentWorkspace || null,
+  );
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
 
@@ -1498,8 +1500,10 @@ export default function App() {
         const data = await listWorkspaces();
         if (!cancelled) {
           setWorkspaces(data);
-          if (user.currentWorkspace) {
-            setCurrentWorkspace(user.currentWorkspace);
+          const authWorkspace = user.current_workspace || user.currentWorkspace;
+          if (authWorkspace) {
+            const matched = data.find((ws) => ws.id === authWorkspace.id);
+            setCurrentWorkspace(matched || authWorkspace);
           } else if (data.length > 0) {
             setCurrentWorkspace(data[0]);
           }

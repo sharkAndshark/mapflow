@@ -179,7 +179,30 @@ export default function Settings() {
       setArchivedWorkspaces(archivedWorkspaces.filter((w) => w.id !== workspaceId));
       setWorkspaces([...workspaces, ws]);
     } catch (err) {
-      alert(err.message || '恢复失败');
+      const message = err.message || '恢复失败';
+      const isNameConflict = message.includes('名称已被使用');
+      if (!isNameConflict) {
+        alert(message);
+        return;
+      }
+
+      const newNameInput = prompt('该名称已被使用，请输入新的工作空间名称（3-50个字符）');
+      if (!newNameInput) {
+        return;
+      }
+      const newName = newNameInput.trim();
+      if (newName.length < 3 || newName.length > 50) {
+        alert('名称长度需要在 3-50 个字符之间');
+        return;
+      }
+
+      try {
+        const ws = await restoreWorkspace(workspaceId, newName);
+        setArchivedWorkspaces(archivedWorkspaces.filter((w) => w.id !== workspaceId));
+        setWorkspaces([...workspaces, ws]);
+      } catch (retryErr) {
+        alert(retryErr.message || '恢复失败');
+      }
     }
   }
 
