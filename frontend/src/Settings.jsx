@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthContext.jsx';
 import { getSettings, updateSettings } from './api.js';
 
 export default function Settings() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [maxSizeMb, setMaxSizeMb] = useState('');
@@ -30,7 +32,7 @@ export default function Settings() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err.message || '加载设置失败');
+          setError(err.message || t('settings.loadFailed'));
         }
       } finally {
         if (!cancelled) {
@@ -42,7 +44,7 @@ export default function Settings() {
     return () => {
       cancelled = true;
     };
-  }, [user, navigate]);
+  }, [user, navigate, t]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -51,11 +53,11 @@ export default function Settings() {
 
     const value = parseInt(maxSizeMb, 10);
     if (isNaN(value) || value < 1) {
-      setError('请输入有效的数值（最小 1 MB）');
+      setError(t('settings.invalidValue'));
       return;
     }
     if (value > 102400) {
-      setError('最大值为 100 GB（102400 MB）');
+      setError(t('settings.maxValueExceeded'));
       return;
     }
 
@@ -64,9 +66,9 @@ export default function Settings() {
       const data = await updateSettings(value);
       setMaxSizeMb(String(data.maxSizeMb));
       setOriginalValue(data.maxSizeMb);
-      setSuccess('设置已保存');
+      setSuccess(t('settings.saved'));
     } catch (err) {
-      setError(err.message || '保存失败');
+      setError(err.message || t('settings.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -92,21 +94,21 @@ export default function Settings() {
     <div className="page">
       <header className="header">
         <div>
-          <h1>设置</h1>
-          <p className="subtitle">系统配置</p>
+          <h1>{t('settings.title')}</h1>
+          <p className="subtitle">{t('settings.subtitle')}</p>
         </div>
         <button type="button" className="btn-secondary" onClick={() => navigate('/')}>
-          返回
+          {t('common.back')}
         </button>
       </header>
 
       <section className="panel" style={{ marginTop: '28px' }}>
         <div className="panel-header">
-          <h2>上传设置</h2>
+          <h2>{t('settings.uploadSettings')}</h2>
         </div>
         <div className="panel-body" style={{ flexDirection: 'column' }}>
           {isLoading ? (
-            <div className="empty">加载中...</div>
+            <div className="empty">{t('common.loading')}</div>
           ) : (
             <form
               onSubmit={handleSubmit}
@@ -128,7 +130,7 @@ export default function Settings() {
               )}
 
               <div className="detail-group">
-                <div className="detail-label">最大上传大小 (MB)</div>
+                <div className="detail-label">{t('settings.maxUploadSize')}</div>
                 <div className="detail-value">
                   <input
                     type="number"
@@ -141,7 +143,7 @@ export default function Settings() {
                     disabled={isSaving}
                   />
                   <small className="form-hint" style={{ display: 'block', marginTop: '4px' }}>
-                    范围：1 MB - 100 GB
+                    {t('settings.maxSizeHint')}
                   </small>
                 </div>
               </div>
@@ -152,7 +154,7 @@ export default function Settings() {
                   className="btn-primary"
                   disabled={isSaving || !hasChanges || !isValid}
                 >
-                  {isSaving ? '保存中...' : '保存'}
+                  {isSaving ? t('common.saving') : t('common.save')}
                 </button>
                 <button
                   type="button"
@@ -160,7 +162,7 @@ export default function Settings() {
                   onClick={handleReset}
                   disabled={isSaving || !hasChanges}
                 >
-                  重置
+                  {t('common.reset')}
                 </button>
               </div>
             </form>

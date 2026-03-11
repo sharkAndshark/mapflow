@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthContext.jsx';
 import * as authApi from './auth.js';
 
 export default function Init() {
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -37,7 +39,7 @@ export default function Init() {
     return (
       <div className="login-page">
         <div className="login-container">
-          <div className="loading">加载中...</div>
+          <div className="loading">{t('common.loading')}</div>
         </div>
       </div>
     );
@@ -56,7 +58,7 @@ export default function Init() {
     setError('');
 
     if (password !== confirmPassword) {
-      setError('两次输入的密码不一致');
+      setError(t('auth.passwordMismatch'));
       return;
     }
 
@@ -66,7 +68,7 @@ export default function Init() {
       await authApi.initSystem(username, password);
       navigate('/login');
     } catch (err) {
-      setError(err.message || '初始化失败');
+      setError(err.message || t('auth.initFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -77,14 +79,14 @@ export default function Init() {
       <div className="login-container">
         <div className="login-header">
           <h1>MapFlow</h1>
-          <p>首次使用 - 创建管理员账户</p>
+          <p>{t('auth.setupDesc')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
           {error && <div className="alert">{error}</div>}
 
           <div className="form-group">
-            <label htmlFor="username">管理员用户名</label>
+            <label htmlFor="username">{t('auth.adminUsername')}</label>
             <input
               id="username"
               type="text"
@@ -97,7 +99,7 @@ export default function Init() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">密码</label>
+            <label htmlFor="password">{t('auth.password')}</label>
             <input
               id="password"
               type="password"
@@ -107,11 +109,11 @@ export default function Init() {
               required
               autoComplete="new-password"
             />
-            <small>密码必须至少8个字符，包含大小写字母、数字和特殊字符</small>
+            <small>{t('auth.passwordHint')}</small>
           </div>
 
           <div className="form-group">
-            <label htmlFor="confirmPassword">确认密码</label>
+            <label htmlFor="confirmPassword">{t('auth.confirmPassword')}</label>
             <input
               id="confirmPassword"
               type="password"
@@ -124,7 +126,7 @@ export default function Init() {
           </div>
 
           <button type="submit" className="btn-primary" disabled={isLoading}>
-            {isLoading ? '创建中...' : '创建管理员账户'}
+            {isLoading ? t('auth.creating') : t('auth.createAdmin')}
           </button>
         </form>
       </div>

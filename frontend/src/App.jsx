@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthContext.jsx';
 import {
   hasActiveJobs as computeHasActiveJobs,
@@ -14,14 +15,7 @@ import {
   updatePublishSettings,
 } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
-
-const STATUS_LABELS = {
-  uploading: '上传中',
-  uploaded: '等待处理',
-  processing: '处理中',
-  ready: '已就绪',
-  failed: '失败',
-};
+import LanguageSwitcher from './LanguageSwitcher.jsx';
 
 const INITIAL_POSTGIS_FORM = {
   connectionName: '',
@@ -39,12 +33,13 @@ const INITIAL_POSTGIS_FORM = {
 };
 
 function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliasesUpdate }) {
-  // Tab state
+  const { t } = useTranslation();
+
   const [activeTab, setActiveTab] = useState('basic');
   const tabs = [
-    { id: 'basic', label: 'Basic Info' },
-    { id: 'fields', label: 'Fields' },
-    { id: 'publish', label: 'Publish' },
+    { id: 'basic', label: t('file.detail.basicInfo') },
+    { id: 'fields', label: t('file.detail.fields') },
+    { id: 'publish', label: t('file.detail.publish') },
   ];
 
   const [schema, setSchema] = useState(null);
@@ -1293,6 +1288,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const { user, logout } = useAuth();
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -1303,6 +1299,14 @@ export default function App() {
   const [postgisMessage, setPostgisMessage] = useState('');
   const [isTestingPostgis, setIsTestingPostgis] = useState(false);
   const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
+
+  const STATUS_LABELS = {
+    uploading: t('file.status.uploading'),
+    uploaded: t('file.status.uploaded'),
+    processing: t('file.status.processing'),
+    ready: t('file.status.ready'),
+    failed: t('file.status.failed'),
+  };
 
   async function refreshFiles(nextSelectedId = null) {
     const res = await fetch('/api/files');
@@ -1535,6 +1539,7 @@ export default function App() {
               {user.username} ({user.role})
             </span>
           )}
+          <LanguageSwitcher />
           {user?.role === 'admin' && (
             <a href="/settings" className="btn-text" style={{ fontSize: '14px' }}>
               设置
