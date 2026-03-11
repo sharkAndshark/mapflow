@@ -830,6 +830,18 @@ pub fn ensure_app_secret(conn: &duckdb::Connection) -> Result<String, String> {
         .map_err(|e| format!("Failed to read app_secret after conflict: {}", e))
 }
 
+pub fn get_app_secret(conn: &duckdb::Connection) -> Result<Option<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+        .map_err(|e| format!("Failed to prepare app_secret query: {}", e))?;
+
+    match stmt.query_row([], |row| row.get(0)) {
+        Ok(secret) => Ok(Some(secret)),
+        Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to read app_secret: {}", e)),
+    }
+}
+
 fn generate_random_secret() -> String {
     use rand::Rng;
     const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
