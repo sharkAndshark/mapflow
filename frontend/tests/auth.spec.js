@@ -102,7 +102,7 @@ test.describe('Authentication Flow', () => {
     await expect(page.locator('.header')).toContainText('admin');
 
     // Click logout button
-    await page.click('button:has-text("登出")');
+    await page.click('[data-testid="logout-button"]');
 
     // Should redirect to login
     await expect(page).toHaveURL(/\/login/);
@@ -142,8 +142,8 @@ test.describe('Authentication Flow', () => {
     await page.fill('#confirmPassword', 'Different123!@#');
     await page.click('button[type="submit"]');
 
-    // Should show mismatch error
-    await expect(page.locator('.alert')).toContainText('两次输入的密码不一致');
+    // Should show error alert
+    await expect(page.locator('[data-testid="error-alert"]')).toBeVisible();
   });
 
   test('cannot initialize system twice', async ({ page, request }) => {

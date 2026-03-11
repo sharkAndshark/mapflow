@@ -83,7 +83,11 @@ export default function Init() {
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
-          {error && <div className="alert">{error}</div>}
+          {error && (
+            <div className="alert" data-testid="error-alert">
+              {error}
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="username">{t('auth.adminUsername')}</label>

@@ -52,7 +52,10 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonPath);
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await expect(row).toBeVisible();
 
   // Click the row to select it and show detail sidebar
@@ -65,7 +68,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   await sidebar.getByText('Publish', { exact: true }).click();
 
   // Click publish button in sidebar
-  const publishButton = sidebar.getByText('发布', { exact: true });
+  const publishButton = sidebar.getByTestId('publish-button');
   await expect(publishButton).toBeVisible();
   await publishButton.click();
 
@@ -73,16 +76,16 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   const slugInput = sidebar.getByTestId('publish-slug-input');
   await slugInput.fill('my-custom-map');
 
-  const confirmButton = sidebar.getByText('确认发布');
+  const confirmButton = sidebar.getByTestId('confirm-publish-button');
   await expect(confirmButton).toBeEnabled();
   await confirmButton.click();
 
   // Wait for publish to complete - should show "已发布" status
-  await expect(sidebar.getByText('已发布')).toBeVisible();
-  await expect(sidebar.getByText('复制地址')).toBeVisible();
-  await expect(sidebar.getByText('取消发布')).toBeVisible();
+  await expect(sidebar.getByTestId('published-status')).toBeVisible();
+  await expect(sidebar.getByTestId('copy-url-button')).toBeVisible();
+  await expect(sidebar.getByTestId('unpublish-button')).toBeVisible();
 
-  await sidebar.getByText('嵌入代码').click();
+  await sidebar.getByTestId('embed-code-toggle').click();
   await expect(sidebar.locator('.iframe-code-preview')).toContainText('/tiles/my-custom-map/embed');
   await expect(sidebar.locator('iframe[title="MapFlow embed preview"]')).toHaveAttribute(
     'src',
@@ -90,7 +93,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   );
 
   // Copy public URL (click the button, but don't verify clipboard in test environment)
-  const copyButton = sidebar.getByText('复制地址');
+  const copyButton = sidebar.getByTestId('copy-url-button');
   await copyButton.click();
 
   // Wait for public tile endpoint to be accessible and verify response
@@ -158,7 +161,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
 
   const readyRow = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ hasText: '已就绪' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
     .first();
   await expect(readyRow).toBeVisible();
   await readyRow.click();
@@ -166,15 +169,15 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   const readySidebar = page.locator('.detail-sidebar');
   // Switch to Publish tab
   await readySidebar.getByText('Publish', { exact: true }).click();
-  await expect(readySidebar.getByText('已发布')).toBeVisible();
+  await expect(readySidebar.getByTestId('published-status')).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
-  const unpublishButton = readySidebar.getByText('取消发布');
+  const unpublishButton = readySidebar.getByTestId('unpublish-button');
   await unpublishButton.click();
 
   // Should show publish button again
-  await expect(readySidebar.getByText('发布', { exact: true })).toBeVisible();
-  await expect(readySidebar.getByText('取消发布')).not.toBeVisible();
+  await expect(readySidebar.getByTestId('publish-button')).toBeVisible();
+  await expect(readySidebar.getByTestId('unpublish-button')).not.toBeVisible();
 
   const anonContext = await context.browser().newContext();
   const errorResponse = await anonContext.request.get(
@@ -222,14 +225,17 @@ test('publish PMTiles file exposes working iframe embed', async ({
     )
     .toBe('ready');
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await expect(row).toBeVisible();
   await row.click();
 
   const sidebar = page.locator('.detail-sidebar');
   await expect(sidebar).toBeVisible();
   await sidebar.getByText('Publish', { exact: true }).click();
-  await sidebar.getByText('发布', { exact: true }).click();
+  await sidebar.getByTestId('publish-button').click();
 
   const slugInput = sidebar.getByTestId('publish-slug-input');
   await slugInput.fill('my-pmtiles');
@@ -238,11 +244,11 @@ test('publish PMTiles file exposes working iframe embed', async ({
   const publishZoomInputs = sidebar.locator('input[type="number"]');
   await publishZoomInputs.nth(0).fill('1');
   await publishZoomInputs.nth(1).fill('1');
-  await sidebar.getByText('确认发布').click();
+  await sidebar.getByTestId('confirm-publish-button').click();
 
-  await expect(sidebar.getByText('已发布')).toBeVisible();
+  await expect(sidebar.getByTestId('published-status')).toBeVisible();
   await expect(sidebar.locator('.form-value.code')).toContainText('/tiles/my-pmtiles');
-  await sidebar.getByText('嵌入代码').click();
+  await sidebar.getByTestId('embed-code-toggle').click();
   await expect(sidebar.locator('.iframe-code-preview')).toContainText('/tiles/my-pmtiles/embed');
   await expect(sidebar.locator('iframe[title="MapFlow embed preview"]')).toHaveAttribute(
     'src',
@@ -324,14 +330,17 @@ test('PMTiles docs code falls back to archive zoom bounds when publish zoom is u
     )
     .toBe('ready');
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await row.click();
 
   const sidebar = page.locator('.detail-sidebar');
   await sidebar.getByText('Publish', { exact: true }).click();
-  await sidebar.getByText('发布', { exact: true }).click();
+  await sidebar.getByTestId('publish-button').click();
   await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-default-zoom');
-  await sidebar.getByText('确认发布').click();
+  await sidebar.getByTestId('confirm-publish-button').click();
 
   const publicContext = await context.browser().newContext();
   const docsPage = await publicContext.newPage();
@@ -454,7 +463,10 @@ test('publish PMTiles with one zoom edit keeps the other bound unset', async ({
     )
     .toBe('ready');
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await row.click();
 
   const sidebar = page.locator('.detail-sidebar');
@@ -464,13 +476,13 @@ test('publish PMTiles with one zoom edit keeps the other bound unset', async ({
     await route.continue();
   });
   await sidebar.getByText('Publish', { exact: true }).click();
-  await sidebar.getByText('发布', { exact: true }).click();
+  await sidebar.getByTestId('publish-button').click();
   await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-min-only');
   const publishZoomInputs = sidebar.locator('input[type="number"]');
   await publishZoomInputs.nth(0).fill('1');
-  await sidebar.getByText('确认发布').click();
+  await sidebar.getByTestId('confirm-publish-button').click();
 
-  await expect(sidebar.getByText('已发布')).toBeVisible();
+  await expect(sidebar.getByTestId('published-status')).toBeVisible();
   expect(publishPayload).toBeTruthy();
   expect(publishPayload.minZoom).toBe(1);
   expect(Object.prototype.hasOwnProperty.call(publishPayload, 'maxZoom')).toBeFalsy();
@@ -513,7 +525,10 @@ test('publish PMTiles with only max zoom edit keeps min bound unset', async ({
     )
     .toBe('ready');
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await row.click();
 
   const sidebar = page.locator('.detail-sidebar');
@@ -523,13 +538,13 @@ test('publish PMTiles with only max zoom edit keeps min bound unset', async ({
     await route.continue();
   });
   await sidebar.getByText('Publish', { exact: true }).click();
-  await sidebar.getByText('发布', { exact: true }).click();
+  await sidebar.getByTestId('publish-button').click();
   await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-max-only');
   const publishZoomInputs = sidebar.locator('input[type="number"]');
   await publishZoomInputs.nth(1).fill('5');
-  await sidebar.getByText('确认发布').click();
+  await sidebar.getByTestId('confirm-publish-button').click();
 
-  await expect(sidebar.getByText('已发布')).toBeVisible();
+  await expect(sidebar.getByTestId('published-status')).toBeVisible();
   expect(publishPayload).toBeTruthy();
   expect(publishPayload.maxZoom).toBe(5);
   expect(Object.prototype.hasOwnProperty.call(publishPayload, 'minZoom')).toBeFalsy();
@@ -555,7 +570,10 @@ test('publish with default slug (empty input)', async ({ page }) => {
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonPath);
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await expect(row).toBeVisible();
   await row.click();
 
@@ -565,14 +583,14 @@ test('publish with default slug (empty input)', async ({ page }) => {
   // Switch to Publish tab
   await sidebar.getByText('Publish', { exact: true }).click();
 
-  const publishButton = sidebar.getByText('发布', { exact: true });
+  const publishButton = sidebar.getByTestId('publish-button');
   await publishButton.click();
 
-  const confirmButton = sidebar.getByText('确认发布');
+  const confirmButton = sidebar.getByTestId('confirm-publish-button');
   await confirmButton.click();
 
-  await expect(sidebar.getByText('已发布')).toBeVisible();
-  await expect(sidebar.getByText('复制地址')).toBeVisible();
+  await expect(sidebar.getByTestId('published-status')).toBeVisible();
+  await expect(sidebar.getByTestId('copy-url-button')).toBeVisible();
 });
 
 test('slug validation: invalid characters', async ({ page }) => {
@@ -581,7 +599,10 @@ test('slug validation: invalid characters', async ({ page }) => {
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonPath);
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await expect(row).toBeVisible();
   await row.click();
 
@@ -591,7 +612,7 @@ test('slug validation: invalid characters', async ({ page }) => {
   // Switch to Publish tab
   await sidebar.getByText('Publish', { exact: true }).click();
 
-  const publishButton = sidebar.getByText('发布', { exact: true });
+  const publishButton = sidebar.getByTestId('publish-button');
   await publishButton.click();
 
   const slugInput = sidebar.getByTestId('publish-slug-input');
@@ -601,7 +622,7 @@ test('slug validation: invalid characters', async ({ page }) => {
     sidebar.locator('.alert', { hasText: '仅支持字母、数字、连字符和下划线' }),
   ).toBeVisible();
 
-  const confirmButton = sidebar.getByText('确认发布');
+  const confirmButton = sidebar.getByTestId('confirm-publish-button');
   await expect(confirmButton).toBeDisabled();
 });
 
@@ -611,7 +632,10 @@ test('slug validation: too long', async ({ page }) => {
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonPath);
 
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await expect(row).toBeVisible();
   await row.click();
 
@@ -621,7 +645,7 @@ test('slug validation: too long', async ({ page }) => {
   // Switch to Publish tab
   await sidebar.getByText('Publish', { exact: true }).click();
 
-  const publishButton = sidebar.getByText('发布', { exact: true });
+  const publishButton = sidebar.getByTestId('publish-button');
   await publishButton.click();
 
   const slugInput = sidebar.getByTestId('publish-slug-input');
@@ -630,6 +654,6 @@ test('slug validation: too long', async ({ page }) => {
 
   await expect(sidebar.getByText('URL 标识不能超过 100 个字符')).toBeVisible();
 
-  const confirmButton = sidebar.getByText('确认发布');
+  const confirmButton = sidebar.getByTestId('confirm-publish-button');
   await expect(confirmButton).toBeDisabled();
 });

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { PMTiles, TileType } from 'pmtiles';
 
 import { PublicTileMap, usePublicTileMeta } from './PublicTileViewer.jsx';
@@ -377,6 +378,7 @@ function CopyButton({ text, label }) {
 
 export default function TileDocs() {
   const { slug } = useParams();
+  const { t } = useTranslation();
   const [showCode, setShowCode] = useState(true);
   const [mdCopied, setMdCopied] = useState(false);
   const { meta, error, isLoading } = usePublicTileMeta(slug);
@@ -443,7 +445,7 @@ export default function TileDocs() {
         }}
       >
         <Link to="/" className="back-link">
-          Back to Files
+          {t('tileDocs.backToFiles')}
         </Link>
         {meta && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -487,7 +489,7 @@ export default function TileDocs() {
           {isLoading && !meta && !error && (
             <div style={{ textAlign: 'center', padding: '40px' }}>
               <div className="spinner"></div>
-              <p>Loading documentation...</p>
+              <p>{t('tileDocs.loading')}</p>
             </div>
           )}
 
@@ -502,11 +504,13 @@ export default function TileDocs() {
                     paddingBottom: '8px',
                   }}
                 >
-                  Service URLs
+                  {t('tileDocs.serviceUrls')}
                 </h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>Tile URL</span>
+                    <span style={{ fontWeight: '500', width: '80px' }}>
+                      {t('tileDocs.tileUrl')}
+                    </span>
                     <code
                       style={{
                         flex: 1,
@@ -520,10 +524,12 @@ export default function TileDocs() {
                       {origin}
                       {meta.tileUrl}
                     </code>
-                    <CopyButton text={`${origin}${meta.tileUrl}`} label="Copy" />
+                    <CopyButton text={`${origin}${meta.tileUrl}`} label={t('common.copy')} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>Meta API</span>
+                    <span style={{ fontWeight: '500', width: '80px' }}>
+                      {t('tileDocs.metaApi')}
+                    </span>
                     <code
                       style={{
                         flex: 1,
@@ -536,10 +542,12 @@ export default function TileDocs() {
                     >
                       {origin}/tiles/{slug}/meta
                     </code>
-                    <CopyButton text={`${origin}/tiles/${slug}/meta`} label="Copy" />
+                    <CopyButton text={`${origin}/tiles/${slug}/meta`} label={t('common.copy')} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>Embed URL</span>
+                    <span style={{ fontWeight: '500', width: '80px' }}>
+                      {t('tileDocs.embedUrl')}
+                    </span>
                     <code
                       style={{
                         flex: 1,
@@ -553,7 +561,7 @@ export default function TileDocs() {
                       {origin}
                       {viewerUrlPath}
                     </code>
-                    <CopyButton text={`${origin}${viewerUrlPath}`} label="Copy" />
+                    <CopyButton text={`${origin}${viewerUrlPath}`} label={t('common.copy')} />
                   </div>
                 </div>
               </section>
@@ -567,20 +575,20 @@ export default function TileDocs() {
                     paddingBottom: '8px',
                   }}
                 >
-                  Configuration
+                  {t('tileDocs.configuration')}
                 </h2>
                 <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
                   <tbody>
                     <tr>
                       <td style={{ padding: '8px 0', fontWeight: '500', width: '120px' }}>
-                        Zoom Range
+                        {t('tileDocs.zoomRange')}
                       </td>
                       <td style={{ padding: '8px 0' }}>
                         {docsConfig?.minZoom ?? 0} - {docsConfig?.maxZoom ?? 22}
                       </td>
                     </tr>
                     <tr>
-                      <td style={{ padding: '8px 0', fontWeight: '500' }}>CRS</td>
+                      <td style={{ padding: '8px 0', fontWeight: '500' }}>{t('tileDocs.crs')}</td>
                       <td style={{ padding: '8px 0' }}>
                         {meta.crs || 'EPSG:3857'}
                         {meta.crsType === 'custom' && (
@@ -594,24 +602,30 @@ export default function TileDocs() {
                               borderRadius: '3px',
                             }}
                           >
-                            Custom
+                            {t('tileDocs.custom')}
                           </span>
                         )}
                       </td>
                     </tr>
                     <tr>
-                      <td style={{ padding: '8px 0', fontWeight: '500' }}>Format</td>
+                      <td style={{ padding: '8px 0', fontWeight: '500' }}>
+                        {t('tileDocs.format')}
+                      </td>
                       <td style={{ padding: '8px 0' }}>
                         {docsConfig?.tileFormat?.toUpperCase() || 'MVT'}
                       </td>
                     </tr>
                     <tr>
-                      <td style={{ padding: '8px 0', fontWeight: '500' }}>Source</td>
+                      <td style={{ padding: '8px 0', fontWeight: '500' }}>
+                        {t('tileDocs.source')}
+                      </td>
                       <td style={{ padding: '8px 0' }}>{meta.tileSource}</td>
                     </tr>
                     {meta.crsType === 'custom' && meta.dataBounds && (
                       <tr>
-                        <td style={{ padding: '8px 0', fontWeight: '500' }}>Data Bounds</td>
+                        <td style={{ padding: '8px 0', fontWeight: '500' }}>
+                          {t('tileDocs.dataBounds')}
+                        </td>
                         <td style={{ padding: '8px 0', fontFamily: 'monospace', fontSize: '12px' }}>
                           [{meta.dataBounds.map((n) => n.toFixed(2)).join(', ')}]
                         </td>
@@ -619,7 +633,9 @@ export default function TileDocs() {
                     )}
                     {meta.bbox && (
                       <tr>
-                        <td style={{ padding: '8px 0', fontWeight: '500' }}>BBox (WGS84)</td>
+                        <td style={{ padding: '8px 0', fontWeight: '500' }}>
+                          {t('tileDocs.bboxWgs84')}
+                        </td>
                         <td style={{ padding: '8px 0', fontFamily: 'monospace', fontSize: '12px' }}>
                           [{meta.bbox.map((n) => n.toFixed(4)).join(', ')}]
                         </td>
@@ -647,9 +663,9 @@ export default function TileDocs() {
                       flex: 1,
                     }}
                   >
-                    OpenLayers Code
+                    {t('tileDocs.openLayersCode')}
                   </h2>
-                  <CopyButton text={openLayersCode} label="Copy Code" />
+                  <CopyButton text={openLayersCode} label={t('tileDocs.copyCode')} />
                 </div>
                 <button
                   type="button"
@@ -665,7 +681,7 @@ export default function TileDocs() {
                     fontSize: '13px',
                   }}
                 >
-                  {showCode ? 'Hide Code' : 'Show Code'}
+                  {showCode ? t('tileDocs.hideCode') : t('tileDocs.showCode')}
                 </button>
                 {showCode && (
                   <pre
@@ -709,7 +725,7 @@ export default function TileDocs() {
                     fontWeight: '500',
                   }}
                 >
-                  {mdCopied ? 'Copied!' : 'Copy Full Documentation (Markdown)'}
+                  {mdCopied ? t('common.copied') : t('tileDocs.copyFullDoc')}
                 </button>
               </section>
             </>

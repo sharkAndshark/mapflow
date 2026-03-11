@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import { formatInspectorValue } from './featureInspectorFormat.js';
 import {
@@ -52,6 +53,7 @@ function createTileDebugSource(projection = 'EPSG:3857', tileGrid = null) {
 
 export default function Preview() {
   const { id } = useParams();
+  const { t } = useTranslation();
   const mapElement = useRef(null);
   const mapRef = useRef(null); // Store the OL map instance
   const vectorLayerRef = useRef(null); // Store the vector tile layer for style updates
@@ -557,7 +559,7 @@ export default function Preview() {
         }}
       >
         <Link to="/" className="back-link">
-          ← Back
+          {t('preview.back')}
         </Link>
         {meta && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -589,7 +591,7 @@ export default function Preview() {
                 checked={showOsmBasemap}
                 onChange={(e) => setShowOsmBasemap(e.target.checked)}
               />
-              Show OSM Basemap
+              {t('preview.showOsmBasemap')}
             </label>
           )}
 

@@ -599,6 +599,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                                 className="btn-primary"
                                                 disabled={isSavingAlias}
                                                 onClick={handleSave}
+                                                data-testid="alias-save-button"
                                               >
                                                 {isSavingAlias ? '...' : '保存'}
                                               </button>
@@ -606,6 +607,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                                 type="button"
                                                 className="btn-secondary"
                                                 onClick={handleCancel}
+                                                data-testid="alias-cancel-button"
                                               >
                                                 取消
                                               </button>
@@ -670,6 +672,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         type="button"
                         className="btn-primary"
                         style={{ fontSize: '12px', padding: '4px 12px' }}
+                        data-testid="publish-button"
                         onClick={() => {
                           setPublishSlug('');
                           setPublishMinZoom(getInitialPublishMinZoom(file));
@@ -880,6 +883,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           style={{ fontSize: '12px', padding: '4px 12px' }}
                           disabled={isPublishing || !!slugValidationError || !!zoomValidationError}
                           onClick={handlePublishSubmit}
+                          data-testid="confirm-publish-button"
                         >
                           {isPublishing ? '发布中...' : '确认发布'}
                         </button>
@@ -910,7 +914,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                   <div className="detail-group">
                     <div className="detail-label">发布状态</div>
                     <div className="detail-value">
-                      <span style={{ color: '#4caf50' }}>已发布</span>
+                      <span style={{ color: '#4caf50' }} data-testid="published-status">
+                        已发布
+                      </span>
                     </div>
                   </div>
 
@@ -927,6 +933,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             className="btn-text"
                             style={{ fontSize: '12px', padding: 0, textAlign: 'left' }}
                             onClick={() => copyPublicUrl(file.publicSlug, file)}
+                            data-testid="copy-url-button"
                           >
                             {copySuccess ? '已复制' : '复制地址'}
                           </button>
@@ -962,6 +969,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                       aria-expanded={iframeCodeExpanded}
                       aria-controls="iframe-embed-panel"
                       onClick={() => setIframeCodeExpanded((prev) => !prev)}
+                      data-testid="embed-code-toggle"
                     >
                       <span>嵌入代码</span>
                       <span style={{ fontSize: '10px', color: '#999' }}>
@@ -1271,6 +1279,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                     className="btn-secondary"
                     style={{ width: '100%', fontSize: '12px' }}
                     onClick={handleUnpublishClick}
+                    data-testid="unpublish-button"
                   >
                     取消发布
                   </button>
@@ -1567,7 +1576,12 @@ export default function App() {
             上传
           </label>
           {user && (
-            <button type="button" className="btn-secondary" onClick={handleLogout}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleLogout}
+              data-testid="logout-button"
+            >
               登出
             </button>
           )}
@@ -1628,7 +1642,10 @@ export default function App() {
                     <div className="muted">
                       {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : '--'}
                     </div>
-                    <div className={`status ${item.status || 'uploaded'}`}>
+                    <div
+                      className={`status ${item.status || 'uploaded'}`}
+                      data-testid={`status-${item.status || 'uploaded'}`}
+                    >
                       {STATUS_LABELS[item.status] || item.status}
                     </div>
                     <div onClick={(e) => e.stopPropagation()}>
@@ -1639,6 +1656,7 @@ export default function App() {
                           rel="noopener noreferrer"
                           className="btn-text"
                           title="在新窗口查看地图"
+                          data-testid="preview-link"
                         >
                           查看
                         </a>

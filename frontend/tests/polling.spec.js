@@ -25,14 +25,9 @@ test('upload file and verify status auto-updates from processing to ready', asyn
   const row = page.locator('.row', { hasText: 'sample' });
   await expect(row).toBeVisible();
 
-  // 3. Status should eventually become '已就绪' (Ready) without reload
-  // This validates the polling mechanism.
-  // Note: Depending on speed, it might jump straight to ready, or show '等待处理' -> '已就绪'.
-  // We strictly wait for '已就绪'.
-  await expect(row.getByText('已就绪')).toBeVisible({ timeout: 10000 });
+  await expect(row.getByTestId(/status-ready/)).toBeVisible({ timeout: 10000 });
 
-  // 4. Verify "查看" link appears in file row when ready
-  const previewLink = row.getByRole('link', { name: '查看' });
+  const previewLink = row.getByTestId('preview-link');
   await expect(previewLink).toBeVisible();
 });
 
@@ -49,7 +44,7 @@ test('preview action is hidden before ready and shown after ready', async ({ pag
   const row = page.locator('.row', { hasText: 'roads' });
   await expect(row).toBeVisible();
 
-  const previewLink = row.getByRole('link', { name: '查看' });
+  const previewLink = row.getByTestId('preview-link');
   await expect(previewLink).toHaveCount(0);
 
   await expect
@@ -68,6 +63,6 @@ test('preview action is hidden before ready and shown after ready', async ({ pag
     )
     .toBe('ready');
 
-  await expect(row.getByText('已就绪')).toBeVisible();
+  await expect(row.getByTestId(/status-ready/)).toBeVisible();
   await expect(previewLink).toBeVisible();
 });

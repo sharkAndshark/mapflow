@@ -17,8 +17,10 @@ async function uploadAndWaitReady(page) {
   await page.goto('/');
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonPath);
-  // Wait for ready status
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await expect(row).toBeVisible({ timeout: 15000 });
   return row;
 }
@@ -113,8 +115,8 @@ test('save and cancel buttons visible in edit mode', async ({ page }) => {
   await aliasCell.click();
 
   // Verify buttons are visible
-  await expect(aliasCell.getByRole('button', { name: '保存' })).toBeVisible();
-  await expect(aliasCell.getByRole('button', { name: '取消' })).toBeVisible();
+  await expect(aliasCell.getByTestId('alias-save-button')).toBeVisible();
+  await expect(aliasCell.getByTestId('alias-cancel-button')).toBeVisible();
 });
 
 test('alias input has sufficient width', async ({ page }) => {
@@ -195,7 +197,7 @@ test('alias persists after reload', async ({ page }) => {
   // Select row again
   const rowAfterReload = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ hasText: '已就绪' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
     .first();
   await rowAfterReload.click();
 

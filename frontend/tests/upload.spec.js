@@ -28,7 +28,7 @@ test('persistence: upload then reload shows file', async ({ page }) => {
   // Wait specifically for the uploaded status
   const uploadedRow = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ hasText: /已就绪|等待处理/ })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
     .first();
   await expect(uploadedRow).toBeVisible();
 
@@ -39,7 +39,7 @@ test('persistence: upload then reload shows file', async ({ page }) => {
 
   const reloadedRow = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ hasText: /已就绪|等待处理/ })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
     .first();
   await expect(reloadedRow).toBeVisible();
   await expect(reloadedRow.getByText('geojson')).toBeVisible();
@@ -53,7 +53,7 @@ test('upload geojson and show in list', async ({ page }) => {
 
   const row = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ hasText: /已就绪|等待处理/ })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
     .first();
   await expect(row).toBeVisible();
   await expect(row.getByText('geojson')).toBeVisible();
@@ -64,7 +64,9 @@ test('upload shapefile zip and show in list', async ({ page }) => {
   await uploadFile(page, shapefileZip);
 
   // Use locator specific to the row AND status
-  const row = page.locator('.row', { hasText: 'roads' }).filter({ hasText: /已就绪|等待处理/ });
+  const row = page
+    .locator('.row', { hasText: 'roads' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) });
   await expect(row).toBeVisible();
   await expect(row.getByText('shapefile')).toBeVisible();
 });
