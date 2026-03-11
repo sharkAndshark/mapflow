@@ -44,6 +44,22 @@ pub use static_assets::serve_embedded_spa;
 pub use validation::{validate_geojson, validate_shapefile_zip};
 
 pub fn initialize_app_secret(conn: &duckdb::Connection) -> Result<(), String> {
+    if db::get_app_secret(conn)?.is_some() {
+        return Ok(());
+    }
+
+    let existing_postgis_connections: i64 = conn
+        .prepare("SELECT COUNT(*) FROM postgis_connections")
+        .map_err(|e| format!("Failed to prepare PostGIS connection count query: {e}"))?
+        .query_row([], |row| row.get(0))
+        .map_err(|e| format!("Failed to count PostGIS connections: {e}"))?;
+
+    if existing_postgis_connections > 0 {
+        return Err(
+            "Missing app_secret while existing PostGIS credentials are present; refusing to generate a replacement secret".to_string(),
+        );
+    }
+
     ensure_app_secret(conn)?;
     Ok(())
 }
@@ -244,6 +260,9 @@ mod tests {
             "CREATE TABLE system_settings (
                 key VARCHAR PRIMARY KEY,
                 value VARCHAR NOT NULL
+            );
+            CREATE TABLE postgis_connections (
+                id VARCHAR PRIMARY KEY
             )",
         )
         .expect("create system_settings");
@@ -264,6 +283,38 @@ mod tests {
             .query_row([], |row| row.get(0))
             .expect("read persisted app secret again");
         assert_eq!(second, first);
+    }
+
+    #[test]
+    fn initialize_app_secret_fails_when_secret_missing_with_existing_postgis_connections() {
+        let conn = duckdb::Connection::open_in_memory().expect("db");
+        conn.execute_batch(
+            "
+            CREATE TABLE system_settings (
+                key VARCHAR PRIMARY KEY,
+                value VARCHAR NOT NULL
+            );
+            CREATE TABLE postgis_connections (
+                id VARCHAR PRIMARY KEY
+            );
+            ",
+        )
+        .expect("create tables");
+
+        conn.execute("INSERT INTO postgis_connections (id) VALUES ('conn-1')", [])
+            .expect("insert postgis connection");
+
+        let err = initialize_app_secret(&conn).expect_err(
+            "should fail when app_secret is missing but postgis_connections already has data",
+        );
+        assert!(err.contains("Missing app_secret while existing PostGIS credentials are present"));
+
+        let app_secret_count: i64 = conn
+            .prepare("SELECT COUNT(*) FROM system_settings WHERE key = 'app_secret'")
+            .expect("prepare app secret count query")
+            .query_row([], |row| row.get(0))
+            .expect("read app secret count");
+        assert_eq!(app_secret_count, 0);
     }
 
     #[test]
