@@ -1666,7 +1666,7 @@ export default function App() {
         <div className="modal-overlay" onClick={() => setShowPostgisModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>连接 PostGIS</h3>
+              <h3>{t('postgis.connect')}</h3>
               <button
                 type="button"
                 className="modal-close"
