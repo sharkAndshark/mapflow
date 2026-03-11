@@ -32,6 +32,19 @@ const INITIAL_POSTGIS_FORM = {
   displayName: '',
 };
 
+const STATUS_LABEL_KEYS = {
+  uploading: 'file.status.uploading',
+  uploaded: 'file.status.uploaded',
+  processing: 'file.status.processing',
+  ready: 'file.status.ready',
+  failed: 'file.status.failed',
+};
+
+function getStatusLabel(t, status) {
+  const key = STATUS_LABEL_KEYS[status];
+  return key ? t(key) : status;
+}
+
 function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliasesUpdate }) {
   const { t } = useTranslation();
 
@@ -378,7 +391,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
             <div className="detail-group">
               <div className="detail-label">Status</div>
               <div className={`status ${file.status}`} data-testid="file-status">
-                {STATUS_LABELS[file.status] || file.status}
+                {getStatusLabel(t, file.status)}
               </div>
             </div>
 
@@ -1309,14 +1322,6 @@ export default function App() {
   const [isTestingPostgis, setIsTestingPostgis] = useState(false);
   const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
 
-  const STATUS_LABELS = {
-    uploading: t('file.status.uploading'),
-    uploaded: t('file.status.uploaded'),
-    processing: t('file.status.processing'),
-    ready: t('file.status.ready'),
-    failed: t('file.status.failed'),
-  };
-
   async function refreshFiles(nextSelectedId = null) {
     const res = await fetch('/api/files');
     const data = await res.json();
@@ -1646,7 +1651,7 @@ export default function App() {
                       className={`status ${item.status || 'uploaded'}`}
                       data-testid={`status-${item.status || 'uploaded'}`}
                     >
-                      {STATUS_LABELS[item.status] || item.status}
+                      {getStatusLabel(t, item.status)}
                     </div>
                     <div onClick={(e) => e.stopPropagation()}>
                       {item.status === 'ready' && (

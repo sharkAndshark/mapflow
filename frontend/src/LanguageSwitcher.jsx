@@ -8,14 +8,16 @@ const languages = [
 
 export default function LanguageSwitcher() {
   const { i18n } = useTranslation();
+  const rawLanguage = i18n.resolvedLanguage || i18n.language || 'zh';
+  const currentCode = rawLanguage.split(/[-_]/)[0].toLowerCase();
 
   const toggleLanguage = () => {
-    const newLang = i18n.language === 'zh' ? 'en' : 'zh';
+    const newLang = currentCode === 'zh' ? 'en' : 'zh';
     i18n.changeLanguage(newLang);
   };
 
-  const currentLang = languages.find((lang) => lang.code === i18n.language) || languages[0];
-  const nextLang = languages.find((lang) => lang.code !== i18n.language) || languages[1];
+  const currentLang = languages.find((lang) => lang.code === currentCode) || languages[0];
+  const nextLang = languages.find((lang) => lang.code !== currentCode) || languages[1];
 
   return (
     <button

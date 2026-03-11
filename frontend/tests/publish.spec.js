@@ -54,7 +54,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
 
   const row = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .filter({ has: page.getByTestId('status-ready') })
     .first();
   await expect(row).toBeVisible();
 

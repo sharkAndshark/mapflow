@@ -19,7 +19,7 @@ async function uploadAndWaitReady(page) {
   await input.setInputFiles(geojsonPath);
   const row = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .filter({ has: page.getByTestId('status-ready') })
     .first();
   await expect(row).toBeVisible({ timeout: 15000 });
   return row;
