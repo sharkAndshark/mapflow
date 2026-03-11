@@ -96,6 +96,14 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    if std::env::var("APP_SECRET").is_err() {
+        let default_secret = "mapflow-default-secret-change-in-production";
+        std::env::set_var("APP_SECRET", default_secret);
+        tracing::info!(
+            "APP_SECRET not set, using default secret for PostGIS credential encryption"
+        );
+    }
+
     #[cfg(windows)]
     windows_console::install_close_handler()?;
 
