@@ -43,6 +43,11 @@ pub use session_store::DuckDBStore;
 pub use static_assets::serve_embedded_spa;
 pub use validation::{validate_geojson, validate_shapefile_zip};
 
+pub fn initialize_app_secret(conn: &duckdb::Connection) -> Result<(), String> {
+    ensure_app_secret(conn)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +230,40 @@ mod tests {
         assert!(!read_cookie_secure());
 
         std::env::remove_var("COOKIE_SECURE");
+    }
+
+    #[test]
+    fn initialize_app_secret_sets_and_reuses_persisted_secret() {
+        let _guard = ENV_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .expect("env lock");
+
+        let conn = duckdb::Connection::open_in_memory().expect("db");
+        conn.execute_batch(
+            "CREATE TABLE system_settings (
+                key VARCHAR PRIMARY KEY,
+                value VARCHAR NOT NULL
+            )",
+        )
+        .expect("create system_settings");
+
+        initialize_app_secret(&conn).expect("initialize app secret");
+
+        let first: String = conn
+            .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+            .expect("prepare persisted query")
+            .query_row([], |row| row.get(0))
+            .expect("read persisted app secret");
+        assert!(!first.is_empty());
+
+        initialize_app_secret(&conn).expect("reinitialize app secret");
+        let second: String = conn
+            .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+            .expect("prepare persisted query again")
+            .query_row([], |row| row.get(0))
+            .expect("read persisted app secret again");
+        assert_eq!(second, first);
     }
 
     #[test]

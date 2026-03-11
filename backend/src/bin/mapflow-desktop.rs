@@ -114,6 +114,7 @@ async fn main() -> Result<()> {
     tracing::info!(db_path = %db_path, "Initializing database");
     let db_path = PathBuf::from(db_path);
     let conn = backend::init_database(&db_path);
+    backend::initialize_app_secret(&conn).expect("Failed to initialize app_secret");
 
     let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string());
     tracing::info!(upload_dir = %upload_dir, "Using upload directory");

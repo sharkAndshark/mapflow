@@ -818,7 +818,7 @@ pub fn ensure_app_secret(conn: &duckdb::Connection) -> Result<String, String> {
         .map_err(|e| format!("Failed to store app_secret: {}", e))?;
 
     if rows_affected > 0 {
-        tracing::info!("Generated and stored new APP_SECRET for PostGIS credential encryption");
+        tracing::info!("Generated and stored new app_secret for PostGIS credential encryption");
         return Ok(new_secret);
     }
 

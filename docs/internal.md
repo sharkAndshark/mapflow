@@ -33,7 +33,8 @@ Windows 桌面集成:
 - `/api/postgis/connections/test`：仅做连接探测与版本检查
 - `/api/postgis/sources/register`：校验 schema/table(or view)/geom/fid 后注册为 `ready` 数据源（`type=postgis`）
 - 运行时按 `tile_source` 分流：DuckDB 本地表 vs PostGIS 远端查询（私有 `/api/files/:id/tiles/...` 与公开 `/tiles/:slug/...`）
-- 凭据存储：使用 `APP_SECRET` 派生密钥，对 PostGIS 密码做 AES-GCM 加密后写入 DuckDB
+- 凭据存储：使用 `system_settings.app_secret` 派生密钥，对 PostGIS 密码做 AES-GCM 加密后写入 DuckDB
+- 启动引导：`backend.exe` 与 `mapflow-desktop.exe` 都会先确保 `system_settings.app_secret` 存在（缺失时自动生成并持久化）
 
 ## 系统韧性
 
