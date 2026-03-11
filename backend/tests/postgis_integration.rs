@@ -74,6 +74,10 @@ async fn setup_app() -> (
 
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
+
+    let secret = backend::ensure_app_secret(&conn).expect("Failed to ensure APP_SECRET");
+    std::env::set_var("APP_SECRET", &secret);
+
     let db = Arc::new(tokio::sync::Mutex::new(conn));
 
     let state = AppState {
