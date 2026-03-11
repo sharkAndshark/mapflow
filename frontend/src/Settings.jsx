@@ -45,7 +45,7 @@ export default function Settings() {
   useEffect(() => {
     if (!user) return;
     if (user.role !== 'admin') {
-      navigate('/');
+      setIsLoading(false);
       return;
     }
 
@@ -71,7 +71,7 @@ export default function Settings() {
     return () => {
       cancelled = true;
     };
-  }, [user, navigate]);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -250,7 +250,7 @@ export default function Settings() {
     parseInt(maxSizeMb, 10) >= 1 &&
     parseInt(maxSizeMb, 10) <= 102400;
 
-  if (!user || user.role !== 'admin') {
+  if (!user) {
     return null;
   }
 
@@ -259,7 +259,9 @@ export default function Settings() {
       <header className="header">
         <div>
           <h1>设置</h1>
-          <p className="subtitle">系统配置</p>
+          <p className="subtitle">
+            {user.role === 'admin' ? '系统配置与工作空间管理' : '工作空间管理'}
+          </p>
         </div>
         <button type="button" className="btn-secondary" onClick={() => navigate('/')}>
           返回
@@ -386,73 +388,75 @@ export default function Settings() {
         </section>
       )}
 
-      <section className="panel" style={{ marginTop: '28px' }}>
-        <div className="panel-header">
-          <h2>上传设置</h2>
-        </div>
-        <div className="panel-body" style={{ flexDirection: 'column' }}>
-          {isLoading ? (
-            <div className="empty">加载中...</div>
-          ) : (
-            <form
-              onSubmit={handleSubmit}
-              style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}
-            >
-              {error && <div className="alert">{error}</div>}
-              {success && (
-                <div
-                  style={{
-                    padding: '12px 16px',
-                    borderRadius: '10px',
-                    background: '#f0fff0',
-                    color: '#1a7a1a',
-                    border: '1px solid #caf0ca',
-                  }}
-                >
-                  {success}
-                </div>
-              )}
+      {user.role === 'admin' && (
+        <section className="panel" style={{ marginTop: '28px' }}>
+          <div className="panel-header">
+            <h2>上传设置</h2>
+          </div>
+          <div className="panel-body" style={{ flexDirection: 'column' }}>
+            {isLoading ? (
+              <div className="empty">加载中...</div>
+            ) : (
+              <form
+                onSubmit={handleSubmit}
+                style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}
+              >
+                {error && <div className="alert">{error}</div>}
+                {success && (
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      background: '#f0fff0',
+                      color: '#1a7a1a',
+                      border: '1px solid #caf0ca',
+                    }}
+                  >
+                    {success}
+                  </div>
+                )}
 
-              <div className="detail-group">
-                <div className="detail-label">最大上传大小 (MB)</div>
-                <div className="detail-value">
-                  <input
-                    type="number"
-                    step="1"
-                    min="1"
-                    value={maxSizeMb}
-                    onChange={(e) => setMaxSizeMb(e.target.value)}
-                    className="form-input"
-                    style={{ width: '200px' }}
-                    disabled={isSaving}
-                  />
-                  <small className="form-hint" style={{ display: 'block', marginTop: '4px' }}>
-                    范围：1 MB - 100 GB
-                  </small>
+                <div className="detail-group">
+                  <div className="detail-label">最大上传大小 (MB)</div>
+                  <div className="detail-value">
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={maxSizeMb}
+                      onChange={(e) => setMaxSizeMb(e.target.value)}
+                      className="form-input"
+                      style={{ width: '200px' }}
+                      disabled={isSaving}
+                    />
+                    <small className="form-hint" style={{ display: 'block', marginTop: '4px' }}>
+                      范围：1 MB - 100 GB
+                    </small>
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={isSaving || !hasChanges || !isValid}
-                >
-                  {isSaving ? '保存中...' : '保存'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={handleReset}
-                  disabled={isSaving || !hasChanges}
-                >
-                  重置
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      </section>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={isSaving || !hasChanges || !isValid}
+                  >
+                    {isSaving ? '保存中...' : '保存'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleReset}
+                    disabled={isSaving || !hasChanges}
+                  >
+                    重置
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </section>
+      )}
 
       {showCreateModal && (
         <div

@@ -192,7 +192,7 @@ export async function deleteWorkspace(workspaceId) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || '删除工作空间失败');
   }
-  return res.json();
+  return null;
 }
 
 export async function restoreWorkspace(workspaceId, newName) {
@@ -269,7 +269,7 @@ export async function removeWorkspaceMember(workspaceId, userId) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || '移除成员失败');
   }
-  return res.json();
+  return null;
 }
 
 export async function leaveWorkspace(workspaceId) {
@@ -280,5 +280,5 @@ export async function leaveWorkspace(workspaceId) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || '离开工作空间失败');
   }
-  return res.json();
+  return null;
 }

@@ -13,8 +13,8 @@ use tracing::info;
 use crate::{
     models::ErrorResponse,
     workspace::{
-        validate_workspace_name, CurrentWorkspaceResponse, WorkspaceMemberWithInfo,
-        WorkspaceResponse, WorkspaceWithMemberCount,
+        generate_deleted_workspace_name, validate_workspace_name, CurrentWorkspaceResponse,
+        WorkspaceMemberWithInfo, WorkspaceResponse, WorkspaceWithMemberCount,
     },
     AppState, AuthBackend, User,
 };
@@ -52,6 +52,53 @@ fn conflict(message: &str) -> Response {
 fn internal_err<E: std::fmt::Debug>(e: E) -> Response {
     tracing::error!(error = ?e, "Internal server error");
     err(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
+}
+
+#[allow(clippy::result_large_err)]
+fn with_detached_workspace_members<F>(
+    conn: &duckdb::Connection,
+    workspace_id: &str,
+    mut update_workspace_row: F,
+) -> ApiResult<()>
+where
+    F: FnMut(&duckdb::Connection) -> Result<(), duckdb::Error>,
+{
+    let mut member_stmt = conn
+        .prepare("SELECT user_id, joined_at FROM workspace_members WHERE workspace_id = ?")
+        .map_err(internal_err)?;
+    let members: Result<Vec<(String, String)>, _> = member_stmt
+        .query_map(duckdb::params![workspace_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(internal_err)?
+        .collect();
+    let members = members.map_err(internal_err)?;
+
+    conn.execute(
+        "DELETE FROM workspace_members WHERE workspace_id = ?",
+        duckdb::params![workspace_id],
+    )
+    .map_err(internal_err)?;
+
+    if let Err(update_err) = update_workspace_row(conn) {
+        for (member_user_id, joined_at) in &members {
+            let _ = conn.execute(
+                "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?)",
+                duckdb::params![workspace_id, member_user_id, joined_at],
+            );
+        }
+        return Err(internal_err(update_err));
+    }
+
+    for (member_user_id, joined_at) in &members {
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?)",
+            duckdb::params![workspace_id, member_user_id, joined_at],
+        )
+        .map_err(internal_err)?;
+    }
+
+    Ok(())
 }
 
 async fn require_user(auth_session: &AuthSession<AuthBackend>) -> ApiResult<User> {
@@ -612,11 +659,13 @@ pub async fn update_workspace(
         return Err(bad_req("工作空间名称已被使用"));
     }
 
-    conn.execute(
-        "UPDATE workspaces SET name = ? WHERE id = ?",
-        duckdb::params![&name, &workspace_id],
-    )
-    .map_err(internal_err)?;
+    with_detached_workspace_members(&conn, &workspace_id, |conn| {
+        conn.execute(
+            "UPDATE workspaces SET name = ? WHERE id = ?",
+            duckdb::params![&name, &workspace_id],
+        )?;
+        Ok(())
+    })?;
 
     info!(workspace_id = %workspace_id, name = %name, "Workspace updated");
 
@@ -631,16 +680,17 @@ pub async fn delete_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let workspace_info: Option<(String, bool)> = conn
+    let workspace_info: Option<(String, bool, String)> = conn
         .query_row(
-            "SELECT owner_id, is_personal FROM workspaces WHERE id = ?",
+            "SELECT owner_id, is_personal, name FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let (owner_id, is_personal) = workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
+    let (owner_id, is_personal, name) =
+        workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
 
     if user.id != owner_id {
         return Err(forbidden("Only workspace owner can delete workspace"));
@@ -651,12 +701,15 @@ pub async fn delete_workspace(
     }
 
     let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let archived_name = generate_deleted_workspace_name(&name, &workspace_id);
 
-    conn.execute(
-        "UPDATE workspaces SET deleted_at = ? WHERE id = ?",
-        duckdb::params![&now, &workspace_id],
-    )
-    .map_err(internal_err)?;
+    with_detached_workspace_members(&conn, &workspace_id, |conn| {
+        conn.execute(
+            "UPDATE workspaces SET deleted_at = ?, name = ? WHERE id = ?",
+            duckdb::params![&now, &archived_name, &workspace_id],
+        )?;
+        Ok(())
+    })?;
 
     info!(workspace_id = %workspace_id, deleted_by = %user.id, "Workspace deleted (soft)");
 
@@ -677,16 +730,16 @@ pub async fn restore_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let workspace_info: Option<(String, bool)> = conn
+    let workspace_info: Option<(String, bool, String)> = conn
         .query_row(
-            "SELECT owner_id, is_personal FROM workspaces WHERE id = ?",
+            "SELECT owner_id, is_personal, name FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let (owner_id, _is_personal) =
+    let (owner_id, _is_personal, current_name) =
         workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
 
     if user.id != owner_id {
@@ -708,33 +761,49 @@ pub async fn restore_workspace(
             return Err(bad_req("工作空间名称已被使用"));
         }
 
-        conn.execute(
-            "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
-            duckdb::params![&name, &workspace_id],
-        )
-        .map_err(internal_err)?;
+        with_detached_workspace_members(&conn, &workspace_id, |conn| {
+            conn.execute(
+                "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
+                duckdb::params![&name, &workspace_id],
+            )?;
+            Ok(())
+        })?;
 
         info!(workspace_id = %workspace_id, name = %name, "Workspace restored with new name");
 
         Ok(Json(json!({ "id": workspace_id, "name": name })))
     } else {
-        conn.execute(
-            "UPDATE workspaces SET deleted_at = NULL WHERE id = ?",
-            duckdb::params![&workspace_id],
-        )
-        .map_err(internal_err)?;
+        let archived_suffix = format!("_deleted_{}", workspace_id);
+        let restored_name = if let Some(original_name) = current_name.strip_suffix(&archived_suffix)
+        {
+            original_name.to_string()
+        } else {
+            current_name
+        };
 
-        let name: String = conn
+        let existing: i64 = conn
             .query_row(
-                "SELECT name FROM workspaces WHERE id = ?",
-                duckdb::params![&workspace_id],
+                "SELECT COUNT(*) FROM workspaces WHERE name = ? AND id != ? AND deleted_at IS NULL",
+                duckdb::params![&restored_name, &workspace_id],
                 |row| row.get(0),
             )
             .map_err(internal_err)?;
 
+        if existing > 0 {
+            return Err(bad_req("工作空间名称已被使用"));
+        }
+
+        with_detached_workspace_members(&conn, &workspace_id, |conn| {
+            conn.execute(
+                "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
+                duckdb::params![&restored_name, &workspace_id],
+            )?;
+            Ok(())
+        })?;
+
         info!(workspace_id = %workspace_id, "Workspace restored");
 
-        Ok(Json(json!({ "id": workspace_id, "name": name })))
+        Ok(Json(json!({ "id": workspace_id, "name": restored_name })))
     }
 }
 

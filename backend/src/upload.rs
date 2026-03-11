@@ -6,6 +6,7 @@ use axum::{
 };
 use axum_login::AuthSession;
 use chrono::Utc;
+use duckdb::OptionalExt;
 use std::path::Path;
 use tokio::{
     fs,
@@ -35,15 +36,45 @@ pub async fn upload_file(
                 "upload_file: user found, current_workspace_id: {:?}",
                 user.current_workspace_id
             );
-            user.current_workspace_id.clone().ok_or_else(|| {
+            let workspace_id = user.current_workspace_id.clone().ok_or_else(|| {
                 debug!("upload_file: no current workspace set for user");
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StatusCode::CONFLICT,
                     Json(ErrorResponse {
-                        error: "No current workspace set".to_string(),
+                        error: "No active workspace available, please switch workspace".to_string(),
                     }),
                 )
-            })?
+            })?;
+
+            let conn = state.db.lock().await;
+            let active_workspace: Option<String> = conn
+                .query_row(
+                    r"
+                    SELECT w.id
+                    FROM workspaces w
+                    JOIN workspace_members wm ON w.id = wm.workspace_id
+                    WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
+                    LIMIT 1
+                    ",
+                    duckdb::params![&workspace_id, &user.id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(internal_error)?;
+            drop(conn);
+
+            if active_workspace.is_none() {
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error:
+                            "Current workspace is archived or inaccessible, please switch workspace"
+                                .to_string(),
+                    }),
+                ));
+            }
+
+            workspace_id
         }
         None => {
             debug!("upload_file: no user in session, checking test mode");

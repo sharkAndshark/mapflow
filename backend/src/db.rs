@@ -256,8 +256,8 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             ON workspaces(deleted_at);
 
         CREATE TABLE IF NOT EXISTS workspace_members (
-            workspace_id VARCHAR NOT NULL,
-            user_id VARCHAR NOT NULL,
+            workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+            user_id VARCHAR NOT NULL REFERENCES users(id),
             joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (workspace_id, user_id)
         );
