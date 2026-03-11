@@ -14,7 +14,6 @@ use tower_sessions::session::{Id, Record};
 
 static TRACING_INIT: Once = Once::new();
 static TEST_MODE_INIT: Once = Once::new();
-static APP_SECRET_INIT: Once = Once::new();
 static APP_SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 #[derive(Debug, Clone)]
@@ -77,10 +76,7 @@ async fn setup_app() -> (
     let db_path = temp_dir.path().join("test.duckdb");
     let conn = init_database(&db_path);
 
-    APP_SECRET_INIT.call_once(|| {
-        APP_SECRET.get_or_init(|| "postgis-test-secret".to_string());
-    });
-    let secret = APP_SECRET.get().expect("APP_SECRET");
+    let secret = APP_SECRET.get_or_init(|| "postgis-test-secret".to_string());
     conn.execute(
         "INSERT INTO system_settings (key, value) VALUES ('app_secret', ?) ON CONFLICT (key) DO NOTHING",
         duckdb::params![secret],
