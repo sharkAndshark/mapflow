@@ -10,8 +10,8 @@
 - [x] 首次发布 `mapflow-preview`（当前先使用 nightly tag 滚动更新）
 - [x] 将 `Formula/mapflow-preview.rb` 提交到 tap 仓库并验证 `brew install sharkAndshark/mapflow/mapflow-preview`（tap smoke 已通过）
 - [x] Nightly 自动更新 tap（`update_homebrew_tap`），并限制仅 `main` 分支可推送
-- [ ] 规划从 nightly tag 切换到语义化 preview tag（例如 `v0.1.0-preview.1`）的窗口与策略
-- [ ] 发布回滚说明：如何 pin 到旧 preview 版本 + 升级前备份 `~/.mapflow`
+- [ ] 规划从 nightly tag 切换到语义化 preview tag（例如 `v0.1.0-preview.1`）的窗口与策略（跟踪：#162）
+- [ ] 发布回滚说明：如何 pin 到旧 preview 版本 + 升级前备份 `~/.mapflow`（跟踪：#162）
 
 ## Agent 接管执行清单（2026-03-02）
 
