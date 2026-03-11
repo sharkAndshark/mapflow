@@ -35,6 +35,7 @@ Windows 桌面集成:
 - 运行时按 `tile_source` 分流：DuckDB 本地表 vs PostGIS 远端查询（私有 `/api/files/:id/tiles/...` 与公开 `/tiles/:slug/...`）
 - 凭据存储：使用 `system_settings.app_secret` 派生密钥，对 PostGIS 密码做 AES-GCM 加密后写入 DuckDB
 - 启动引导：`backend.exe` 与 `mapflow-desktop.exe` 都会先确保 `system_settings.app_secret` 存在（缺失时自动生成并持久化）
+- 安全边界（显式 tradeoff）：`app_secret` 与密文同库持久化，目标是“防止日志/界面明文泄露”和“避免重启后凭据失效”；**不防御**“DuckDB 文件泄露”场景。即：若数据库文件被拷贝/读取，应视为 PostGIS 凭据同时失陷（`DB compromise == credential compromise`）。
 
 ## 系统韧性
 
