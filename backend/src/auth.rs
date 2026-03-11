@@ -35,6 +35,51 @@ impl AuthBackend {
     pub fn new(db: Arc<Mutex<duckdb::Connection>>) -> Self {
         Self { db }
     }
+
+    fn resolve_current_workspace_id(
+        conn: &duckdb::Connection,
+        user_id: &str,
+        preferred_workspace_id: Option<String>,
+    ) -> Result<Option<String>, AuthError> {
+        if let Some(workspace_id) = preferred_workspace_id {
+            let workspace_exists: Option<String> = conn
+                .query_row(
+                    r"
+                    SELECT w.id
+                    FROM workspaces w
+                    JOIN workspace_members wm ON w.id = wm.workspace_id
+                    WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
+                    LIMIT 1
+                    ",
+                    duckdb::params![&workspace_id, user_id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| AuthError::Database(e.to_string()))?;
+
+            if workspace_exists.is_some() {
+                return Ok(Some(workspace_id));
+            }
+        }
+
+        let fallback_workspace_id: Option<String> = conn
+            .query_row(
+                r"
+                SELECT w.id
+                FROM workspaces w
+                JOIN workspace_members wm ON w.id = wm.workspace_id
+                WHERE wm.user_id = ? AND w.deleted_at IS NULL
+                ORDER BY w.is_personal DESC, w.created_at ASC
+                LIMIT 1
+                ",
+                duckdb::params![user_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        Ok(fallback_workspace_id)
+    }
 }
 
 #[derive(Debug)]
@@ -71,7 +116,9 @@ impl AuthnBackend for AuthBackend {
         let conn = self.db.lock().await;
 
         let mut stmt = conn
-            .prepare("SELECT id, username, password_hash, role FROM users WHERE username = ?")
+            .prepare(
+                "SELECT id, username, password_hash, role, current_workspace_id FROM users WHERE username = ?",
+            )
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
         let user_result = stmt
@@ -81,7 +128,7 @@ impl AuthnBackend for AuthBackend {
                     username: row.get(1)?,
                     password_hash: row.get(2)?,
                     role: row.get(3)?,
-                    current_workspace_id: None,
+                    current_workspace_id: row.get(4)?,
                 })
             })
             .optional()
@@ -92,25 +139,11 @@ impl AuthnBackend for AuthBackend {
                 .map_err(|e| AuthError::PasswordHash(e.to_string()))?;
 
             if is_valid {
-                let workspace_id: Option<String> = conn
-                    .query_row(
-                        r"
-                        SELECT w.id
-                        FROM workspaces w
-                        JOIN workspace_members wm ON w.id = wm.workspace_id
-                        WHERE wm.user_id = ? AND w.deleted_at IS NULL
-                        ORDER BY w.is_personal DESC, w.created_at ASC
-                        LIMIT 1
-                        ",
-                        duckdb::params![&user.id],
-                        |row| row.get(0),
-                    )
-                    .optional()
-                    .map_err(|e| AuthError::Database(e.to_string()))?;
-
-                if let Some(wid) = workspace_id {
-                    user.current_workspace_id = Some(wid);
-                }
+                user.current_workspace_id = Self::resolve_current_workspace_id(
+                    &conn,
+                    &user.id,
+                    user.current_workspace_id.clone(),
+                )?;
 
                 Ok(Some(user))
             } else {
@@ -134,7 +167,9 @@ impl AuthnBackend for AuthBackend {
         let conn = self.db.lock().await;
 
         let mut stmt = conn
-            .prepare("SELECT id, username, password_hash, role FROM users WHERE id = ?")
+            .prepare(
+                "SELECT id, username, password_hash, role, current_workspace_id FROM users WHERE id = ?",
+            )
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
         let user_result = stmt
@@ -144,32 +179,18 @@ impl AuthnBackend for AuthBackend {
                     username: row.get(1)?,
                     password_hash: row.get(2)?,
                     role: row.get(3)?,
-                    current_workspace_id: None,
+                    current_workspace_id: row.get(4)?,
                 })
             })
             .optional()
             .map_err(|e: duckdb::Error| AuthError::Database(e.to_string()))?;
 
         if let Some(mut user) = user_result {
-            let workspace_id: Option<String> = conn
-                .query_row(
-                    r"
-                    SELECT w.id
-                    FROM workspaces w
-                    JOIN workspace_members wm ON w.id = wm.workspace_id
-                    WHERE wm.user_id = ? AND w.deleted_at IS NULL
-                    ORDER BY w.is_personal DESC, w.created_at ASC
-                    LIMIT 1
-                    ",
-                    duckdb::params![&user.id],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(|e| AuthError::Database(e.to_string()))?;
-
-            if let Some(wid) = workspace_id {
-                user.current_workspace_id = Some(wid);
-            }
+            user.current_workspace_id = Self::resolve_current_workspace_id(
+                &conn,
+                &user.id,
+                user.current_workspace_id.clone(),
+            )?;
 
             Ok(Some(user))
         } else {
@@ -268,6 +289,70 @@ mod tests {
 
         assert_eq!(user.username, "get_user_test");
         assert_eq!(user.role, "admin");
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_prefers_persisted_current_workspace() {
+        let (backend, _temp_dir) = create_test_backend().await;
+        create_test_user(
+            &backend,
+            "auth_prefers_persisted_workspace",
+            "Test123!@#",
+            "admin",
+        )
+        .await;
+
+        let conn = backend.db.lock().await;
+        let user_id: String = conn
+            .query_row(
+                "SELECT id FROM users WHERE username = ?",
+                duckdb::params!["auth_prefers_persisted_workspace"],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let personal_workspace_id = "ws-personal-auth";
+        let team_workspace_id = "ws-team-auth";
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP)",
+            duckdb::params![personal_workspace_id, "Personal", &user_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP)",
+            duckdb::params![team_workspace_id, "Team", &user_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![personal_workspace_id, &user_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![team_workspace_id, &user_id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+            duckdb::params![team_workspace_id, &user_id],
+        )
+        .unwrap();
+        drop(conn);
+
+        let user = backend
+            .authenticate((
+                "auth_prefers_persisted_workspace".to_string(),
+                "Test123!@#".to_string(),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            user.current_workspace_id.as_deref(),
+            Some(team_workspace_id)
+        );
     }
 
     #[tokio::test]

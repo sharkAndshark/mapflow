@@ -6210,3 +6210,206 @@ async fn test_settings_persisted_to_database() {
         .unwrap();
     assert_eq!(value, "50");
 }
+
+#[tokio::test]
+async fn test_auth_check_includes_user_id() {
+    ensure_test_mode();
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("auth-check.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let cookie = create_user_and_session(&app, db.clone(), "user-auth-1", "alice", "admin").await;
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-auth-1", "Alice Personal", "user-auth-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-auth-1", "user-auth-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+            duckdb::params!["ws-auth-1", "user-auth-1"],
+        )
+        .unwrap();
+    }
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/check")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(payload["id"], "user-auth-1");
+    assert_eq!(payload["current_workspace"]["id"], "ws-auth-1");
+}
+
+#[tokio::test]
+async fn test_switch_workspace_persists_to_user_profile() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("switch-workspace.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie =
+        create_user_and_session(&app, db.clone(), "user-switch-1", "switcher", "admin").await;
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-personal-switch", "Personal", "user-switch-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-team-switch", "Team", "user-switch-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-personal-switch", "user-switch-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-team-switch", "user-switch-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+            duckdb::params!["ws-personal-switch", "user-switch-1"],
+        )
+        .unwrap();
+    }
+
+    let request = Request::builder()
+        .method("PUT")
+        .uri("/api/workspaces/current")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"workspaceId":"ws-team-switch"}"#))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let conn = db.lock().await;
+    let current_workspace_id: Option<String> = conn
+        .query_row(
+            "SELECT current_workspace_id FROM users WHERE id = ?",
+            duckdb::params!["user-switch-1"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(current_workspace_id.as_deref(), Some("ws-team-switch"));
+}
+
+#[tokio::test]
+async fn test_files_api_rejects_archived_current_workspace() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("archived-current-workspace.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie =
+        create_user_and_session(&app, db.clone(), "user-archived-1", "archiver", "admin").await;
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, deleted_at, created_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-archived-current", "Archived", "user-archived-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-archived-current", "user-archived-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+            duckdb::params!["ws-archived-current", "user-archived-1"],
+        )
+        .unwrap();
+    }
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/files")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let error: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    let message = error["error"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("archived or inaccessible")
+            || message.contains("No active workspace available")
+    );
+}

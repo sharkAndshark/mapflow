@@ -523,7 +523,7 @@ pub async fn switch_workspace(
 
     let workspace_info: Option<(String, bool)> = conn
         .query_row(
-            "SELECT name, is_personal FROM workspaces WHERE id = ?",
+            "SELECT name, is_personal FROM workspaces WHERE id = ? AND deleted_at IS NULL",
             duckdb::params![&req.workspace_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -531,6 +531,12 @@ pub async fn switch_workspace(
         .map_err(internal_err)?;
 
     let (name, is_personal) = workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
+
+    conn.execute(
+        "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+        duckdb::params![&req.workspace_id, &user.id],
+    )
+    .map_err(internal_err)?;
 
     let updated_user = crate::User {
         id: user.id.clone(),
@@ -808,21 +814,43 @@ pub async fn get_current_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let workspace_info: Option<(String, String, bool)> = conn
-        .query_row(
-            r"
+    let workspace_info: Option<(String, String, bool)> =
+        if let Some(current_workspace_id) = &user.current_workspace_id {
+            conn.query_row(
+                r"
             SELECT w.id, w.name, w.is_personal
             FROM workspaces w
             JOIN workspace_members wm ON w.id = wm.workspace_id
-            WHERE wm.user_id = ? AND w.deleted_at IS NULL
-            ORDER BY w.is_personal DESC, w.created_at ASC
+            WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
             LIMIT 1
             ",
-            duckdb::params![&user.id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()
-        .map_err(internal_err)?;
+                duckdb::params![current_workspace_id, &user.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(internal_err)?
+        } else {
+            None
+        };
+
+    let workspace_info = match workspace_info {
+        Some(info) => Some(info),
+        None => conn
+            .query_row(
+                r"
+                SELECT w.id, w.name, w.is_personal
+                FROM workspaces w
+                JOIN workspace_members wm ON w.id = wm.workspace_id
+                WHERE wm.user_id = ? AND w.deleted_at IS NULL
+                ORDER BY w.is_personal DESC, w.created_at ASC
+                LIMIT 1
+                ",
+                duckdb::params![&user.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(internal_err)?,
+    };
 
     match workspace_info {
         Some((id, name, is_personal)) => Ok(Json(CurrentWorkspaceResponse {

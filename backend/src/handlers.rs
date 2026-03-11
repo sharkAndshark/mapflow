@@ -61,14 +61,46 @@ async fn get_workspace_id(
     state: &AppState,
 ) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
     match &auth_session.user {
-        Some(user) => user.current_workspace_id.clone().ok_or_else(|| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "No current workspace set".to_string(),
-                }),
-            )
-        }),
+        Some(user) => {
+            let workspace_id = user.current_workspace_id.clone().ok_or_else(|| {
+                (
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "No active workspace available, please switch workspace".to_string(),
+                    }),
+                )
+            })?;
+
+            let conn = state.db.lock().await;
+            let active_workspace: Option<String> = conn
+                .query_row(
+                    r"
+                    SELECT w.id
+                    FROM workspaces w
+                    JOIN workspace_members wm ON w.id = wm.workspace_id
+                    WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
+                    LIMIT 1
+                    ",
+                    duckdb::params![&workspace_id, &user.id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(internal_error)?;
+            drop(conn);
+
+            if active_workspace.is_none() {
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error:
+                            "Current workspace is archived or inaccessible, please switch workspace"
+                                .to_string(),
+                    }),
+                ));
+            }
+
+            Ok(workspace_id)
+        }
         None => {
             if std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1") {
                 let conn = state.db.lock().await;

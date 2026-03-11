@@ -28,6 +28,7 @@ pub struct InitRequest {
 
 #[derive(Debug, Serialize)]
 pub struct LoginResponse {
+    id: String,
     username: String,
     role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -117,6 +118,7 @@ async fn login(
     };
 
     Ok(Json(LoginResponse {
+        id: user.id,
         username: user.username,
         role: user.role,
         current_workspace,
@@ -158,6 +160,7 @@ async fn check_auth(
             };
 
             Json(LoginResponse {
+                id: user.id,
                 username: user.username,
                 role: user.role,
                 current_workspace,
