@@ -6496,6 +6496,65 @@ async fn test_delete_workspace_releases_name_for_recreate() {
 }
 
 #[tokio::test]
+async fn test_restore_active_workspace_returns_400() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("restore-active-workspace.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie =
+        create_user_and_session(&app, db.clone(), "user-restore-1", "restorer", "admin").await;
+
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Restore Active Test"}"#))
+        .unwrap();
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    assert_eq!(create_response.status(), axum::http::StatusCode::CREATED);
+    let create_body = create_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created_workspace: serde_json::Value = serde_json::from_slice(&create_body).unwrap();
+    let workspace_id = created_workspace["id"].as_str().unwrap();
+
+    let restore_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/workspaces/{}/restore", workspace_id))
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let restore_response = app.oneshot(restore_request).await.unwrap();
+    assert_eq!(
+        restore_response.status(),
+        axum::http::StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
 async fn test_upload_rejects_archived_current_workspace() {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");

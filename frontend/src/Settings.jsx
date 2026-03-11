@@ -42,6 +42,12 @@ export default function Settings() {
   const [inviteError, setInviteError] = useState('');
   const [isInviting, setIsInviting] = useState(false);
 
+  async function refreshWorkspaces() {
+    const [ws, archived] = await Promise.all([listWorkspaces(), listArchivedWorkspaces()]);
+    setWorkspaces(ws);
+    setArchivedWorkspaces(archived);
+  }
+
   useEffect(() => {
     if (!user) return;
     if (user.role !== 'admin') {
@@ -175,9 +181,8 @@ export default function Settings() {
 
   async function handleRestoreWorkspace(workspaceId) {
     try {
-      const ws = await restoreWorkspace(workspaceId);
-      setArchivedWorkspaces(archivedWorkspaces.filter((w) => w.id !== workspaceId));
-      setWorkspaces([...workspaces, ws]);
+      await restoreWorkspace(workspaceId);
+      await refreshWorkspaces();
     } catch (err) {
       const message = err.message || '恢复失败';
       const isNameConflict = message.includes('名称已被使用');
@@ -197,9 +202,8 @@ export default function Settings() {
       }
 
       try {
-        const ws = await restoreWorkspace(workspaceId, newName);
-        setArchivedWorkspaces(archivedWorkspaces.filter((w) => w.id !== workspaceId));
-        setWorkspaces([...workspaces, ws]);
+        await restoreWorkspace(workspaceId, newName);
+        await refreshWorkspaces();
       } catch (retryErr) {
         alert(retryErr.message || '恢复失败');
       }
@@ -398,13 +402,15 @@ export default function Settings() {
                     删除于 {ws.deletedAt ? new Date(ws.deletedAt).toLocaleString() : '未知'}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => handleRestoreWorkspace(ws.id)}
-                >
-                  恢复
-                </button>
+                {ws.ownerId === user.id && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => handleRestoreWorkspace(ws.id)}
+                  >
+                    恢复
+                  </button>
+                )}
               </div>
             ))}
           </div>

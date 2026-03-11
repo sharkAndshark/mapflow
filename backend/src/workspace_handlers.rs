@@ -730,20 +730,24 @@ pub async fn restore_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let workspace_info: Option<(String, bool, String)> = conn
+    let workspace_info: Option<(String, bool, String, Option<String>)> = conn
         .query_row(
-            "SELECT owner_id, is_personal, name FROM workspaces WHERE id = ?",
+            "SELECT owner_id, is_personal, name, deleted_at FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let (owner_id, _is_personal, current_name) =
+    let (owner_id, _is_personal, current_name, deleted_at) =
         workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
 
     if user.id != owner_id {
         return Err(forbidden("Only workspace owner can restore workspace"));
+    }
+
+    if deleted_at.is_none() {
+        return Err(bad_req("工作空间未删除"));
     }
 
     if let Some(new_name) = &req.name {
