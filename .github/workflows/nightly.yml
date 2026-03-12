@@ -20,6 +20,7 @@ jobs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
       release_name: ${{ steps.meta.outputs.release_name }}
       release_version: ${{ steps.meta.outputs.release_version }}
+      deb_version: ${{ steps.meta.outputs.deb_version }}
       stamp: ${{ steps.meta.outputs.stamp }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
       owner_lc: ${{ steps.meta.outputs.owner_lc }}
@@ -37,6 +38,7 @@ jobs:
           echo "owner_lc=${owner_lc}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
           echo "release_version=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "deb_version=0.0.0~nightly.${stamp}+${short_sha}.r${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "release_name=Nightly ${stamp} (${short_sha})" >> "$GITHUB_OUTPUT"
 
   verify:
@@ -112,10 +114,10 @@ jobs:
           echo "archive_url=${url}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build image (smoke)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -217,6 +219,14 @@ jobs:
             --binary "target/${{ matrix.rust_target }}/release/backend${{ matrix.os == 'windows-latest' && '.exe' || '' }}" \
             --port 3010
 
+      - name: Smoke test graceful shutdown (Unix SIGHUP)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          bash scripts/smoke/smoke-graceful-shutdown.sh \
+            --binary "target/${{ matrix.rust_target }}/release/backend" \
+            --port 3011
+
       - name: Package bundle
         shell: bash
         run: |
@@ -233,6 +243,45 @@ jobs:
             "${bundle_binary}" \
             "release-assets"
 
+      - name: Package deb (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/release/package_deb.sh \
+            "${{ needs.meta.outputs.deb_version }}" \
+            "${{ matrix.artifact_id }}" \
+            "target/${{ matrix.rust_target }}/release/backend" \
+            "release-assets"
+
+      - name: Verify deb package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb_path="$(ls release-assets/*.deb | head -n 1)"
+          dpkg-deb --info "${deb_path}" >/dev/null
+          contents="$(dpkg-deb --contents "${deb_path}")"
+          grep -q "./usr/bin/mapflow" <<<"${contents}"
+          grep -q "./usr/share/mapflow/spatial-extension-manifest.json" <<<"${contents}"
+          grep -q "./usr/share/doc/mapflow/README.md" <<<"${contents}"
+          grep -q "./usr/share/doc/mapflow/LICENSE" <<<"${contents}"
+          grep -q "./usr/share/doc/mapflow/NOTICE" <<<"${contents}"
+
+      - name: Smoke test installed deb (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb_path="$(ls release-assets/*.deb | head -n 1)"
+          cleanup() {
+            sudo dpkg -r mapflow >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          sudo dpkg -i "${deb_path}"
+          /usr/bin/mapflow --version
+          bash scripts/smoke/smoke-binary.sh --binary /usr/bin/mapflow --port 3317
+
       - name: Upload binary bundle
         uses: actions/upload-artifact@v7
         with:
@@ -240,6 +289,7 @@ jobs:
           path: |
             release-assets/*.tar.gz
             release-assets/*.zip
+            release-assets/*.deb
 
   docker_build:
     needs:
@@ -270,10 +320,10 @@ jobs:
           echo "name=ghcr.io/${owner_lc}/mapflow" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -289,7 +339,7 @@ jobs:
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -333,10 +383,10 @@ jobs:
           path: /tmp/digests
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -344,7 +394,7 @@ jobs:
 
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
@@ -403,3 +453,35 @@ jobs:
           files: |
             release-assets/**/*.tar.gz
             release-assets/**/*.zip
+            release-assets/**/*.deb
+
+  update_homebrew_tap:
+    runs-on: ubuntu-latest
+    needs:
+      - github_release
+      - meta
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Generate formula
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash scripts/release/generate_homebrew_formula.sh \
+            --repo ${{ github.repository }} \
+            --tag ${{ needs.meta.outputs.release_tag }} \
+            --output /tmp/mapflow-preview.rb
+
+      - name: Update tap repository
+        run: |
+          git clone https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/sharkAndshark/homebrew-mapflow.git /tmp/tap
+          cd /tmp/tap
+          mkdir -p Formula
+          cp /tmp/mapflow-preview.rb Formula/mapflow-preview.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/mapflow-preview.rb
+          git commit -m "Update mapflow-preview to ${{ needs.meta.outputs.release_tag }}" || echo "No changes to commit"
+          git push

@@ -138,31 +138,48 @@ async fn main() -> Result<()> {
         Err(e) => tracing::warn!(error = %e, "Failed to reconcile processing files on startup"),
     }
 
-    let mut app = backend::build_api_router(state.clone());
-
     let web_dist = std::env::var("WEB_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
     let web_dist_path = PathBuf::from(&web_dist);
-    if web_dist_path.exists() {
+    let public_viewer_available = backend::detect_public_viewer_available(&web_dist_path);
+    backend::set_public_viewer_available(public_viewer_available);
+    let web_dist_index = web_dist_path.join("index.html");
+
+    let mut app = backend::build_api_router(state.clone());
+
+    if web_dist_index.is_file() {
         tracing::info!(web_dist = %web_dist, "Serving static files");
-        let index_path = web_dist_path.join("index.html");
         app = app.fallback_service(
-            ServeDir::new(&web_dist_path).not_found_service(ServeFile::new(index_path)),
+            ServeDir::new(&web_dist_path).not_found_service(ServeFile::new(web_dist_index)),
         );
     } else {
         #[cfg(feature = "embed-web-dist")]
         {
-            tracing::info!(
-                web_dist = %web_dist,
-                "WEB_DIST not found, serving embedded frontend bundle"
-            );
-            app = app.fallback(backend::serve_embedded_spa);
+            if backend::embedded_spa_available() {
+                if web_dist_path.exists() {
+                    tracing::warn!(
+                        web_dist = %web_dist,
+                        "WEB_DIST exists but index.html is missing, serving embedded frontend bundle"
+                    );
+                } else {
+                    tracing::info!(
+                        web_dist = %web_dist,
+                        "WEB_DIST not found, serving embedded frontend bundle"
+                    );
+                }
+                app = app.fallback(backend::serve_embedded_spa);
+            } else {
+                tracing::warn!(
+                    web_dist = %web_dist,
+                    "Embedded frontend bundle is unavailable; frontend routes unavailable"
+                );
+            }
         }
 
         #[cfg(not(feature = "embed-web-dist"))]
         {
             tracing::warn!(
                 web_dist = %web_dist,
-                "WEB_DIST not found and embedded frontend disabled; frontend routes unavailable"
+                "WEB_DIST is missing index.html and embedded frontend is disabled; frontend routes unavailable"
             );
         }
     }
@@ -224,8 +241,19 @@ async fn shutdown_signal() {
             .await;
     };
 
+    #[cfg(unix)]
+    let hangup = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+    };
+
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
+
+    #[cfg(not(unix))]
+    let hangup = std::future::pending::<()>();
 
     #[cfg(windows)]
     let console_close = windows_console::wait_for_close_signal();
@@ -236,6 +264,7 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+        _ = hangup => {},
         _ = console_close => {},
     }
 }

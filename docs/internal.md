@@ -41,9 +41,10 @@ Windows 桌面集成:
 
 - **启动恢复**：先按 DuckDB 默认流程 replay WAL；若 open/replay 报 WAL 相关错误，则将 WAL 备份为 `*.wal.bak.<ts>` 后重试启动（`db::open_with_wal_recovery`）。可用 `WAL_RECOVERY_STRICT=1` 禁用自动隔离。
 - **优雅关闭**：
-  - Unix: SIGINT/SIGTERM 时执行 CHECKPOINT 刷入数据
+  - Unix: SIGINT/SIGTERM/SIGHUP 时执行 CHECKPOINT 刷入数据
   - Windows desktop: 托盘"退出"菜单触发优雅关闭（发布默认入口）
   - Windows console: Ctrl+C/控制台关闭事件触发优雅关闭尝试（开发/CI 入口）
+  - macOS user service: 可选通过 `scripts/macos/launchd-install.sh` 以 LaunchAgent 托管，避免终端窗口生命周期影响
 
 ## 认证
 
@@ -56,6 +57,13 @@ Axum 0.8, axum-login, tower-sessions, DuckDB, OpenLayers
 ## 发布基础设施
 
 - Stable：`v*` tag 触发，发布 GHCR 多架构镜像与二进制 bundle 资产
-- Nightly：每日 UTC 02:00 自动触发（也支持手动触发），发布 prerelease 与 nightly 镜像标签
+- Nightly：每日 UTC 02:00 自动触发（也支持手动触发)，发布 prerelease 与 nightly 镜像标签
+- Linux 额外发布 `.deb`（amd64/arm64）用于系统安装分发（Phase 1 不含 systemd 集成）
 - 二进制发布产物内嵌 `spatial.duckdb_extension`（按目标平台编译时注入），支持离线启动
 - Windows 发布包仅暴露 desktop 入口（`mapflow-desktop.exe`），console 入口保留给开发/CI
+- **Homebrew Preview**：Nightly 自动更新 tap 仓库 (`sharkAndshark/homebrew-mapflow`)
+  - 固定版本 formula，指向 nightly（后续可切到 preview tag）
+  - 仅 `main` 分支的 nightly（schedule/workflow_dispatch）允许推送 tap，避免 feature 分支污染发布通道
+  - 允许破坏性变更，不保证升级兼容
+  - 手动兜底命令：`bash scripts/release/generate_homebrew_formula.sh --repo sharkAndshark/mapflow --tag <tag>`
+  - 用户安装：`brew tap sharkAndshark/mapflow && brew install mapflow-preview`
