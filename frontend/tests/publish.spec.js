@@ -168,7 +168,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
 
   const readySidebar = page.locator('.detail-sidebar');
   // Switch to Publish tab
-  await readySidebar.getByText('Publish', { exact: true }).click();
+  await readySidebar.getByTestId('detail-tab-publish').click();
   await expect(readySidebar.getByTestId('published-status')).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
@@ -234,7 +234,7 @@ test('publish PMTiles file exposes working iframe embed', async ({
 
   const sidebar = page.locator('.detail-sidebar');
   await expect(sidebar).toBeVisible();
-  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByTestId('detail-tab-publish').click();
   await sidebar.getByTestId('publish-button').click();
 
   const slugInput = sidebar.getByTestId('publish-slug-input');
@@ -337,7 +337,7 @@ test('PMTiles docs code falls back to archive zoom bounds when publish zoom is u
   await row.click();
 
   const sidebar = page.locator('.detail-sidebar');
-  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByTestId('detail-tab-publish').click();
   await sidebar.getByTestId('publish-button').click();
   await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-default-zoom');
   await sidebar.getByTestId('confirm-publish-button').click();
@@ -475,7 +475,7 @@ test('publish PMTiles with one zoom edit keeps the other bound unset', async ({
     publishPayload = route.request().postDataJSON();
     await route.continue();
   });
-  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByTestId('detail-tab-publish').click();
   await sidebar.getByTestId('publish-button').click();
   await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-min-only');
   const publishZoomInputs = sidebar.locator('input[type="number"]');
@@ -537,7 +537,7 @@ test('publish PMTiles with only max zoom edit keeps min bound unset', async ({
     publishPayload = route.request().postDataJSON();
     await route.continue();
   });
-  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByTestId('detail-tab-publish').click();
   await sidebar.getByTestId('publish-button').click();
   await sidebar.getByTestId('publish-slug-input').fill('my-pmtiles-max-only');
   const publishZoomInputs = sidebar.locator('input[type="number"]');
@@ -581,7 +581,7 @@ test('publish with default slug (empty input)', async ({ page }) => {
   await expect(sidebar).toBeVisible();
 
   // Switch to Publish tab
-  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByTestId('detail-tab-publish').click();
 
   const publishButton = sidebar.getByTestId('publish-button');
   await publishButton.click();
@@ -610,7 +610,7 @@ test('slug validation: invalid characters', async ({ page }) => {
   await expect(sidebar).toBeVisible();
 
   // Switch to Publish tab
-  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByTestId('detail-tab-publish').click();
 
   const publishButton = sidebar.getByTestId('publish-button');
   await publishButton.click();
@@ -643,7 +643,7 @@ test('slug validation: too long', async ({ page }) => {
   await expect(sidebar).toBeVisible();
 
   // Switch to Publish tab
-  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByTestId('detail-tab-publish').click();
 
   const publishButton = sidebar.getByTestId('publish-button');
   await publishButton.click();
