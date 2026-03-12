@@ -41,6 +41,7 @@ export default function Settings() {
   const [inviteUsername, setInviteUsername] = useState('');
   const [inviteError, setInviteError] = useState('');
   const [isInviting, setIsInviting] = useState(false);
+  const inviteFeatureAvailable = false;
 
   async function refreshWorkspaces() {
     const [ws, archived] = await Promise.all([listWorkspaces(), listArchivedWorkspaces()]);
@@ -581,26 +582,42 @@ export default function Settings() {
           >
             <h3 style={{ marginBottom: '16px' }}>成员管理 - {selectedWorkspace.name}</h3>
 
-            <form onSubmit={handleInviteMember} style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  value={inviteUsername}
-                  onChange={(e) => setInviteUsername(e.target.value)}
-                  className="form-input"
-                  style={{ flex: 1 }}
-                  placeholder="输入用户名邀请..."
-                />
-                <button type="submit" className="btn-primary" disabled={isInviting}>
-                  {isInviting ? '邀请中...' : '邀请'}
-                </button>
-              </div>
-              {inviteError && (
-                <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '8px' }}>
-                  {inviteError}
+            {inviteFeatureAvailable ? (
+              <form onSubmit={handleInviteMember} style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={inviteUsername}
+                    onChange={(e) => setInviteUsername(e.target.value)}
+                    className="form-input"
+                    style={{ flex: 1 }}
+                    placeholder="输入用户名邀请..."
+                  />
+                  <button type="submit" className="btn-primary" disabled={isInviting}>
+                    {isInviting ? '邀请中...' : '邀请'}
+                  </button>
                 </div>
-              )}
-            </form>
+                {inviteError && (
+                  <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '8px' }}>
+                    {inviteError}
+                  </div>
+                )}
+              </form>
+            ) : (
+              <div
+                style={{
+                  marginBottom: '20px',
+                  padding: '10px 12px',
+                  background: '#f8f9fa',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  color: '#495057',
+                }}
+              >
+                当前版本尚不支持新增用户，邀请成员功能暂未开放。
+              </div>
+            )}
 
             <div style={{ marginBottom: '8px', fontWeight: 500 }}>当前成员 ({members.length})</div>
             {membersLoading ? (

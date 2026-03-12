@@ -6611,6 +6611,142 @@ async fn test_create_workspace_duplicate_name_returns_409() {
 }
 
 #[tokio::test]
+async fn test_update_workspace_maps_unique_conflict_to_400() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir
+        .path()
+        .join("workspace-update-unique-conflict.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-update-conflict-1",
+        "updateconflict",
+        "admin",
+    )
+    .await;
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-update-source", "Source Team", "user-update-conflict-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-update-source", "user-update-conflict-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, deleted_at, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-update-archived", "Target Team", "user-update-conflict-1"],
+        )
+        .unwrap();
+    }
+
+    let request = Request::builder()
+        .method("PUT")
+        .uri("/api/workspaces/ws-update-source")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Target Team"}"#))
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["error"], "工作空间名称已被使用");
+}
+
+#[tokio::test]
+async fn test_restore_workspace_maps_unique_conflict_to_400() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir
+        .path()
+        .join("workspace-restore-unique-conflict.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-restore-conflict-1",
+        "restoreconflict",
+        "admin",
+    )
+    .await;
+
+    let restore_workspace_id = "ws-restore-source";
+    let restore_original_name = "Restore Team";
+    let archived_restore_name =
+        format!("{}_deleted_{}", restore_original_name, restore_workspace_id);
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, deleted_at, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            duckdb::params![restore_workspace_id, &archived_restore_name, "user-restore-conflict-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, deleted_at, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-restore-archived-conflict", restore_original_name, "user-restore-conflict-1"],
+        )
+        .unwrap();
+    }
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/workspaces/{}/restore", restore_workspace_id))
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["error"], "工作空间名称已被使用");
+}
+
+#[tokio::test]
 async fn test_switch_workspace_nonexistent_returns_404() {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");

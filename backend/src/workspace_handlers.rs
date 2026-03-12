@@ -54,14 +54,45 @@ fn internal_err<E: std::fmt::Debug>(e: E) -> Response {
     err(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
 }
 
+fn is_unique_constraint_error(err: &duckdb::Error) -> bool {
+    let err_msg = err.to_string();
+    err_msg.contains("UNIQUE") || err_msg.contains("unique")
+}
+
+fn workspace_name_conflict_or_internal(err: duckdb::Error) -> Response {
+    if is_unique_constraint_error(&err) {
+        return bad_req("工作空间名称已被使用");
+    }
+    internal_err(err)
+}
+
 #[allow(clippy::result_large_err)]
 fn with_detached_workspace_members<F>(
     conn: &duckdb::Connection,
     workspace_id: &str,
-    mut update_workspace_row: F,
+    update_workspace_row: F,
 ) -> ApiResult<()>
 where
     F: FnMut(&duckdb::Connection) -> Result<(), duckdb::Error>,
+{
+    with_detached_workspace_members_with_error_mapper(
+        conn,
+        workspace_id,
+        update_workspace_row,
+        internal_err,
+    )
+}
+
+#[allow(clippy::result_large_err)]
+fn with_detached_workspace_members_with_error_mapper<F, M>(
+    conn: &duckdb::Connection,
+    workspace_id: &str,
+    mut update_workspace_row: F,
+    mut map_update_err: M,
+) -> ApiResult<()>
+where
+    F: FnMut(&duckdb::Connection) -> Result<(), duckdb::Error>,
+    M: FnMut(duckdb::Error) -> Response,
 {
     let mut member_stmt = conn
         .prepare("SELECT user_id, joined_at FROM workspace_members WHERE workspace_id = ?")
@@ -87,7 +118,7 @@ where
                 duckdb::params![workspace_id, member_user_id, joined_at],
             );
         }
-        return Err(internal_err(update_err));
+        return Err(map_update_err(update_err));
     }
 
     for (member_user_id, joined_at) in &members {
@@ -677,13 +708,18 @@ pub async fn update_workspace(
         return Err(bad_req("工作空间名称已被使用"));
     }
 
-    with_detached_workspace_members(&conn, &workspace_id, |conn| {
-        conn.execute(
-            "UPDATE workspaces SET name = ? WHERE id = ?",
-            duckdb::params![&name, &workspace_id],
-        )?;
-        Ok(())
-    })?;
+    with_detached_workspace_members_with_error_mapper(
+        &conn,
+        &workspace_id,
+        |conn| {
+            conn.execute(
+                "UPDATE workspaces SET name = ? WHERE id = ?",
+                duckdb::params![&name, &workspace_id],
+            )?;
+            Ok(())
+        },
+        workspace_name_conflict_or_internal,
+    )?;
 
     info!(workspace_id = %workspace_id, name = %name, "Workspace updated");
 
@@ -787,13 +823,18 @@ pub async fn restore_workspace(
             return Err(bad_req("工作空间名称已被使用"));
         }
 
-        with_detached_workspace_members(&conn, &workspace_id, |conn| {
-            conn.execute(
-                "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
-                duckdb::params![&name, &workspace_id],
-            )?;
-            Ok(())
-        })?;
+        with_detached_workspace_members_with_error_mapper(
+            &conn,
+            &workspace_id,
+            |conn| {
+                conn.execute(
+                    "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
+                    duckdb::params![&name, &workspace_id],
+                )?;
+                Ok(())
+            },
+            workspace_name_conflict_or_internal,
+        )?;
 
         info!(workspace_id = %workspace_id, name = %name, "Workspace restored with new name");
 
@@ -813,13 +854,18 @@ pub async fn restore_workspace(
             return Err(bad_req("工作空间名称已被使用"));
         }
 
-        with_detached_workspace_members(&conn, &workspace_id, |conn| {
-            conn.execute(
-                "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
-                duckdb::params![&restored_name, &workspace_id],
-            )?;
-            Ok(())
-        })?;
+        with_detached_workspace_members_with_error_mapper(
+            &conn,
+            &workspace_id,
+            |conn| {
+                conn.execute(
+                    "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
+                    duckdb::params![&restored_name, &workspace_id],
+                )?;
+                Ok(())
+            },
+            workspace_name_conflict_or_internal,
+        )?;
 
         info!(workspace_id = %workspace_id, "Workspace restored");
 
