@@ -238,7 +238,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
         setTimeout(() => setCopySuccess(false), 2000);
       })
       .catch(() => {
-        alert(t('file.publish.copyFailedManual'));
+        alert(t('file.detail.copyFailedManual'));
       });
   }
 
@@ -274,7 +274,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   function handleCopyIframe() {
     const code = generateIframeCode();
     if (!code) {
-      alert(t('file.publish.cannotGenerateEmbed'));
+      alert(t('file.detail.cannotGenerateEmbed'));
       return;
     }
 
@@ -876,7 +876,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             display: 'block',
                           }}
                         >
-                          {t('file.publish.publicUrl')}
+                          {t('file.detail.publicUrl')}
                         </label>
                         <div className="form-value code" style={{ fontSize: '12px' }}>
                           {getPublicUrlPath(publishSlug.trim() || file.id, file)}
@@ -900,8 +900,8 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           data-testid="confirm-publish-button"
                         >
                           {isPublishing
-                            ? t('file.publish.publishing')
-                            : t('file.publish.confirmPublish')}
+                            ? t('file.detail.publishing')
+                            : t('file.detail.confirmPublish')}
                         </button>
                         <button
                           type="button"
@@ -928,16 +928,16 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
               {file.isPublic && (
                 <>
                   <div className="detail-group">
-                    <div className="detail-label">{t('file.publish.publishStatus')}</div>
+                    <div className="detail-label">{t('file.detail.publishStatus')}</div>
                     <div className="detail-value">
                       <span style={{ color: '#4caf50' }} data-testid="published-status">
-                        {t('file.publish.published')}
+                        {t('file.detail.published')}
                       </span>
                     </div>
                   </div>
 
                   <div className="detail-group">
-                    <div className="detail-label">{t('file.publish.publicUrl')}</div>
+                    <div className="detail-label">{t('file.detail.publicUrl')}</div>
                     <div className="detail-value">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div className="form-value code" style={{ fontSize: '12px' }}>
@@ -951,7 +951,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             onClick={() => copyPublicUrl(file.publicSlug, file)}
                             data-testid="copy-url-button"
                           >
-                            {copySuccess ? t('common.copied') : t('file.publish.copyAddress')}
+                            {copySuccess ? t('common.copied') : t('file.detail.copyAddress')}
                           </button>
                           <a
                             href={`/tiles/${file.publicSlug}/docs`}
@@ -960,7 +960,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             className="btn-text"
                             style={{ fontSize: '12px', textDecoration: 'none' }}
                           >
-                            {t('file.publish.viewDocs')}
+                            {t('file.detail.viewDocs')}
                           </a>
                         </div>
                       </div>
@@ -987,7 +987,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                       onClick={() => setIframeCodeExpanded((prev) => !prev)}
                       data-testid="embed-code-toggle"
                     >
-                      <span>{t('file.publish.embedCode')}</span>
+                      <span>{t('file.detail.embedCode')}</span>
                       <span style={{ fontSize: '10px', color: '#999' }}>
                         {iframeCodeExpanded ? '▼' : '▶'}
                       </span>
@@ -1001,7 +1001,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         <div className="iframe-embed-section">
                           <div className="iframe-size-inputs">
                             <label>
-                              {t('file.publish.iframeWidth')}
+                              {t('file.detail.iframeWidth')}
                               <input
                                 type="text"
                                 value={iframeWidth}
@@ -1012,7 +1012,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                               />
                             </label>
                             <label style={{ marginLeft: '12px' }}>
-                              {t('file.publish.iframeHeight')}
+                              {t('file.detail.iframeHeight')}
                               <input
                                 type="text"
                                 value={iframeHeight}
@@ -1039,12 +1039,12 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           >
                             {copyIframeSuccess
                               ? `✓ ${t('common.copied')}`
-                              : t('file.publish.copyEmbedCode')}
+                              : t('file.detail.copyEmbedCode')}
                           </button>
 
                           <div className="iframe-mini-preview" style={{ marginTop: '12px' }}>
                             <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>
-                              {t('file.publish.previewEffect')}
+                              {t('file.detail.previewEffect')}
                             </div>
                             <iframe
                               src={`/tiles/${file.publicSlug}/embed`}
