@@ -238,7 +238,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
         setTimeout(() => setCopySuccess(false), 2000);
       })
       .catch(() => {
-        alert('复制失败，请手动复制地址');
+        alert(t('file.publish.copyFailedManual'));
       });
   }
 
@@ -274,7 +274,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   function handleCopyIframe() {
     const code = generateIframeCode();
     if (!code) {
-      alert('无法生成嵌入代码，请确保地图已发布');
+      alert(t('file.publish.cannotGenerateEmbed'));
       return;
     }
 
@@ -876,7 +876,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             display: 'block',
                           }}
                         >
-                          公开地址
+                          {t('file.publish.publicUrl')}
                         </label>
                         <div className="form-value code" style={{ fontSize: '12px' }}>
                           {getPublicUrlPath(publishSlug.trim() || file.id, file)}
@@ -899,7 +899,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           onClick={handlePublishSubmit}
                           data-testid="confirm-publish-button"
                         >
-                          {isPublishing ? '发布中...' : '确认发布'}
+                          {isPublishing
+                            ? t('file.publish.publishing')
+                            : t('file.publish.confirmPublish')}
                         </button>
                         <button
                           type="button"
@@ -915,7 +917,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             setPublishError('');
                           }}
                         >
-                          取消
+                          {t('common.cancel')}
                         </button>
                       </div>
                     </div>
@@ -926,16 +928,16 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
               {file.isPublic && (
                 <>
                   <div className="detail-group">
-                    <div className="detail-label">发布状态</div>
+                    <div className="detail-label">{t('file.publish.publishStatus')}</div>
                     <div className="detail-value">
                       <span style={{ color: '#4caf50' }} data-testid="published-status">
-                        已发布
+                        {t('file.publish.published')}
                       </span>
                     </div>
                   </div>
 
                   <div className="detail-group">
-                    <div className="detail-label">公开地址</div>
+                    <div className="detail-label">{t('file.publish.publicUrl')}</div>
                     <div className="detail-value">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div className="form-value code" style={{ fontSize: '12px' }}>
@@ -949,7 +951,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             onClick={() => copyPublicUrl(file.publicSlug, file)}
                             data-testid="copy-url-button"
                           >
-                            {copySuccess ? '已复制' : '复制地址'}
+                            {copySuccess ? t('common.copied') : t('file.publish.copyAddress')}
                           </button>
                           <a
                             href={`/tiles/${file.publicSlug}/docs`}
@@ -958,7 +960,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             className="btn-text"
                             style={{ fontSize: '12px', textDecoration: 'none' }}
                           >
-                            查看文档
+                            {t('file.publish.viewDocs')}
                           </a>
                         </div>
                       </div>
@@ -985,7 +987,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                       onClick={() => setIframeCodeExpanded((prev) => !prev)}
                       data-testid="embed-code-toggle"
                     >
-                      <span>嵌入代码</span>
+                      <span>{t('file.publish.embedCode')}</span>
                       <span style={{ fontSize: '10px', color: '#999' }}>
                         {iframeCodeExpanded ? '▼' : '▶'}
                       </span>
@@ -999,7 +1001,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         <div className="iframe-embed-section">
                           <div className="iframe-size-inputs">
                             <label>
-                              宽度:
+                              {t('file.publish.iframeWidth')}
                               <input
                                 type="text"
                                 value={iframeWidth}
@@ -1010,7 +1012,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                               />
                             </label>
                             <label style={{ marginLeft: '12px' }}>
-                              高度:
+                              {t('file.publish.iframeHeight')}
                               <input
                                 type="text"
                                 value={iframeHeight}
@@ -1035,12 +1037,14 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             }}
                             onClick={handleCopyIframe}
                           >
-                            {copyIframeSuccess ? '✓ 已复制' : '复制嵌入代码'}
+                            {copyIframeSuccess
+                              ? `✓ ${t('common.copied')}`
+                              : t('file.publish.copyEmbedCode')}
                           </button>
 
                           <div className="iframe-mini-preview" style={{ marginTop: '12px' }}>
                             <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>
-                              预览效果:
+                              {t('file.publish.previewEffect')}
                             </div>
                             <iframe
                               src={`/tiles/${file.publicSlug}/embed`}

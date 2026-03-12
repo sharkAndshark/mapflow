@@ -450,7 +450,7 @@ export function PublicTileMap({
           }}
         >
           <div className="spinner"></div>
-          <p>Loading map...</p>
+          <p>{t('preview.loadingMap')}</p>
         </div>
       )}
 

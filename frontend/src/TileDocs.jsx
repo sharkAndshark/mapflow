@@ -738,7 +738,7 @@ export default function TileDocs() {
             error={error}
             isLoading={isLoading}
             dataTestId="tile-docs-map"
-            overlayLabel="Live Preview (Public Endpoint)"
+            overlayLabel={t('tileDocs.livePreview')}
           />
         </div>
       </div>
