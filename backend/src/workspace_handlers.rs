@@ -132,6 +132,13 @@ fn parse_workspace_row(row: WorkspaceRow) -> Result<crate::workspace::Workspace,
     })
 }
 
+fn archived_workspace_original_name(name: &str, workspace_id: &str) -> String {
+    let archived_suffix = format!("_deleted_{}", workspace_id);
+    name.strip_suffix(&archived_suffix)
+        .unwrap_or(name)
+        .to_string()
+}
+
 pub async fn list_workspaces(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
@@ -219,7 +226,7 @@ pub async fn create_workspace(
         .map_err(internal_err)?;
 
     if existing > 0 {
-        return Err(bad_req("工作空间名称已被使用"));
+        return Err(conflict("工作空间名称已被使用"));
     }
 
     let workspace_id = uuid::Uuid::new_v4().to_string();
@@ -237,7 +244,7 @@ pub async fn create_workspace(
         conn.execute_batch("ROLLBACK").ok();
         let err_msg = e.to_string();
         if err_msg.contains("UNIQUE") || err_msg.contains("unique") {
-            return Err(bad_req("工作空间名称已被使用"));
+            return Err(conflict("工作空间名称已被使用"));
         }
         return Err(internal_err(e));
     }
@@ -562,12 +569,6 @@ pub async fn switch_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let is_member = check_workspace_membership(&conn, &req.workspace_id, &user.id)?;
-
-    if !is_member {
-        return Err(forbidden("不属于该工作空间"));
-    }
-
     let workspace_info: Option<(String, bool)> = conn
         .query_row(
             "SELECT name, is_personal FROM workspaces WHERE id = ? AND deleted_at IS NULL",
@@ -578,6 +579,18 @@ pub async fn switch_workspace(
         .map_err(internal_err)?;
 
     let (name, is_personal) = workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
+
+    let is_member: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
+            duckdb::params![&req.workspace_id, &user.id],
+            |row| row.get(0),
+        )
+        .map_err(internal_err)?;
+
+    if is_member == 0 {
+        return Err(forbidden("不属于该工作空间"));
+    }
 
     conn.execute(
         "UPDATE users SET current_workspace_id = ? WHERE id = ?",
@@ -777,13 +790,7 @@ pub async fn restore_workspace(
 
         Ok(Json(json!({ "id": workspace_id, "name": name })))
     } else {
-        let archived_suffix = format!("_deleted_{}", workspace_id);
-        let restored_name = if let Some(original_name) = current_name.strip_suffix(&archived_suffix)
-        {
-            original_name.to_string()
-        } else {
-            current_name
-        };
+        let restored_name = archived_workspace_original_name(&current_name, &workspace_id);
 
         let existing: i64 = conn
             .query_row(
@@ -862,10 +869,11 @@ pub async fn list_archived_workspaces(
                     chrono::NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S")
                         .map_err(|e| format!("Failed to parse created_at: {}", e))?
                         .and_utc();
+                let display_name = archived_workspace_original_name(&name, &id);
 
                 Ok(json!({
                     "id": id,
-                    "name": name,
+                    "name": display_name,
                     "ownerId": owner_id,
                     "isPersonal": is_personal,
                     "deletedAt": deleted_at,

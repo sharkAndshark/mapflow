@@ -1503,9 +1503,17 @@ export default function App() {
           const authWorkspace = user.current_workspace || user.currentWorkspace;
           if (authWorkspace) {
             const matched = data.find((ws) => ws.id === authWorkspace.id);
-            setCurrentWorkspace(matched || authWorkspace);
+            if (matched) {
+              setCurrentWorkspace(matched);
+            } else if (data.length > 0) {
+              setCurrentWorkspace(data[0]);
+            } else {
+              setCurrentWorkspace(null);
+            }
           } else if (data.length > 0) {
             setCurrentWorkspace(data[0]);
+          } else {
+            setCurrentWorkspace(null);
           }
         }
       } catch (err) {
