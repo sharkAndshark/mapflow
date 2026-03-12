@@ -150,8 +150,8 @@ export default function Settings() {
 
     setIsCreating(true);
     try {
-      const ws = await createWorkspace(name);
-      setWorkspaces([...workspaces, ws]);
+      await createWorkspace(name);
+      await refreshWorkspaces();
       setShowCreateModal(false);
       setNewWorkspaceName('');
     } catch (err) {

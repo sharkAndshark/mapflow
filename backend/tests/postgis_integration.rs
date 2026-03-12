@@ -264,14 +264,27 @@ async fn create_user_and_session(
     role: &str,
 ) -> String {
     let password_hash = "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36IgQE0VrqQ6EJdNpO5mLY";
+    let workspace_id = format!("ws-{user_id}");
 
     {
         let conn = db.lock().await;
         conn.execute(
-            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET username = excluded.username, password_hash = excluded.password_hash, role = excluded.role",
-            duckdb::params![user_id, username, password_hash, role],
+            "INSERT INTO users (id, username, password_hash, role, current_workspace_id, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET username = excluded.username, password_hash = excluded.password_hash, role = excluded.role, current_workspace_id = excluded.current_workspace_id",
+            duckdb::params![user_id, username, password_hash, role, &workspace_id],
         )
         .expect("insert user");
+
+        conn.execute(
+            "INSERT OR IGNORE INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP)",
+            duckdb::params![&workspace_id, format!("{username} personal"), user_id],
+        )
+        .expect("insert workspace");
+
+        conn.execute(
+            "INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![&workspace_id, user_id],
+        )
+        .expect("insert workspace member");
     }
 
     let id = Id::default();
@@ -326,7 +339,7 @@ async fn test_postgis_register_preview_publish_flow() {
     std::env::set_var("APP_SECRET", "postgis-integration-secret");
 
     let (app, _tmp, db) = setup_app().await;
-    let admin_cookie = create_user_and_session(&app, db, "admin-1", "admin", "admin").await;
+    let admin_cookie = create_user_and_session(&app, db.clone(), "admin-1", "admin", "admin").await;
 
     let test_payload = json!({
         "connection": postgis_connection_payload(&cfg)
@@ -357,6 +370,24 @@ async fn test_postgis_register_preview_publish_flow() {
     assert_eq!(status, StatusCode::CREATED, "{}", body);
 
     let file_id = body["fileId"].as_str().expect("fileId").to_string();
+
+    let conn = db.lock().await;
+    let expected_workspace_id: String = conn
+        .query_row(
+            "SELECT current_workspace_id FROM users WHERE id = ?",
+            duckdb::params!["admin-1"],
+            |row| row.get(0),
+        )
+        .expect("admin current workspace");
+    let actual_workspace_id: String = conn
+        .query_row(
+            "SELECT workspace_id FROM files WHERE id = ?",
+            duckdb::params![&file_id],
+            |row| row.get(0),
+        )
+        .expect("registered file workspace");
+    drop(conn);
+    assert_eq!(actual_workspace_id, expected_workspace_id);
 
     let (status, files) = send_json(&app, Method::GET, "/api/files", None).await;
     assert_eq!(status, StatusCode::OK, "{}", files);
