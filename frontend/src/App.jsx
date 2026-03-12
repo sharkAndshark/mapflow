@@ -1550,7 +1550,7 @@ export default function App() {
       <header className="header">
         <div>
           <h1>MapFlow</h1>
-          <p className="subtitle">数据源管理与列表</p>
+          <p className="subtitle">{t('app.subtitle')}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {user && (
@@ -1561,7 +1561,7 @@ export default function App() {
           <LanguageSwitcher />
           {user?.role === 'admin' && (
             <a href="/settings" className="btn-text" style={{ fontSize: '14px' }}>
-              设置
+              {t('app.settings')}
             </a>
           )}
           {user?.role === 'admin' && (
@@ -1573,7 +1573,7 @@ export default function App() {
                 setPostgisMessage('');
               }}
             >
-              连接 PostGIS
+              {t('app.connectPostgis')}
             </button>
           )}
           <label className="upload-button">
@@ -1583,7 +1583,7 @@ export default function App() {
               onChange={handleFileChange}
               data-testid="file-input"
             />
-            上传
+            {t('app.upload')}
           </label>
           {user && (
             <button
@@ -1592,7 +1592,7 @@ export default function App() {
               onClick={handleLogout}
               data-testid="logout-button"
             >
-              登出
+              {t('app.logout')}
             </button>
           )}
         </div>
@@ -1602,29 +1602,26 @@ export default function App() {
 
       <section className="panel">
         <div className="panel-header">
-          <h2>数据源</h2>
-          <span className="panel-meta">
-            支持上传 .zip / .geojson / .geojsonl / .kml / .gpx / .topojson / .mbtiles /
-            .pmtiles，或连接 PostGIS table/view
-          </span>
+          <h2>{t('app.dataSource')}</h2>
+          <span className="panel-meta">{t('app.supportedFormatsHint')}</span>
         </div>
 
         <div className="panel-body">
           <div className="list-area">
             {isLoading ? (
-              <div className="empty">加载中...</div>
+              <div className="empty">{t('app.loading')}</div>
             ) : orderedFiles.length === 0 ? (
               <div className="empty" data-testid="empty-state">
-                暂未上传文件
+                {t('app.noFiles')}
               </div>
             ) : (
               <div className="table">
                 <div className="row head">
-                  <div>名称</div>
-                  <div>类型</div>
-                  <div>大小</div>
-                  <div>上传时间</div>
-                  <div>状态</div>
+                  <div>{t('fileList.name')}</div>
+                  <div>{t('fileList.type')}</div>
+                  <div>{t('fileList.size')}</div>
+                  <div>{t('fileList.uploadTime')}</div>
+                  <div>{t('fileList.status')}</div>
                   <div></div>
                 </div>
                 {orderedFiles.map((item) => (
@@ -1665,10 +1662,10 @@ export default function App() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="btn-text"
-                          title="在新窗口查看地图"
+                          title={t('fileList.viewInNewWindow')}
                           data-testid="preview-link"
                         >
-                          查看
+                          {t('fileList.view')}
                         </a>
                       )}
                     </div>
