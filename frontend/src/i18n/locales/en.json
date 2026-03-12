@@ -250,6 +250,7 @@
     "embedUrl": "Embed URL",
     "configuration": "Configuration",
     "zoomRange": "Zoom Range",
+    "crs": "CRS",
     "format": "Format",
     "source": "Source",
     "dataBounds": "Data Bounds",

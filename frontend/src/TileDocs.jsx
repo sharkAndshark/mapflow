@@ -489,7 +489,7 @@ export default function TileDocs() {
           {isLoading && !meta && !error && (
             <div style={{ textAlign: 'center', padding: '40px' }}>
               <div className="spinner"></div>
-              <p>{t('tileDocs.loading')}</p>
+              <p>{t('tileDocs.loadingDoc')}</p>
             </div>
           )}
 

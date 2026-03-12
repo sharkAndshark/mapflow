@@ -65,7 +65,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   await expect(sidebar).toBeVisible();
 
   // Switch to Publish tab
-  await sidebar.getByText('Publish', { exact: true }).click();
+  await sidebar.getByTestId('detail-tab-publish').click();
 
   // Click publish button in sidebar
   const publishButton = sidebar.getByTestId('publish-button');

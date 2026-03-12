@@ -250,6 +250,7 @@
     "embedUrl": "嵌入 URL",
     "configuration": "配置信息",
     "zoomRange": "缩放范围",
+    "crs": "坐标系",
     "format": "格式",
     "source": "来源",
     "dataBounds": "数据范围",

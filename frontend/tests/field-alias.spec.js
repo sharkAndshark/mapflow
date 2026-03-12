@@ -31,7 +31,7 @@ async function openFieldsTab(page, row) {
   // Switch to Fields tab
   const sidebar = page.locator('.detail-sidebar');
   await expect(sidebar).toBeVisible();
-  await sidebar.getByRole('tab', { name: 'Fields' }).click();
+  await sidebar.getByTestId('detail-tab-fields').click();
   // Wait for fields table to load
   await expect(page.locator('.fields-table')).toBeVisible();
 }
