@@ -392,6 +392,11 @@ pub async fn invite_member(
 ) -> ApiResult<impl IntoResponse> {
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
+    let username = req.username.trim();
+
+    if username.is_empty() {
+        return Err(bad_req("用户名不能为空"));
+    }
 
     let is_member = check_workspace_membership(&conn, &workspace_id, &user.id)?;
 
@@ -414,7 +419,7 @@ pub async fn invite_member(
     let target_user: Option<(String, String)> = conn
         .query_row(
             "SELECT id, username FROM users WHERE username = ?",
-            duckdb::params![&req.username],
+            duckdb::params![username],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
@@ -473,7 +478,7 @@ pub async fn remove_member(
     let owner_id = owner_id.ok_or_else(|| not_found("Workspace not found"))?;
 
     if member_user_id == owner_id {
-        return Err(bad_req("不能移除工作空间所有者"));
+        return Err(forbidden("不能移除工作空间所有者"));
     }
 
     let is_owner = user.id == owner_id;
@@ -693,16 +698,16 @@ pub async fn delete_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let workspace_info: Option<(String, bool, String)> = conn
+    let workspace_info: Option<(String, bool, String, Option<String>)> = conn
         .query_row(
-            "SELECT owner_id, is_personal, name FROM workspaces WHERE id = ?",
+            "SELECT owner_id, is_personal, name, deleted_at FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let (owner_id, is_personal, name) =
+    let (owner_id, is_personal, name, deleted_at) =
         workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
 
     if user.id != owner_id {
@@ -710,7 +715,11 @@ pub async fn delete_workspace(
     }
 
     if is_personal {
-        return Err(bad_req("Cannot delete personal workspace"));
+        return Err(forbidden("Cannot delete personal workspace"));
+    }
+
+    if deleted_at.is_some() {
+        return Ok(StatusCode::NO_CONTENT);
     }
 
     let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();

@@ -6733,6 +6733,296 @@ async fn test_archived_workspace_list_returns_original_name() {
 }
 
 #[tokio::test]
+async fn test_delete_workspace_is_idempotent_when_already_archived() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("workspace-delete-idempotent.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie =
+        create_user_and_session(&app, db.clone(), "user-delete-2", "deleter2", "admin").await;
+
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Repeat Delete Team"}"#))
+        .unwrap();
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    assert_eq!(create_response.status(), axum::http::StatusCode::CREATED);
+    let create_body = create_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created_workspace: serde_json::Value = serde_json::from_slice(&create_body).unwrap();
+    let workspace_id = created_workspace["id"].as_str().unwrap();
+
+    let first_delete = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/workspaces/{}", workspace_id))
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let first_delete_response = app.clone().oneshot(first_delete).await.unwrap();
+    assert_eq!(
+        first_delete_response.status(),
+        axum::http::StatusCode::NO_CONTENT
+    );
+
+    let archived_name_after_first: String = {
+        let conn = db.lock().await;
+        conn.query_row(
+            "SELECT name FROM workspaces WHERE id = ?",
+            duckdb::params![workspace_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+
+    let second_delete = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/workspaces/{}", workspace_id))
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let second_delete_response = app.clone().oneshot(second_delete).await.unwrap();
+    assert_eq!(
+        second_delete_response.status(),
+        axum::http::StatusCode::NO_CONTENT
+    );
+
+    let archived_name_after_second: String = {
+        let conn = db.lock().await;
+        conn.query_row(
+            "SELECT name FROM workspaces WHERE id = ?",
+            duckdb::params![workspace_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(archived_name_after_second, archived_name_after_first);
+
+    let restore_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/workspaces/{}/restore", workspace_id))
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let restore_response = app.oneshot(restore_request).await.unwrap();
+    assert_eq!(restore_response.status(), axum::http::StatusCode::OK);
+    let restore_body = restore_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let restore_payload: serde_json::Value = serde_json::from_slice(&restore_body).unwrap();
+    assert_eq!(restore_payload["name"], "Repeat Delete Team");
+}
+
+#[tokio::test]
+async fn test_delete_personal_workspace_returns_403() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("delete-personal-workspace.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie =
+        create_user_and_session(&app, db.clone(), "user-personal-1", "personal", "admin").await;
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-personal-only", "Personal", "user-personal-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-personal-only", "user-personal-1"],
+        )
+        .unwrap();
+    }
+
+    let request = Request::builder()
+        .method("DELETE")
+        .uri("/api/workspaces/ws-personal-only")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_remove_workspace_owner_returns_403() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("remove-owner-forbidden.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie = create_user_and_session(&app, db.clone(), "user-owner-1", "owner", "admin").await;
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-owner-test", "Owner Team", "user-owner-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-owner-test", "user-owner-1"],
+        )
+        .unwrap();
+    }
+
+    let request = Request::builder()
+        .method("DELETE")
+        .uri("/api/workspaces/ws-owner-test/members/user-owner-1")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_invite_member_trims_username_and_rejects_empty_username() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("invite-member-trim-username.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie =
+        create_user_and_session(&app, db.clone(), "user-invite-owner", "inviter", "admin").await;
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![
+                "user-invite-target",
+                "targetuser",
+                "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36IgQE0VrqQ6EJdNpO5mLY",
+                "user"
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-invite-test", "Invite Team", "user-invite-owner"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-invite-test", "user-invite-owner"],
+        )
+        .unwrap();
+    }
+
+    let empty_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces/ws-invite-test/members")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"username":"   "}"#))
+        .unwrap();
+    let empty_response = app.clone().oneshot(empty_request).await.unwrap();
+    assert_eq!(empty_response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let trimmed_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces/ws-invite-test/members")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"username":"  targetuser  "}"#))
+        .unwrap();
+    let trimmed_response = app.oneshot(trimmed_request).await.unwrap();
+    assert_eq!(trimmed_response.status(), axum::http::StatusCode::CREATED);
+    let body = trimmed_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["username"], "targetuser");
+}
+
+#[tokio::test]
 async fn test_restore_active_workspace_returns_400() {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");
