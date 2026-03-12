@@ -807,6 +807,55 @@ pub fn set_initialized(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
     Ok(())
 }
 
+pub fn ensure_app_secret(conn: &duckdb::Connection) -> Result<String, String> {
+    let new_secret = generate_random_secret();
+
+    let rows_affected = conn
+        .execute(
+            "INSERT INTO system_settings (key, value) VALUES ('app_secret', ?) ON CONFLICT (key) DO NOTHING",
+            duckdb::params![&new_secret],
+        )
+        .map_err(|e| format!("Failed to store app_secret: {}", e))?;
+
+    if rows_affected > 0 {
+        tracing::info!("Generated and stored new app_secret for PostGIS credential encryption");
+        return Ok(new_secret);
+    }
+
+    let mut stmt = conn
+        .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+        .map_err(|e| format!("Failed to prepare app_secret query: {}", e))?;
+
+    stmt.query_row([], |row| row.get(0))
+        .map_err(|e| format!("Failed to read app_secret after conflict: {}", e))
+}
+
+pub fn get_app_secret(conn: &duckdb::Connection) -> Result<Option<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+        .map_err(|e| format!("Failed to prepare app_secret query: {}", e))?;
+
+    match stmt.query_row([], |row| row.get(0)) {
+        Ok(secret) => Ok(Some(secret)),
+        Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to read app_secret: {}", e)),
+    }
+}
+
+fn generate_random_secret() -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const SECRET_LENGTH: usize = 64;
+
+    let mut rng = rand::thread_rng();
+    (0..SECRET_LENGTH)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,6 +14,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
+    db::get_app_secret,
+    ensure_app_secret,
     http_errors::{bad_request, internal_error},
     models::{
         ErrorResponse, PostgisConnectionConfig, PostgisConnectionTestRequest,
@@ -23,7 +25,6 @@ use crate::{
 };
 
 pub const TILE_SOURCE_POSTGIS: &str = "postgis";
-const APP_SECRET_ENV: &str = "APP_SECRET";
 
 #[derive(Debug, Clone)]
 pub struct PostgisSourceConfig {
@@ -105,16 +106,6 @@ pub async fn register_postgis_source(
     let relation =
         introspect_relation(&cfg, &schema_name, &object_name, &geom_column, &fid_column).await?;
 
-    let app_secret = std::env::var(APP_SECRET_ENV).map_err(|_| {
-        internal_error(format!(
-            "Missing required {} environment variable for secure credential storage",
-            APP_SECRET_ENV
-        ))
-    })?;
-
-    let encrypted_password =
-        encrypt_secret(&app_secret, &cfg.password).map_err(|e| internal_error(e.as_str()))?;
-
     let connection_id = Uuid::new_v4().to_string();
     let file_id = Uuid::new_v4().to_string();
     let now = Utc::now().naive_utc();
@@ -128,6 +119,10 @@ pub async fn register_postgis_source(
     );
 
     let conn = state.db.lock().await;
+    let app_secret = ensure_app_secret(&conn).map_err(internal_error)?;
+    let encrypted_password =
+        encrypt_secret(&app_secret, &cfg.password).map_err(|e| internal_error(e.as_str()))?;
+
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_error)?;
 
@@ -296,8 +291,9 @@ pub fn fetch_postgis_source_config(
         return Ok(None);
     };
 
-    let app_secret = std::env::var(APP_SECRET_ENV)
-        .map_err(|_| format!("Missing required {} environment variable", APP_SECRET_ENV))?;
+    let app_secret = get_app_secret(conn)?.ok_or_else(|| {
+        "Missing app_secret in system_settings; cannot decrypt PostGIS credentials".to_string()
+    })?;
     let password = decrypt_secret(&app_secret, &password_encrypted)?;
 
     let port_u16 =
@@ -975,7 +971,10 @@ pub fn build_feature_properties(
 
 #[cfg(test)]
 mod tests {
-    use super::{quote_ident, validate_connection_config, PostgisConnectionConfig};
+    use super::{
+        encrypt_secret, fetch_postgis_source_config, quote_ident, validate_connection_config,
+        PostgisConnectionConfig,
+    };
 
     #[test]
     fn quote_ident_allows_quoted_postgres_identifiers() {
@@ -1030,5 +1029,69 @@ mod tests {
             ssl_mode: "disable".to_string(),
         };
         assert!(validate_connection_config(empty_password).is_err());
+    }
+
+    #[test]
+    fn fetch_postgis_source_config_fails_when_app_secret_missing() {
+        let conn = duckdb::Connection::open_in_memory().expect("open in-memory database");
+        conn.execute_batch(
+            r"
+            CREATE TABLE system_settings (
+                key VARCHAR PRIMARY KEY,
+                value VARCHAR NOT NULL
+            );
+
+            CREATE TABLE postgis_connections (
+                id VARCHAR PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                host VARCHAR NOT NULL,
+                port INTEGER NOT NULL,
+                database_name VARCHAR NOT NULL,
+                username VARCHAR NOT NULL,
+                password_encrypted VARCHAR NOT NULL,
+                ssl_mode VARCHAR NOT NULL
+            );
+
+            CREATE TABLE postgis_sources (
+                file_id VARCHAR PRIMARY KEY,
+                connection_id VARCHAR NOT NULL,
+                schema_name VARCHAR NOT NULL,
+                object_name VARCHAR NOT NULL,
+                geom_column VARCHAR NOT NULL,
+                fid_column VARCHAR NOT NULL
+            );
+            ",
+        )
+        .expect("create tables");
+
+        let old_secret = "persisted-secret-before-loss";
+        let encrypted_password =
+            encrypt_secret(old_secret, "db-password").expect("encrypt test password");
+
+        conn.execute(
+            "INSERT INTO postgis_connections (id, name, host, port, database_name, username, password_encrypted, ssl_mode)
+             VALUES ('conn-1', 'main', 'localhost', 5432, 'gis', 'postgres', ?, 'disable')",
+            duckdb::params![encrypted_password],
+        )
+        .expect("insert connection");
+        conn.execute(
+            "INSERT INTO postgis_sources (file_id, connection_id, schema_name, object_name, geom_column, fid_column)
+             VALUES ('file-1', 'conn-1', 'public', 'roads', 'geom', 'id')",
+            [],
+        )
+        .expect("insert source");
+
+        let err =
+            fetch_postgis_source_config(&conn, "file-1").expect_err("must fail without app_secret");
+        assert!(err.contains("Missing app_secret"));
+
+        let app_secret_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM system_settings WHERE key = 'app_secret'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read app_secret count");
+        assert_eq!(app_secret_count, 0);
     }
 }
