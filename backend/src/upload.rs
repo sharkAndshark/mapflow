@@ -86,7 +86,7 @@ pub async fn upload_file(
 
                 let workspace_id: Option<String> = conn
                     .query_row(
-                        "SELECT id FROM workspaces WHERE is_personal = true LIMIT 1",
+                        "SELECT id FROM workspaces WHERE is_personal = true AND deleted_at IS NULL LIMIT 1",
                         [],
                         |row| row.get(0),
                     )

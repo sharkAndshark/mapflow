@@ -492,16 +492,20 @@ pub async fn remove_member(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let owner_id: Option<String> = conn
+    let workspace_info: Option<(String, Option<String>)> = conn
         .query_row(
-            "SELECT owner_id FROM workspaces WHERE id = ?",
+            "SELECT owner_id, deleted_at FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let owner_id = owner_id.ok_or_else(|| not_found("Workspace not found"))?;
+    let (owner_id, deleted_at) = workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
+
+    if deleted_at.is_some() {
+        return Err(not_found("Workspace not found"));
+    }
 
     if member_user_id == owner_id {
         return Err(forbidden("不能移除工作空间所有者"));
@@ -538,16 +542,20 @@ pub async fn leave_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let owner_id: Option<String> = conn
+    let workspace_info: Option<(String, Option<String>)> = conn
         .query_row(
-            "SELECT owner_id FROM workspaces WHERE id = ?",
+            "SELECT owner_id, deleted_at FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let owner_id = owner_id.ok_or_else(|| not_found("Workspace not found"))?;
+    let (owner_id, deleted_at) = workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
+
+    if deleted_at.is_some() {
+        return Err(not_found("Workspace not found"));
+    }
 
     if user.id == owner_id {
         return Err(bad_req("工作空间所有者不能离开，只能删除工作空间"));
