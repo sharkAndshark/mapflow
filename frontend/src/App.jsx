@@ -101,6 +101,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [iframeWidth, setIframeWidth] = useState('100%');
   const [iframeHeight, setIframeHeight] = useState('400');
   const [copyIframeSuccess, setCopyIframeSuccess] = useState(false);
+  const previousFileIdRef = useRef(file?.id ?? null);
 
   // Handle click outside to cancel alias editing
   useEffect(() => {
@@ -221,9 +222,12 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
     }
   }, [file]);
 
-  if (activeTab !== 'basic' && editingAlias && !file) {
-    setActiveTab('basic');
-  }
+  useEffect(() => {
+    if (previousFileIdRef.current !== file?.id) {
+      setActiveTab('basic');
+      previousFileIdRef.current = file?.id ?? null;
+    }
+  }, [file]);
 
   function getPublicUrlPath(slug, fileItem) {
     if (!slug) {
