@@ -1,5 +1,3 @@
-import { useAuth } from './AuthContext.jsx';
-
 let authContext = null;
 
 export function setAuthContext(context) {
@@ -16,7 +14,11 @@ export async function fetchWithAuth(url, options = {}) {
 
   if (response.status === 401) {
     if (authContext) {
-      authContext.logout();
+      try {
+        await authContext.logout();
+      } catch (error) {
+        console.error('Failed to logout after unauthorized response:', error);
+      }
       window.location.href = '/login';
     }
     throw new Error('Unauthorized');

@@ -7389,6 +7389,164 @@ async fn test_delete_workspace_unpublishes_public_tiles() {
 }
 
 #[tokio::test]
+async fn test_delete_workspace_rolls_back_public_state_when_archive_update_fails() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir
+        .path()
+        .join("workspace-delete-rollback-public-state.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-delete-rollback-public",
+        "rollbackowner",
+        "admin",
+    )
+    .await;
+
+    let create_workspace_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Atomic Team"}"#))
+        .unwrap();
+    let create_workspace_response = app.clone().oneshot(create_workspace_request).await.unwrap();
+    assert_eq!(
+        create_workspace_response.status(),
+        axum::http::StatusCode::CREATED
+    );
+    let create_workspace_body = create_workspace_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created_workspace: serde_json::Value =
+        serde_json::from_slice(&create_workspace_body).unwrap();
+    let workspace_id = created_workspace["id"].as_str().unwrap().to_string();
+
+    let switch_workspace_request = Request::builder()
+        .method("PUT")
+        .uri("/api/workspaces/current")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"workspaceId":"{}"}}"#,
+            workspace_id
+        )))
+        .unwrap();
+    let switch_workspace_response = app.clone().oneshot(switch_workspace_request).await.unwrap();
+    assert_eq!(
+        switch_workspace_response.status(),
+        axum::http::StatusCode::OK
+    );
+
+    let file_id = upload_geojson_file_with_cookie(&app, &cookie).await;
+    wait_until_ready_with_cookie(&app, &file_id, &cookie).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"atomic-team-public"}"#))
+        .unwrap();
+    let publish_response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
+
+    {
+        let conn = db.lock().await;
+        let conflicting_archived_name = format!("Atomic Team_deleted_{}", workspace_id);
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-delete-conflict", &conflicting_archived_name, "user-delete-rollback-public"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-delete-conflict", "user-delete-rollback-public"],
+        )
+        .unwrap();
+    }
+
+    let delete_request = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/workspaces/{}", workspace_id))
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let delete_response = app.clone().oneshot(delete_request).await.unwrap();
+    assert_eq!(
+        delete_response.status(),
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    );
+
+    let public_meta_after_failed_delete = Request::builder()
+        .method("GET")
+        .uri("/tiles/atomic-team-public/meta")
+        .body(Body::empty())
+        .unwrap();
+    let public_meta_after_failed_delete_response = app
+        .clone()
+        .oneshot(public_meta_after_failed_delete)
+        .await
+        .unwrap();
+    assert_eq!(
+        public_meta_after_failed_delete_response.status(),
+        axum::http::StatusCode::OK
+    );
+
+    let conn = db.lock().await;
+    let published_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM published_files WHERE slug = ?",
+            duckdb::params!["atomic-team-public"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(published_count, 1);
+
+    let is_public: bool = conn
+        .query_row(
+            "SELECT COALESCE(is_public, FALSE) FROM files WHERE id = ?",
+            duckdb::params![&file_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(is_public);
+
+    let workspace_state: (String, Option<String>) = conn
+        .query_row(
+            "SELECT name, deleted_at FROM workspaces WHERE id = ?",
+            duckdb::params![&workspace_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(workspace_state.0, "Atomic Team");
+    assert!(workspace_state.1.is_none());
+}
+
+#[tokio::test]
 async fn test_workspace_name_validation_accepts_unicode_by_character_count() {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");

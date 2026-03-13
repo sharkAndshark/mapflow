@@ -758,23 +758,40 @@ pub async fn delete_workspace(
     let archived_name = generate_deleted_workspace_name(&name, &workspace_id);
 
     with_detached_workspace_members(&conn, &workspace_id, |conn| {
+        conn.execute_batch("BEGIN TRANSACTION")
+            .map_err(internal_err)?;
+
         conn.execute(
                 "DELETE FROM published_files WHERE file_id IN (SELECT id FROM files WHERE workspace_id = ?)",
                 duckdb::params![&workspace_id],
             )
-            .map_err(internal_err)?;
+            .map_err(|err| {
+                conn.execute_batch("ROLLBACK").ok();
+                internal_err(err)
+            })?;
 
         conn.execute(
             "UPDATE files SET is_public = FALSE WHERE workspace_id = ?",
             duckdb::params![&workspace_id],
         )
-        .map_err(internal_err)?;
+        .map_err(|err| {
+            conn.execute_batch("ROLLBACK").ok();
+            internal_err(err)
+        })?;
 
         conn.execute(
             "UPDATE workspaces SET deleted_at = ?, name = ? WHERE id = ?",
             duckdb::params![&now, &archived_name, &workspace_id],
         )
-        .map_err(internal_err)?;
+        .map_err(|err| {
+            conn.execute_batch("ROLLBACK").ok();
+            internal_err(err)
+        })?;
+
+        conn.execute_batch("COMMIT").map_err(|err| {
+            conn.execute_batch("ROLLBACK").ok();
+            internal_err(err)
+        })?;
 
         Ok(())
     })?;
