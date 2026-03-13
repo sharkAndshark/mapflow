@@ -77,7 +77,11 @@ function resolveDocsConfig(meta, pmtilesHeader) {
       };
     }
 
-    return null;
+    return {
+      minZoom: meta.minZoom ?? 0,
+      maxZoom: meta.maxZoom ?? 22,
+      tileFormat: meta.tileFormat ?? 'mvt',
+    };
   }
 
   return {
@@ -425,7 +429,7 @@ export default function TileDocs() {
     return resolveDocsConfig(meta, pmtilesHeader);
   }, [meta, pmtilesHeader]);
   const isWaitingForDocsConfig = Boolean(
-    meta && !error && !pmtilesHeaderError && meta.tileSource === 'pmtiles' && !docsConfig,
+    meta && !error && meta.tileSource === 'pmtiles' && !pmtilesHeaderError && pmtilesHeader == null,
   );
 
   const openLayersCode = meta && docsConfig ? generateOpenLayersCode(meta, origin) : '';
