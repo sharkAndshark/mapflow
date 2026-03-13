@@ -77,11 +77,7 @@ function resolveDocsConfig(meta, pmtilesHeader) {
       };
     }
 
-    return {
-      minZoom: meta.minZoom ?? 0,
-      maxZoom: meta.maxZoom ?? 22,
-      tileFormat: meta.tileFormat ?? 'mvt',
-    };
+    return null;
   }
 
   return {
@@ -516,94 +512,90 @@ export default function TileDocs() {
             </div>
           )}
 
+          {meta && (
+            <section style={{ marginBottom: '24px' }}>
+              <h2
+                style={{
+                  fontSize: '16px',
+                  marginBottom: '12px',
+                  borderBottom: '1px solid #ddd',
+                  paddingBottom: '8px',
+                }}
+              >
+                {t('tileDocs.serviceUrls')}
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center' }}
+                  data-testid="tile-docs-embed-url"
+                >
+                  <span style={{ fontWeight: '500', width: '80px' }}>{t('tileDocs.tileUrl')}</span>
+                  <code
+                    style={{
+                      flex: 1,
+                      background: '#e9ecef',
+                      padding: '6px 10px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {origin}
+                    {meta.tileUrl}
+                  </code>
+                  <CopyButton
+                    text={`${origin}${meta.tileUrl}`}
+                    label={t('common.copy')}
+                    copiedLabel={t('common.copied')}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '500', width: '80px' }}>{t('tileDocs.metaApi')}</span>
+                  <code
+                    style={{
+                      flex: 1,
+                      background: '#e9ecef',
+                      padding: '6px 10px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {origin}/tiles/{slug}/meta
+                  </code>
+                  <CopyButton
+                    text={`${origin}/tiles/${slug}/meta`}
+                    label={t('common.copy')}
+                    copiedLabel={t('common.copied')}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '500', width: '80px' }}>{t('tileDocs.embedUrl')}</span>
+                  <code
+                    style={{
+                      flex: 1,
+                      background: '#e9ecef',
+                      padding: '6px 10px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {origin}
+                    {viewerUrlPath}
+                  </code>
+                  <CopyButton
+                    text={`${origin}${viewerUrlPath}`}
+                    label={t('common.copy')}
+                    copiedLabel={t('common.copied')}
+                  />
+                </div>
+              </div>
+            </section>
+          )}
+
           {meta && docsConfig && (
             <>
-              <section style={{ marginBottom: '24px' }}>
-                <h2
-                  style={{
-                    fontSize: '16px',
-                    marginBottom: '12px',
-                    borderBottom: '1px solid #ddd',
-                    paddingBottom: '8px',
-                  }}
-                >
-                  {t('tileDocs.serviceUrls')}
-                </h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div
-                    style={{ display: 'flex', alignItems: 'center' }}
-                    data-testid="tile-docs-embed-url"
-                  >
-                    <span style={{ fontWeight: '500', width: '80px' }}>
-                      {t('tileDocs.tileUrl')}
-                    </span>
-                    <code
-                      style={{
-                        flex: 1,
-                        background: '#e9ecef',
-                        padding: '6px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {origin}
-                      {meta.tileUrl}
-                    </code>
-                    <CopyButton
-                      text={`${origin}${meta.tileUrl}`}
-                      label={t('common.copy')}
-                      copiedLabel={t('common.copied')}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>
-                      {t('tileDocs.metaApi')}
-                    </span>
-                    <code
-                      style={{
-                        flex: 1,
-                        background: '#e9ecef',
-                        padding: '6px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {origin}/tiles/{slug}/meta
-                    </code>
-                    <CopyButton
-                      text={`${origin}/tiles/${slug}/meta`}
-                      label={t('common.copy')}
-                      copiedLabel={t('common.copied')}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>
-                      {t('tileDocs.embedUrl')}
-                    </span>
-                    <code
-                      style={{
-                        flex: 1,
-                        background: '#e9ecef',
-                        padding: '6px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {origin}
-                      {viewerUrlPath}
-                    </code>
-                    <CopyButton
-                      text={`${origin}${viewerUrlPath}`}
-                      label={t('common.copy')}
-                      copiedLabel={t('common.copied')}
-                    />
-                  </div>
-                </div>
-              </section>
-
               <section style={{ marginBottom: '24px' }}>
                 <h2
                   style={{
