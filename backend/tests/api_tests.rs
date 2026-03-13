@@ -54,6 +54,40 @@ async fn wait_until_ready(app: &axum::Router, file_id: &str) -> FileItem {
     );
 }
 
+async fn wait_until_ready_with_cookie(app: &axum::Router, file_id: &str, cookie: &str) -> FileItem {
+    let mut last_status: Option<String> = None;
+    let mut last_error: Option<String> = None;
+
+    for _ in 0..120 {
+        let request = Request::builder()
+            .method("GET")
+            .uri("/api/files")
+            .header("cookie", cookie)
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let files: Vec<FileItem> = serde_json::from_slice(&body_bytes).unwrap();
+        if let Some(f) = files.iter().find(|f| f.id == file_id) {
+            last_status = Some(f.status.clone());
+            last_error = f.error.clone();
+            if f.status == "ready" {
+                return f.clone();
+            }
+            if f.status == "failed" {
+                panic!("File processing failed: {:?}", f.error);
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+
+    panic!(
+        "Timeout waiting for file to be ready (last_status={:?}, last_error={:?})",
+        last_status, last_error
+    );
+}
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -138,6 +172,46 @@ async fn upload_geojson_file(app: &axum::Router) -> String {
     let request = Request::builder()
         .method("POST")
         .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+
+    file_item.id
+}
+
+async fn upload_geojson_file_with_cookie(app: &axum::Router, cookie: &str) -> String {
+    let boundary = "------------------------boundaryXYZ";
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": { "name": "Test Point" },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"points.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header("cookie", cookie)
         .header(
             "content-type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -7084,6 +7158,228 @@ async fn test_delete_personal_workspace_returns_403() {
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_delete_workspace_unpublishes_public_tiles() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir
+        .path()
+        .join("workspace-delete-unpublish-public.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-delete-public",
+        "publicowner",
+        "admin",
+    )
+    .await;
+
+    let create_workspace_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Public Team"}"#))
+        .unwrap();
+    let create_workspace_response = app.clone().oneshot(create_workspace_request).await.unwrap();
+    assert_eq!(
+        create_workspace_response.status(),
+        axum::http::StatusCode::CREATED
+    );
+    let create_workspace_body = create_workspace_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created_workspace: serde_json::Value =
+        serde_json::from_slice(&create_workspace_body).unwrap();
+    let workspace_id = created_workspace["id"].as_str().unwrap();
+
+    let switch_workspace_request = Request::builder()
+        .method("PUT")
+        .uri("/api/workspaces/current")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"workspaceId":"{}"}}"#,
+            workspace_id
+        )))
+        .unwrap();
+    let switch_workspace_response = app.clone().oneshot(switch_workspace_request).await.unwrap();
+    assert_eq!(
+        switch_workspace_response.status(),
+        axum::http::StatusCode::OK
+    );
+
+    let file_id = upload_geojson_file_with_cookie(&app, &cookie).await;
+    wait_until_ready_with_cookie(&app, &file_id, &cookie).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/files/{}/publish", file_id))
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"archived-public-team"}"#))
+        .unwrap();
+    let publish_response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
+
+    let public_meta_before_delete = Request::builder()
+        .method("GET")
+        .uri("/tiles/archived-public-team/meta")
+        .body(Body::empty())
+        .unwrap();
+    let public_meta_before_delete_response = app
+        .clone()
+        .oneshot(public_meta_before_delete)
+        .await
+        .unwrap();
+    assert_eq!(
+        public_meta_before_delete_response.status(),
+        axum::http::StatusCode::OK
+    );
+
+    let delete_request = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/workspaces/{}", workspace_id))
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let delete_response = app.clone().oneshot(delete_request).await.unwrap();
+    let delete_status = delete_response.status();
+    if delete_status != axum::http::StatusCode::NO_CONTENT {
+        let body = delete_response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        panic!(
+            "expected 204 but got {} with body {}",
+            delete_status,
+            String::from_utf8_lossy(&body)
+        );
+    }
+
+    let public_meta_after_delete = Request::builder()
+        .method("GET")
+        .uri("/tiles/archived-public-team/meta")
+        .body(Body::empty())
+        .unwrap();
+    let public_meta_after_delete_response =
+        app.clone().oneshot(public_meta_after_delete).await.unwrap();
+    assert_eq!(
+        public_meta_after_delete_response.status(),
+        axum::http::StatusCode::NOT_FOUND
+    );
+
+    let conn = db.lock().await;
+    let published_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM published_files WHERE slug = ?",
+            duckdb::params!["archived-public-team"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(published_count, 0);
+
+    let is_public: bool = conn
+        .query_row(
+            "SELECT COALESCE(is_public, FALSE) FROM files WHERE id = ?",
+            duckdb::params![&file_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!is_public);
+}
+
+#[tokio::test]
+async fn test_workspace_name_validation_accepts_unicode_by_character_count() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("workspace-unicode-name.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-unicode-name",
+        "unicodeuser",
+        "admin",
+    )
+    .await;
+
+    let valid_name = "工作空间".repeat(12);
+    assert_eq!(valid_name.chars().count(), 48);
+
+    let valid_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({ "name": valid_name }).to_string(),
+        ))
+        .unwrap();
+    let valid_response = app.clone().oneshot(valid_request).await.unwrap();
+    assert_eq!(valid_response.status(), axum::http::StatusCode::CREATED);
+
+    let too_long_name = "测".repeat(51);
+    assert_eq!(too_long_name.chars().count(), 51);
+
+    let too_long_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({ "name": too_long_name }).to_string(),
+        ))
+        .unwrap();
+    let too_long_response = app.oneshot(too_long_request).await.unwrap();
+    assert_eq!(
+        too_long_response.status(),
+        axum::http::StatusCode::BAD_REQUEST
+    );
 }
 
 #[tokio::test]

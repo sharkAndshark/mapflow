@@ -70,29 +70,10 @@ fn workspace_name_conflict_or_internal(err: duckdb::Error) -> Response {
 fn with_detached_workspace_members<F>(
     conn: &duckdb::Connection,
     workspace_id: &str,
-    update_workspace_row: F,
+    mut op: F,
 ) -> ApiResult<()>
 where
-    F: FnMut(&duckdb::Connection) -> Result<(), duckdb::Error>,
-{
-    with_detached_workspace_members_with_error_mapper(
-        conn,
-        workspace_id,
-        update_workspace_row,
-        internal_err,
-    )
-}
-
-#[allow(clippy::result_large_err)]
-fn with_detached_workspace_members_with_error_mapper<F, M>(
-    conn: &duckdb::Connection,
-    workspace_id: &str,
-    mut update_workspace_row: F,
-    mut map_update_err: M,
-) -> ApiResult<()>
-where
-    F: FnMut(&duckdb::Connection) -> Result<(), duckdb::Error>,
-    M: FnMut(duckdb::Error) -> Response,
+    F: FnMut(&duckdb::Connection) -> ApiResult<()>,
 {
     let mut member_stmt = conn
         .prepare("SELECT user_id, joined_at FROM workspace_members WHERE workspace_id = ?")
@@ -105,20 +86,28 @@ where
         .collect();
     let members = members.map_err(internal_err)?;
 
+    for (member_user_id, joined_at) in &members {
+        conn.execute(
+            "INSERT INTO workspace_member_backups (workspace_id, user_id, joined_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+            duckdb::params![workspace_id, member_user_id, joined_at],
+        )
+        .map_err(internal_err)?;
+    }
+
     conn.execute(
         "DELETE FROM workspace_members WHERE workspace_id = ?",
         duckdb::params![workspace_id],
     )
     .map_err(internal_err)?;
 
-    if let Err(update_err) = update_workspace_row(conn) {
+    if let Err(err) = op(conn) {
         for (member_user_id, joined_at) in &members {
             let _ = conn.execute(
                 "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?)",
                 duckdb::params![workspace_id, member_user_id, joined_at],
             );
         }
-        return Err(map_update_err(update_err));
+        return Err(err);
     }
 
     for (member_user_id, joined_at) in &members {
@@ -128,6 +117,12 @@ where
         )
         .map_err(internal_err)?;
     }
+
+    conn.execute(
+        "DELETE FROM workspace_member_backups WHERE workspace_id = ?",
+        duckdb::params![workspace_id],
+    )
+    .map_err(internal_err)?;
 
     Ok(())
 }
@@ -708,18 +703,14 @@ pub async fn update_workspace(
         return Err(bad_req("工作空间名称已被使用"));
     }
 
-    with_detached_workspace_members_with_error_mapper(
-        &conn,
-        &workspace_id,
-        |conn| {
-            conn.execute(
-                "UPDATE workspaces SET name = ? WHERE id = ?",
-                duckdb::params![&name, &workspace_id],
-            )?;
-            Ok(())
-        },
-        workspace_name_conflict_or_internal,
-    )?;
+    with_detached_workspace_members(&conn, &workspace_id, |conn| {
+        conn.execute(
+            "UPDATE workspaces SET name = ? WHERE id = ?",
+            duckdb::params![&name, &workspace_id],
+        )
+        .map_err(workspace_name_conflict_or_internal)?;
+        Ok(())
+    })?;
 
     info!(workspace_id = %workspace_id, name = %name, "Workspace updated");
 
@@ -763,9 +754,23 @@ pub async fn delete_workspace(
 
     with_detached_workspace_members(&conn, &workspace_id, |conn| {
         conn.execute(
+                "DELETE FROM published_files WHERE file_id IN (SELECT id FROM files WHERE workspace_id = ?)",
+                duckdb::params![&workspace_id],
+            )
+            .map_err(internal_err)?;
+
+        conn.execute(
+            "UPDATE files SET is_public = FALSE WHERE workspace_id = ?",
+            duckdb::params![&workspace_id],
+        )
+        .map_err(internal_err)?;
+
+        conn.execute(
             "UPDATE workspaces SET deleted_at = ?, name = ? WHERE id = ?",
             duckdb::params![&now, &archived_name, &workspace_id],
-        )?;
+        )
+        .map_err(internal_err)?;
+
         Ok(())
     })?;
 
@@ -823,18 +828,14 @@ pub async fn restore_workspace(
             return Err(bad_req("工作空间名称已被使用"));
         }
 
-        with_detached_workspace_members_with_error_mapper(
-            &conn,
-            &workspace_id,
-            |conn| {
-                conn.execute(
-                    "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
-                    duckdb::params![&name, &workspace_id],
-                )?;
-                Ok(())
-            },
-            workspace_name_conflict_or_internal,
-        )?;
+        with_detached_workspace_members(&conn, &workspace_id, |conn| {
+            conn.execute(
+                "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
+                duckdb::params![&name, &workspace_id],
+            )
+            .map_err(workspace_name_conflict_or_internal)?;
+            Ok(())
+        })?;
 
         info!(workspace_id = %workspace_id, name = %name, "Workspace restored with new name");
 
@@ -854,18 +855,14 @@ pub async fn restore_workspace(
             return Err(bad_req("工作空间名称已被使用"));
         }
 
-        with_detached_workspace_members_with_error_mapper(
-            &conn,
-            &workspace_id,
-            |conn| {
-                conn.execute(
-                    "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
-                    duckdb::params![&restored_name, &workspace_id],
-                )?;
-                Ok(())
-            },
-            workspace_name_conflict_or_internal,
-        )?;
+        with_detached_workspace_members(&conn, &workspace_id, |conn| {
+            conn.execute(
+                "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
+                duckdb::params![&restored_name, &workspace_id],
+            )
+            .map_err(workspace_name_conflict_or_internal)?;
+            Ok(())
+        })?;
 
         info!(workspace_id = %workspace_id, "Workspace restored");
 

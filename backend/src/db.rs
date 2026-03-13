@@ -78,7 +78,36 @@ fn ensure_workspace_schema_and_backfill(conn: &duckdb::Connection) {
         [],
     );
 
+    recover_detached_workspace_members(conn).expect("Failed to recover detached workspace members");
     backfill_workspace_data(conn).expect("Failed to backfill workspace data");
+}
+
+fn recover_detached_workspace_members(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
+    let backup_rows = {
+        let mut stmt =
+            conn.prepare("SELECT workspace_id, user_id, joined_at FROM workspace_member_backups")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    for (workspace_id, user_id, joined_at) in &backup_rows {
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+            duckdb::params![workspace_id, user_id, joined_at],
+        )?;
+    }
+
+    if !backup_rows.is_empty() {
+        conn.execute("DELETE FROM workspace_member_backups", [])?;
+    }
+
+    Ok(())
 }
 
 fn backfill_workspace_data(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
@@ -491,6 +520,13 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
 
         CREATE INDEX IF NOT EXISTS idx_workspace_members_user
             ON workspace_members(user_id);
+
+        CREATE TABLE IF NOT EXISTS workspace_member_backups (
+            workspace_id VARCHAR NOT NULL,
+            user_id VARCHAR NOT NULL,
+            joined_at TIMESTAMP NOT NULL,
+            PRIMARY KEY (workspace_id, user_id)
+        );
         ",
     )
     .expect("Failed to create workspace tables");

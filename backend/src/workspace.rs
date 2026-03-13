@@ -74,19 +74,20 @@ pub const LEGACY_SHARED_WORKSPACE_NAME: &str = "Migrated Workspace";
 
 pub fn validate_workspace_name(name: &str) -> Result<String, String> {
     let name = name.trim().to_string();
+    let char_count = name.chars().count();
 
     if name.is_empty() {
         return Err("工作空间名称不能为空".to_string());
     }
 
-    if name.len() < WORKSPACE_NAME_MIN_LEN {
+    if char_count < WORKSPACE_NAME_MIN_LEN {
         return Err(format!(
             "工作空间名称至少需要 {} 个字符",
             WORKSPACE_NAME_MIN_LEN
         ));
     }
 
-    if name.len() > WORKSPACE_NAME_MAX_LEN {
+    if char_count > WORKSPACE_NAME_MAX_LEN {
         return Err(format!(
             "工作空间名称不能超过 {} 个字符",
             WORKSPACE_NAME_MAX_LEN
@@ -158,5 +159,16 @@ mod tests {
             make_legacy_shared_workspace_name(),
             LEGACY_SHARED_WORKSPACE_NAME
         );
+    }
+
+    #[test]
+    fn validate_workspace_name_counts_characters_not_bytes() {
+        let valid_name = "工作空间".repeat(12);
+        assert_eq!(valid_name.chars().count(), 48);
+        assert!(validate_workspace_name(&valid_name).is_ok());
+
+        let too_long_name = "测".repeat(51);
+        assert_eq!(too_long_name.chars().count(), 51);
+        assert!(validate_workspace_name(&too_long_name).is_err());
     }
 }

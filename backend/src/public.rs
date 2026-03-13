@@ -127,7 +127,7 @@ pub async fn get_public_tile(
                     COALESCE(pf.tile_source, f.tile_source, 'duckdb') as tile_source
              FROM files f
              LEFT JOIN published_files pf ON f.id = pf.file_id
-             WHERE f.id = ? AND f.is_public = TRUE",
+             WHERE f.id = ? AND f.is_public = TRUE AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id = f.workspace_id AND w.deleted_at IS NULL)",
             duckdb::params![&file_id],
             |row| Ok(PublicTileFileMeta {
                 crs: row.get(0)?,
@@ -308,7 +308,7 @@ pub async fn get_public_pmtiles(
             "SELECT f.id, f.path, COALESCE(pf.tile_source, f.tile_source, 'duckdb')
              FROM files f
              JOIN published_files pf ON f.id = pf.file_id
-             WHERE pf.slug = ? AND f.is_public = TRUE",
+             WHERE pf.slug = ? AND f.is_public = TRUE AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id = f.workspace_id AND w.deleted_at IS NULL)",
             duckdb::params![&slug],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
@@ -494,7 +494,7 @@ pub async fn head_public_pmtiles(
             "SELECT f.path, COALESCE(pf.tile_source, f.tile_source, 'duckdb')
              FROM files f
              JOIN published_files pf ON f.id = pf.file_id
-             WHERE pf.slug = ? AND f.is_public = TRUE",
+             WHERE pf.slug = ? AND f.is_public = TRUE AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id = f.workspace_id AND w.deleted_at IS NULL)",
             duckdb::params![&slug],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -568,7 +568,7 @@ pub async fn get_public_tile_meta(
                     COALESCE(pf.maxzoom, f.maxzoom) as maxzoom
              FROM files f
              JOIN published_files pf ON f.id = pf.file_id
-             WHERE pf.slug = ? AND f.is_public = TRUE",
+             WHERE pf.slug = ? AND f.is_public = TRUE AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id = f.workspace_id AND w.deleted_at IS NULL)",
             duckdb::params![&slug],
             |row| {
                 Ok(PublicMetaRow {
