@@ -68,7 +68,7 @@ function getInitialPublishMaxZoom(fileItem) {
 }
 
 function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliasesUpdate }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const [activeTab, setActiveTab] = useState('basic');
   const tabs = [
@@ -102,6 +102,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [iframeHeight, setIframeHeight] = useState('400');
   const [copyIframeSuccess, setCopyIframeSuccess] = useState(false);
   const previousFileIdRef = useRef(file?.id ?? null);
+  const dateTimeFormatter = useMemo(
+    () => new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language || undefined),
+    [i18n.language, i18n.resolvedLanguage],
+  );
 
   // Handle click outside to cancel alias editing
   useEffect(() => {
@@ -410,7 +414,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
             <div className="detail-group">
               <div className="detail-label">{t('file.detail.uploadTime')}</div>
               <div className="detail-value">
-                {file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '--'}
+                {file.uploadedAt ? dateTimeFormatter.format(new Date(file.uploadedAt)) : '--'}
               </div>
             </div>
 
@@ -1348,9 +1352,13 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 }
 
 export default function App() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user, logout } = useAuth();
   const loadFilesFailedMessageRef = useRef(t('app.loadFilesFailed'));
+  const dateTimeFormatter = useMemo(
+    () => new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language || undefined),
+    [i18n.language, i18n.resolvedLanguage],
+  );
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -1690,7 +1698,7 @@ export default function App() {
                     </span>
                     <span>{formatSize(item.size || 0)}</span>
                     <span className="muted">
-                      {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : '--'}
+                      {item.uploadedAt ? dateTimeFormatter.format(new Date(item.uploadedAt)) : '--'}
                     </span>
                     <span
                       className={`status ${item.status || 'uploaded'}`}
