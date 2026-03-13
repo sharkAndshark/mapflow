@@ -325,7 +325,7 @@ export function PublicTileMap({
         } catch (loadError) {
           if (!cancelled) {
             setRuntimeMessage(
-              loadError instanceof Error ? loadError.message : 'Failed to load PMTiles archive',
+              loadError instanceof Error ? loadError.message : t('errors.loadPmtilesFailed'),
             );
             setIsArchiveLoading(false);
           }
@@ -423,7 +423,7 @@ export function PublicTileMap({
     return () => {
       cancelled = true;
     };
-  }, [defaultStyle, error, meta]);
+  }, [defaultStyle, error, meta, t]);
 
   const displayError = error || runtimeMessage;
 

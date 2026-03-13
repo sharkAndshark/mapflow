@@ -342,7 +342,7 @@ ${generateOpenLayersCode(meta, origin)}
   return md;
 }
 
-function CopyButton({ text, label }) {
+function CopyButton({ text, label, copiedLabel }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -371,7 +371,7 @@ function CopyButton({ text, label }) {
         marginLeft: '8px',
       }}
     >
-      {copied ? 'Copied!' : label}
+      {copied ? copiedLabel : label}
     </button>
   );
 }
@@ -452,7 +452,7 @@ export default function TileDocs() {
             <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
             {meta.crsType === 'custom' ? (
               <span className="badge" style={{ backgroundColor: '#f0ad4e', color: '#fff' }}>
-                {meta.crs || 'Custom CRS'}
+                {meta.crs || t('tileDocs.custom')}
               </span>
             ) : meta.crs ? (
               <span className="badge">{meta.crs}</span>
@@ -527,7 +527,11 @@ export default function TileDocs() {
                       {origin}
                       {meta.tileUrl}
                     </code>
-                    <CopyButton text={`${origin}${meta.tileUrl}`} label={t('common.copy')} />
+                    <CopyButton
+                      text={`${origin}${meta.tileUrl}`}
+                      label={t('common.copy')}
+                      copiedLabel={t('common.copied')}
+                    />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <span style={{ fontWeight: '500', width: '80px' }}>
@@ -545,7 +549,11 @@ export default function TileDocs() {
                     >
                       {origin}/tiles/{slug}/meta
                     </code>
-                    <CopyButton text={`${origin}/tiles/${slug}/meta`} label={t('common.copy')} />
+                    <CopyButton
+                      text={`${origin}/tiles/${slug}/meta`}
+                      label={t('common.copy')}
+                      copiedLabel={t('common.copied')}
+                    />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <span style={{ fontWeight: '500', width: '80px' }}>
@@ -564,7 +572,11 @@ export default function TileDocs() {
                       {origin}
                       {viewerUrlPath}
                     </code>
-                    <CopyButton text={`${origin}${viewerUrlPath}`} label={t('common.copy')} />
+                    <CopyButton
+                      text={`${origin}${viewerUrlPath}`}
+                      label={t('common.copy')}
+                      copiedLabel={t('common.copied')}
+                    />
                   </div>
                 </div>
               </section>
@@ -668,7 +680,11 @@ export default function TileDocs() {
                   >
                     {t('tileDocs.openLayersCode')}
                   </h2>
-                  <CopyButton text={openLayersCode} label={t('tileDocs.copyCode')} />
+                  <CopyButton
+                    text={openLayersCode}
+                    label={t('tileDocs.copyCode')}
+                    copiedLabel={t('common.copied')}
+                  />
                 </div>
                 <button
                   type="button"

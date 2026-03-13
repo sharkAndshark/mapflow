@@ -101,7 +101,7 @@ export default function Preview() {
       try {
         const res = await fetch(`/api/files/${id}/features/${fid}`);
         if (!res.ok) {
-          let message = 'Failed to load feature properties';
+          let message = t('errors.loadFeatureFailed');
           try {
             const data = await res.json();
             if (data && typeof data.error === 'string') {
@@ -117,7 +117,7 @@ export default function Preview() {
           return;
         }
         if (!data || !Array.isArray(data.properties)) {
-          throw new Error('Invalid feature properties response');
+          throw new Error(t('errors.invalidFeatureResponse'));
         }
         if (typeof data.fid === 'number') {
           setPopupFid(data.fid);
@@ -127,7 +127,7 @@ export default function Preview() {
         if (seq !== requestSeqRef.current) {
           return;
         }
-        setPopupError(e instanceof Error ? e.message : 'Failed to load feature properties');
+        setPopupError(e instanceof Error ? e.message : t('errors.loadFeatureFailed'));
         setPopupContent(null);
       } finally {
         if (seq === requestSeqRef.current) {
@@ -135,7 +135,7 @@ export default function Preview() {
         }
       }
     },
-    [id],
+    [id, t],
   );
 
   useEffect(() => {
@@ -198,7 +198,7 @@ export default function Preview() {
       try {
         const res = await fetch(`/api/files/${id}/preview`);
         if (!res.ok) {
-          let message = 'Failed to load preview metadata';
+          let message = t('errors.loadPreviewFailed');
           try {
             const data = await res.json();
             if (data && typeof data.error === 'string') {
@@ -217,7 +217,9 @@ export default function Preview() {
       }
     }
     fetchMeta();
-  }, [id]);
+  }, [id, t]);
+
+  const noFeatureFidMessage = t('preview.noFeatureFid');
 
   // Initialize Map
   useEffect(() => {
@@ -266,7 +268,7 @@ export default function Preview() {
             selectedFidRef.current = null;
             setSelectedFid(null);
             vectorLayerRef.current?.changed();
-            setPopupError('Selected feature has no fid');
+            setPopupError(noFeatureFidMessage);
             setPopupContent(null);
             setPopupLoading(false);
             setPopupFid(null);
@@ -309,7 +311,7 @@ export default function Preview() {
         delete window.__mapflowPreviewMap;
       }
     };
-  }, [cancelPopup]);
+  }, [cancelPopup, noFeatureFidMessage]);
 
   // Update VectorTile Layer and View when Meta changes
   useEffect(() => {
