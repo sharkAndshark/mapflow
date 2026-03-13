@@ -379,6 +379,7 @@ export default function TileDocs() {
   const [mdCopied, setMdCopied] = useState(false);
   const { meta, error, isLoading } = usePublicTileMeta(slug);
   const [pmtilesHeader, setPmtilesHeader] = useState(null);
+  const [pmtilesHeaderError, setPmtilesHeaderError] = useState(null);
 
   const origin = window.location.origin;
   const viewerUrlPath = meta ? resolveViewerUrlPath(slug, meta.viewerUrl) : null;
@@ -386,21 +387,25 @@ export default function TileDocs() {
   useEffect(() => {
     if (!meta || meta.tileSource !== 'pmtiles') {
       setPmtilesHeader(null);
+      setPmtilesHeaderError(null);
       return;
     }
 
     let cancelled = false;
+    setPmtilesHeaderError(null);
     async function loadPmtilesHeader() {
       try {
         const archive = new PMTiles(meta.tileUrl);
         const header = await archive.getHeader();
         if (!cancelled) {
           setPmtilesHeader(header);
+          setPmtilesHeaderError(null);
         }
       } catch (loadError) {
         console.warn('Failed to load PMTiles header for docs display', loadError);
         if (!cancelled) {
           setPmtilesHeader(null);
+          setPmtilesHeaderError(t('errors.loadPmtilesFailed'));
         }
       }
     }
@@ -410,7 +415,7 @@ export default function TileDocs() {
     return () => {
       cancelled = true;
     };
-  }, [meta]);
+  }, [meta, t]);
 
   const docsConfig = useMemo(() => {
     if (!meta) {
@@ -420,7 +425,7 @@ export default function TileDocs() {
     return resolveDocsConfig(meta, pmtilesHeader);
   }, [meta, pmtilesHeader]);
   const isWaitingForDocsConfig = Boolean(
-    meta && !error && meta.tileSource === 'pmtiles' && !docsConfig,
+    meta && !error && !pmtilesHeaderError && meta.tileSource === 'pmtiles' && !docsConfig,
   );
 
   const openLayersCode = meta && docsConfig ? generateOpenLayersCode(meta, origin) : '';
@@ -484,6 +489,12 @@ export default function TileDocs() {
           {error && (
             <div className="alert error-alert" style={{ marginBottom: '16px' }}>
               {error}
+            </div>
+          )}
+
+          {pmtilesHeaderError && (
+            <div className="alert error-alert" style={{ marginBottom: '16px' }}>
+              {pmtilesHeaderError}
             </div>
           )}
 

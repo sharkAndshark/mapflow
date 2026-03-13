@@ -116,7 +116,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
   const embedPage = await publicContext.newPage();
   await embedPage.goto(`${workerServer.url}/tiles/my-custom-map/embed`);
   await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
-  await expect(embedPage.getByText('Back to Files')).toHaveCount(0);
+  await expect(embedPage.locator('.back-link')).toHaveCount(0);
   await expect
     .poll(
       async () => {

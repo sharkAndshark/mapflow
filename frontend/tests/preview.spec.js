@@ -237,7 +237,7 @@ test('standard CRS preview shows OSM basemap toggle and requests OSM tiles when 
   const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
   await newPage.waitForLoadState('networkidle');
 
-  const osmToggle = newPage.getByLabel('Show OSM Basemap');
+  const osmToggle = newPage.getByTestId('preview-osm-basemap-toggle');
   await expect(osmToggle).toBeVisible();
   await expect(osmToggle).not.toBeChecked();
 

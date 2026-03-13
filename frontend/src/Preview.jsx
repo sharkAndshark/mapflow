@@ -592,6 +592,7 @@ export default function Preview() {
                 type="checkbox"
                 checked={showOsmBasemap}
                 onChange={(e) => setShowOsmBasemap(e.target.checked)}
+                data-testid="preview-osm-basemap-toggle"
               />
               {t('preview.showOsmBasemap')}
             </label>

@@ -473,6 +473,7 @@ export function PublicTileMap({
 
       {overlayLabel ? (
         <div
+          data-testid="public-tile-overlay-label"
           style={{
             position: 'absolute',
             top: '12px',

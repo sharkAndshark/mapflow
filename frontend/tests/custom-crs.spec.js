@@ -449,7 +449,7 @@ test.describe('Custom CRS', () => {
     const docsPage = await publicContext.newPage();
     await docsPage.goto(`${workerServer.url}/tiles/epsg4490-urn-docs/docs`);
     await docsPage.waitForLoadState('networkidle');
-    await expect(docsPage.getByText('Live Preview (Public Endpoint)')).toBeVisible();
+    await expect(docsPage.getByTestId('public-tile-overlay-label')).toBeVisible();
 
     await expect
       .poll(
@@ -471,7 +471,7 @@ test.describe('Custom CRS', () => {
     const embedPage = await publicContext.newPage();
     await embedPage.goto(`${workerServer.url}/tiles/epsg4490-urn-docs/embed`);
     await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
-    await expect(embedPage.getByText('Back to Files')).toHaveCount(0);
+    await expect(embedPage.locator('.back-link')).toHaveCount(0);
 
     await expect
       .poll(
@@ -537,7 +537,7 @@ test.describe('Custom CRS', () => {
     const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
     await newPage.waitForLoadState('networkidle');
 
-    await expect(newPage.getByLabel('Show OSM Basemap')).toHaveCount(0);
+    await expect(newPage.getByTestId('preview-osm-basemap-toggle')).toHaveCount(0);
     await newPage.waitForTimeout(1500);
     expect(osmRequestCount).toBe(0);
   });
