@@ -308,6 +308,20 @@ pub async fn get_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
+    let deleted_at: Option<Option<String>> = conn
+        .query_row(
+            "SELECT deleted_at FROM workspaces WHERE id = ?",
+            duckdb::params![&workspace_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(internal_err)?;
+
+    let deleted_at = deleted_at.ok_or_else(|| not_found("Workspace not found"))?;
+    if deleted_at.is_some() {
+        return Err(not_found("Workspace not found"));
+    }
+
     let is_member = check_workspace_membership(&conn, &workspace_id, &user.id)?;
     if !is_member {
         return Err(forbidden("Not a member of this workspace"));
@@ -345,6 +359,20 @@ pub async fn list_members(
 ) -> ApiResult<impl IntoResponse> {
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
+
+    let deleted_at: Option<Option<String>> = conn
+        .query_row(
+            "SELECT deleted_at FROM workspaces WHERE id = ?",
+            duckdb::params![&workspace_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(internal_err)?;
+
+    let deleted_at = deleted_at.ok_or_else(|| not_found("Workspace not found"))?;
+    if deleted_at.is_some() {
+        return Err(not_found("Workspace not found"));
+    }
 
     let is_member = check_workspace_membership(&conn, &workspace_id, &user.id)?;
 
