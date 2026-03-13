@@ -1479,7 +1479,22 @@ export default function App() {
     setFiles((prev) =>
       prev.map((f) =>
         f.id === fileId
-          ? { ...f, isPublic: true, publicSlug: result.slug, useAliases: result.useAliases }
+          ? {
+              ...f,
+              isPublic: true,
+              publicSlug: result.slug,
+              useAliases: result.useAliases,
+              minZoom:
+                result.minZoom ??
+                (Object.prototype.hasOwnProperty.call(options, 'minZoom')
+                  ? options.minZoom
+                  : f.minZoom),
+              maxZoom:
+                result.maxZoom ??
+                (Object.prototype.hasOwnProperty.call(options, 'maxZoom')
+                  ? options.maxZoom
+                  : f.maxZoom),
+            }
           : f,
       ),
     );
