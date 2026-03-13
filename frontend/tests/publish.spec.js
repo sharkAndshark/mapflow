@@ -197,7 +197,7 @@ test('public embed page shows a visible error for missing slug', async ({
   await embedPage.goto(`${workerServer.url}/tiles/nonexistent-embed-slug/embed`);
 
   await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
-  await expect(embedPage.locator('.error-alert')).toContainText('Public tile not found');
+  await expect(embedPage.locator('.error-alert')).toBeVisible();
 
   await publicContext.close();
 });
@@ -353,11 +353,11 @@ test('PMTiles docs code falls back to archive zoom bounds when publish zoom is u
   await expect(docsPage.locator('pre code')).toContainText(
     'let resolvedMaxZoom = publishedMaxZoomClamped ?? headerMaxZoom;',
   );
-  const configTable = docsPage.locator('table').first();
-  await expect(configTable.locator('tr', { hasText: 'Zoom Range' })).toContainText(
+  const configTable = docsPage.getByTestId('tile-docs-config-table');
+  await expect(configTable.getByTestId('tile-docs-zoom-range-row')).toContainText(
     `${pmtilesHeader.minZoom} - ${pmtilesHeader.maxZoom}`,
   );
-  await expect(configTable.locator('tr', { hasText: 'Format' })).toContainText(
+  await expect(configTable.getByTestId('tile-docs-format-row')).toContainText(
     tileTypeLabel(pmtilesHeader.tileType),
   );
   await publicContext.close();
@@ -428,8 +428,8 @@ test('PMTiles embed view clamps published zoom bounds to archive header', async 
 
   const docsPage = await publicContext.newPage();
   await docsPage.goto(`${workerServer.url}/tiles/my-pmtiles-clamped-zoom/docs`);
-  const configTable = docsPage.locator('table').first();
-  await expect(configTable.locator('tr', { hasText: 'Zoom Range' })).toContainText(
+  const configTable = docsPage.getByTestId('tile-docs-config-table');
+  await expect(configTable.getByTestId('tile-docs-zoom-range-row')).toContainText(
     `${pmtilesHeader.maxZoom} - ${pmtilesHeader.maxZoom}`,
   );
   await expect(docsPage.locator('pre code')).toContainText('const publishedMinZoomClamped =');

@@ -611,9 +611,12 @@ export default function TileDocs() {
                 >
                   {t('tileDocs.configuration')}
                 </h2>
-                <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
+                <table
+                  data-testid="tile-docs-config-table"
+                  style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}
+                >
                   <tbody>
-                    <tr>
+                    <tr data-testid="tile-docs-zoom-range-row">
                       <td style={{ padding: '8px 0', fontWeight: '500', width: '120px' }}>
                         {t('tileDocs.zoomRange')}
                       </td>
@@ -621,7 +624,7 @@ export default function TileDocs() {
                         {docsConfig.minZoom} - {docsConfig.maxZoom}
                       </td>
                     </tr>
-                    <tr>
+                    <tr data-testid="tile-docs-crs-row">
                       <td style={{ padding: '8px 0', fontWeight: '500' }}>{t('tileDocs.crs')}</td>
                       <td style={{ padding: '8px 0' }}>
                         {meta.crs || 'EPSG:3857'}
@@ -641,7 +644,7 @@ export default function TileDocs() {
                         )}
                       </td>
                     </tr>
-                    <tr>
+                    <tr data-testid="tile-docs-format-row">
                       <td style={{ padding: '8px 0', fontWeight: '500' }}>
                         {t('tileDocs.format')}
                       </td>

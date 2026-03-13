@@ -103,7 +103,11 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [copyIframeSuccess, setCopyIframeSuccess] = useState(false);
   const previousFileIdRef = useRef(file?.id ?? null);
   const dateTimeFormatter = useMemo(
-    () => new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language || undefined),
+    () =>
+      new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language || undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
     [i18n.language, i18n.resolvedLanguage],
   );
 
@@ -1356,7 +1360,11 @@ export default function App() {
   const { user, logout } = useAuth();
   const loadFilesFailedMessageRef = useRef(t('app.loadFilesFailed'));
   const dateTimeFormatter = useMemo(
-    () => new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language || undefined),
+    () =>
+      new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language || undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
     [i18n.language, i18n.resolvedLanguage],
   );
   const [files, setFiles] = useState([]);
