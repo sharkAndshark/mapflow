@@ -452,22 +452,24 @@ pub async fn invite_member(
         return Err(bad_req("用户名不能为空"));
     }
 
+    let deleted_at: Option<Option<String>> = conn
+        .query_row(
+            "SELECT deleted_at FROM workspaces WHERE id = ?",
+            duckdb::params![&workspace_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(internal_err)?;
+
+    let deleted_at = deleted_at.ok_or_else(|| not_found("Workspace not found"))?;
+    if deleted_at.is_some() {
+        return Err(not_found("Workspace not found"));
+    }
+
     let is_member = check_workspace_membership(&conn, &workspace_id, &user.id)?;
 
     if !is_member {
         return Err(forbidden("Not a member of this workspace"));
-    }
-
-    let workspace_deleted: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM workspaces WHERE id = ? AND deleted_at IS NOT NULL",
-            duckdb::params![&workspace_id],
-            |row| row.get(0),
-        )
-        .map_err(internal_err)?;
-
-    if workspace_deleted > 0 {
-        return Err(not_found("Workspace not found"));
     }
 
     let target_user: Option<(String, String)> = conn

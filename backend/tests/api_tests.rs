@@ -7000,6 +7000,74 @@ async fn test_list_members_rejects_archived_workspace_with_404() {
 }
 
 #[tokio::test]
+async fn test_invite_member_rejects_archived_workspace_with_404() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("workspace-invite-archived-404.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-invite-archived-1",
+        "archivedinvite",
+        "admin",
+    )
+    .await;
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![
+                "user-invite-target-1",
+                "invitee",
+                "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36IgQE0VrqQ6EJdNpO5mLY",
+                "user"
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, deleted_at, created_at) VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-invite-archived", "Archived Team", "user-invite-archived-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params!["ws-invite-archived", "user-invite-archived-1"],
+        )
+        .unwrap();
+    }
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces/ws-invite-archived/members")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"username":"invitee"}"#))
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn test_restore_workspace_maps_unique_conflict_to_400() {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");
