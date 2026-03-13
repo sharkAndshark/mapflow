@@ -167,7 +167,7 @@ test('click feature switches highlight style immediately', async ({ page, reques
     .not.toBeNull();
 
   await expect(newPage.getByTestId('feature-inspector')).toBeVisible();
-  await expect(newPage.getByText('Feature Properties')).toBeVisible();
+  await expect(newPage.getByTestId('feature-inspector-title')).toBeVisible();
 
   const highlightDebug = await newPage.evaluate(() =>
     window.__MAPFLOW_PREVIEW_TEST__.getHighlightDebug(),

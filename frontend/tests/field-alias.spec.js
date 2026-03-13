@@ -169,7 +169,7 @@ test('alias length validation shows error', async ({ page }) => {
   await input.press('Enter');
 
   // Verify error message appears
-  await expect(aliasCell.getByText('别名不能超过 255 个字符')).toBeVisible();
+  await expect(aliasCell.getByTestId('alias-error')).toBeVisible();
 
   // Verify edit mode is still active (not saved)
   await expect(aliasCell.getByRole('textbox')).toBeVisible();
@@ -202,7 +202,7 @@ test('alias persists after reload', async ({ page }) => {
   await rowAfterReload.click();
 
   // Switch to Fields tab
-  await page.locator('.detail-sidebar').getByRole('tab', { name: 'Fields' }).click();
+  await page.locator('.detail-sidebar').getByTestId('detail-tab-fields').click();
 
   // Verify alias persisted
   const aliasCellAfterReload = page.locator('.fields-table tbody tr:first-child td.alias-cell');

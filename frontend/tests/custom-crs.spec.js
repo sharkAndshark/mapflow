@@ -301,7 +301,7 @@ test.describe('Custom CRS', () => {
     await previewPage.waitForLoadState('networkidle');
     await expect(previewPage.getByText('sf_buildings_no_crs')).toBeVisible();
 
-    await previewPage.getByLabel('Show Tile Grid').check();
+    await previewPage.getByTestId('preview-tile-grid-toggle').check();
 
     await expect
       .poll(
@@ -355,7 +355,7 @@ test.describe('Custom CRS', () => {
     await previewPage.waitForLoadState('networkidle');
     await expect(previewPage.getByText('sample')).toBeVisible();
 
-    await previewPage.getByLabel('Show Tile Grid').check();
+    await previewPage.getByTestId('preview-tile-grid-toggle').check();
     await expect
       .poll(
         async () => {

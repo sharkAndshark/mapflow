@@ -147,7 +147,7 @@ test('publish flow: upload file, publish with custom slug, access public tiles',
     });
   });
   await docsPage.goto(`${workerServer.url}/tiles/my-custom-map/docs`);
-  await expect(docsPage.getByText('Embed URL')).toBeVisible();
+  await expect(docsPage.getByTestId('tile-docs-embed-url')).toBeVisible();
   await expect(
     docsPage.locator('code').filter({ hasText: '/tiles/my-custom-map/embed' }).first(),
   ).toBeVisible();
@@ -618,9 +618,7 @@ test('slug validation: invalid characters', async ({ page }) => {
   const slugInput = sidebar.getByTestId('publish-slug-input');
   await slugInput.fill('invalid slug!');
 
-  await expect(
-    sidebar.locator('.alert', { hasText: '仅支持字母、数字、连字符和下划线' }),
-  ).toBeVisible();
+  await expect(sidebar.getByTestId('publish-slug-error')).toBeVisible();
 
   const confirmButton = sidebar.getByTestId('confirm-publish-button');
   await expect(confirmButton).toBeDisabled();
@@ -652,7 +650,7 @@ test('slug validation: too long', async ({ page }) => {
   const longSlug = 'a'.repeat(101);
   await slugInput.fill(longSlug);
 
-  await expect(sidebar.getByText('URL 标识不能超过 100 个字符')).toBeVisible();
+  await expect(sidebar.getByTestId('publish-slug-error')).toBeVisible();
 
   const confirmButton = sidebar.getByTestId('confirm-publish-button');
   await expect(confirmButton).toBeDisabled();

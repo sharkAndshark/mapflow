@@ -414,7 +414,7 @@ export default function TileDocs() {
     return () => {
       cancelled = true;
     };
-  }, [meta?.tileSource, meta?.tileUrl]);
+  }, [meta]);
 
   const docsConfig = useMemo(() => {
     if (!meta) {
@@ -507,7 +507,10 @@ export default function TileDocs() {
                   {t('tileDocs.serviceUrls')}
                 </h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center' }}
+                    data-testid="tile-docs-embed-url"
+                  >
                     <span style={{ fontWeight: '500', width: '80px' }}>
                       {t('tileDocs.tileUrl')}
                     </span>

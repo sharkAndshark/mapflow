@@ -45,6 +45,28 @@ function getStatusLabel(t, status) {
   return key ? t(key) : status;
 }
 
+function isPmtilesFile(fileItem) {
+  return (
+    fileItem?.tileSource === 'pmtiles' ||
+    fileItem?.type === 'pmtiles' ||
+    fileItem?.fileType === 'pmtiles'
+  );
+}
+
+function getInitialPublishMinZoom(fileItem) {
+  if (isPmtilesFile(fileItem) && fileItem?.minZoom == null) {
+    return '';
+  }
+  return fileItem?.minZoom ?? 0;
+}
+
+function getInitialPublishMaxZoom(fileItem) {
+  if (isPmtilesFile(fileItem) && fileItem?.maxZoom == null) {
+    return '';
+  }
+  return fileItem?.maxZoom ?? 22;
+}
+
 function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliasesUpdate }) {
   const { t } = useTranslation();
 
@@ -72,6 +94,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
   const [aliasError, setAliasError] = useState('');
   const [isSavingAlias, setIsSavingAlias] = useState(false);
   const aliasEditRef = useRef(null);
+  const aliasInputRef = useRef(null);
 
   // Iframe embed states
   const [iframeCodeExpanded, setIframeCodeExpanded] = useState(false);
@@ -95,6 +118,12 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingAlias]);
 
+  useEffect(() => {
+    if (editingAlias) {
+      aliasInputRef.current?.focus();
+    }
+  }, [editingAlias]);
+
   // Publish-related state
   const [editPublish, setEditPublish] = useState(false);
   const [publishSlug, setPublishSlug] = useState('');
@@ -109,8 +138,11 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
   // Cache slug validation result to avoid duplicate calls
   const slugValidationError = useMemo(() => {
-    return validateSlug(publishSlug.trim()).error;
-  }, [publishSlug]);
+    return validateSlug(publishSlug.trim(), {
+      tooLong: t('file.detail.slugTooLong'),
+      invalidChars: t('file.detail.slugInvalidChars'),
+    }).error;
+  }, [publishSlug, t]);
 
   // Real-time zoom validation for non-tile files
   const isTileFile = file?.tileFormat != null;
@@ -118,8 +150,8 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
     if (isTileFile) return null;
     const minZoom = publishMinZoom === '' ? 0 : publishMinZoom;
     const maxZoom = publishMaxZoom === '' ? 22 : publishMaxZoom;
-    return minZoom > maxZoom ? '最小层级不能大于最大层级' : null;
-  }, [publishMinZoom, publishMaxZoom, isTileFile]);
+    return minZoom > maxZoom ? t('file.detail.zoomMinLargerThanMax') : null;
+  }, [publishMinZoom, publishMaxZoom, isTileFile, t]);
 
   useEffect(() => {
     const fileId = file?.id;
@@ -139,7 +171,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
       .then(async (res) => {
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || 'Failed to load schema');
+          throw new Error(data.error || t('file.detail.loadSchemaFailed'));
         }
         return res.json();
       })
@@ -162,7 +194,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
     return () => {
       cancelled = true;
     };
-  }, [file?.id, file?.status]);
+  }, [file?.id, file?.status, t]);
 
   useEffect(() => {
     if (file) {
@@ -189,33 +221,8 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
     }
   }, [file]);
 
-  // Reset to basic tab only when file ID changes (different file selected)
-  // Using file?.id instead of [file] prevents tab reset when file properties change
-  // (e.g., when isPublic changes after publishing)
-  useEffect(() => {
+  if (activeTab !== 'basic' && editingAlias && !file) {
     setActiveTab('basic');
-  }, [file?.id]);
-
-  function isPmtilesFile(fileItem) {
-    return (
-      fileItem?.tileSource === 'pmtiles' ||
-      fileItem?.type === 'pmtiles' ||
-      fileItem?.fileType === 'pmtiles'
-    );
-  }
-
-  function getInitialPublishMinZoom(fileItem) {
-    if (isPmtilesFile(fileItem) && fileItem?.minZoom == null) {
-      return '';
-    }
-    return fileItem?.minZoom ?? 0;
-  }
-
-  function getInitialPublishMaxZoom(fileItem) {
-    if (isPmtilesFile(fileItem) && fileItem?.maxZoom == null) {
-      return '';
-    }
-    return fileItem?.maxZoom ?? 22;
   }
 
   function getPublicUrlPath(slug, fileItem) {
@@ -285,7 +292,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
         setTimeout(() => setCopyIframeSuccess(false), 2000);
       })
       .catch(() => {
-        alert('复制失败，请手动复制代码');
+        alert(t('file.detail.copyCodeFailedManual'));
       });
   }
 
@@ -318,7 +325,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
       await onPublish(file.id, options);
       setEditPublish(false);
     } catch (err) {
-      setPublishError(err.message || '发布失败');
+      setPublishError(err.message || t('file.detail.publishFailed'));
     } finally {
       setIsPublishing(false);
     }
@@ -326,18 +333,18 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
   async function handleUnpublishClick() {
     if (!file) return;
-    if (!confirm(`确定取消发布 "${file.name}" 吗？`)) return;
+    if (!confirm(t('file.detail.unpublishConfirm', { name: file.name }))) return;
     try {
       await onUnpublish(file.id);
     } catch (err) {
-      setPublishError(err.message || '取消发布失败');
+      setPublishError(err.message || t('file.detail.unpublishFailed'));
     }
   }
 
   if (!file) {
     return (
       <div className="detail-empty">
-        <p>选择一个文件查看详情</p>
+        <p>{t('file.detail.selectFileToView')}</p>
       </div>
     );
   }
@@ -375,29 +382,29 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
         {activeTab === 'basic' && (
           <div className="tab-content" role="tabpanel" id="tabpanel-basic">
             <div className="detail-group">
-              <div className="detail-label">Type</div>
+              <div className="detail-label">{t('file.detail.fileType')}</div>
               <div className="detail-value">{file.type}</div>
             </div>
 
             <div className="detail-group">
-              <div className="detail-label">Source</div>
+              <div className="detail-label">{t('file.detail.source')}</div>
               <div className="detail-value">{file.tileSource || 'duckdb'}</div>
             </div>
 
             <div className="detail-group">
-              <div className="detail-label">Size</div>
+              <div className="detail-label">{t('file.detail.fileSize')}</div>
               <div className="detail-value">{formatSize(file.size || 0)}</div>
             </div>
 
             <div className="detail-group">
-              <div className="detail-label">Status</div>
+              <div className="detail-label">{t('file.detail.statusLabel')}</div>
               <div className={`status ${file.status}`} data-testid="file-status">
                 {getStatusLabel(t, file.status)}
               </div>
             </div>
 
             <div className="detail-group">
-              <div className="detail-label">Uploaded At</div>
+              <div className="detail-label">{t('file.detail.uploadTime')}</div>
               <div className="detail-value">
                 {file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '--'}
               </div>
@@ -412,7 +419,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
             {isFailed && file.error && (
               <div className="detail-error">
-                <strong>Error:</strong> {file.error}
+                <strong>{t('file.detail.errorLabel')}:</strong> {file.error}
               </div>
             )}
           </div>
@@ -423,13 +430,13 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
           (isReady ? (
             <div className="tab-content fields-section" role="tabpanel" id="tabpanel-fields">
               {isLoadingSchema ? (
-                <span style={{ color: '#888', fontSize: '12px' }}>加载中...</span>
+                <span style={{ color: '#888', fontSize: '12px' }}>{t('common.loading')}</span>
               ) : schemaError ? (
                 <span style={{ color: '#d32f2f', fontSize: '12px' }}>{schemaError}</span>
               ) : schema?.layers ? (
                 <div style={{ fontSize: '13px' }}>
                   {schema.layers.length === 0 ? (
-                    <span style={{ color: '#888' }}>无字段</span>
+                    <span style={{ color: '#888' }}>{t('file.detail.noFields')}</span>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {schema.layers.map((layer) => (
@@ -460,7 +467,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                     fontWeight: 500,
                                   }}
                                 >
-                                  原始名称
+                                  {t('file.detail.originalName')}
                                 </th>
                                 <th
                                   style={{
@@ -470,7 +477,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                     fontWeight: 500,
                                   }}
                                 >
-                                  别名
+                                  {t('file.detail.alias')}
                                 </th>
                                 <th
                                   style={{
@@ -480,7 +487,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                     fontWeight: 500,
                                   }}
                                 >
-                                  类型
+                                  {t('file.detail.fieldType')}
                                 </th>
                               </tr>
                             </thead>
@@ -491,7 +498,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                     colSpan="3"
                                     style={{ padding: '8px', color: '#999', fontStyle: 'italic' }}
                                   >
-                                    无字段
+                                    {t('file.detail.noFields')}
                                   </td>
                                 </tr>
                               ) : (
@@ -514,7 +521,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                   const handleSave = async () => {
                                     const trimmedValue = aliasValue.trim();
                                     if (trimmedValue.length > 255) {
-                                      setAliasError('别名不能超过 255 个字符');
+                                      setAliasError(t('file.detail.aliasTooLong'));
                                       return;
                                     }
                                     setAliasError('');
@@ -543,7 +550,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                       setEditingAlias(null);
                                       setAliasValue('');
                                     } catch (err) {
-                                      setAliasError(err.message || '保存失败');
+                                      setAliasError(err.message || t('file.detail.saveFailed'));
                                     } finally {
                                       setIsSavingAlias(false);
                                     }
@@ -582,22 +589,25 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                         onKeyDown={!isEditing ? handleCellKeyDown : undefined}
                                         role={!isEditing ? 'button' : undefined}
                                         tabIndex={!isEditing ? 0 : undefined}
-                                        aria-label={`编辑别名: ${field.alias || '未设置'}`}
+                                        aria-label={t('file.detail.editAliasAria', {
+                                          alias: field.alias || t('file.detail.aliasNotSet'),
+                                        })}
                                       >
                                         {isEditing ? (
                                           <div>
                                             <input
+                                              ref={aliasInputRef}
                                               type="text"
                                               value={aliasValue}
                                               onChange={(e) => setAliasValue(e.target.value)}
                                               onKeyDown={handleKeyDown}
-                                              placeholder="输入别名"
+                                              placeholder={t('file.detail.enterAlias')}
                                               className="alias-input"
                                               disabled={isSavingAlias}
-                                              autoFocus
                                             />
                                             {aliasError && (
                                               <div
+                                                data-testid="alias-error"
                                                 style={{
                                                   fontSize: '11px',
                                                   color: '#d32f2f',
@@ -615,7 +625,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                                 onClick={handleSave}
                                                 data-testid="alias-save-button"
                                               >
-                                                {isSavingAlias ? '...' : '保存'}
+                                                {isSavingAlias ? '...' : t('common.save')}
                                               </button>
                                               <button
                                                 type="button"
@@ -623,7 +633,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                                 onClick={handleCancel}
                                                 data-testid="alias-cancel-button"
                                               >
-                                                取消
+                                                {t('common.cancel')}
                                               </button>
                                             </div>
                                           </div>
@@ -661,7 +671,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
             </div>
           ) : (
             <div className="tab-empty" role="tabpanel" id="tabpanel-fields">
-              文件处理完成后可查看字段信息
+              {t('file.detail.fieldsAvailableAfterReady')}
             </div>
           ))}
 
@@ -672,7 +682,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
               {/* Publish status section */}
               {!file.isPublic && !editPublish && (
                 <div className="detail-group">
-                  <div className="detail-label">发布状态</div>
+                  <div className="detail-label">{t('file.detail.publishStatus')}</div>
                   <div className="detail-value">
                     <div
                       style={{
@@ -681,7 +691,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                         alignItems: 'center',
                       }}
                     >
-                      <span style={{ color: '#888' }}>未发布</span>
+                      <span style={{ color: '#888' }}>{t('file.detail.notPublished')}</span>
                       <button
                         type="button"
                         className="btn-primary"
@@ -696,7 +706,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           setEditPublish(true);
                         }}
                       >
-                        发布
+                        {t('file.detail.publishBtn')}
                       </button>
                     </div>
                   </div>
@@ -705,12 +715,13 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
               {!file.isPublic && editPublish && (
                 <div className="detail-group">
-                  <div className="detail-label">发布设置</div>
+                  <div className="detail-label">{t('file.detail.publishSettings')}</div>
                   <div className="detail-value">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {/* URL Slug */}
                       <div>
                         <label
+                          htmlFor="publish-slug-input"
                           style={{
                             fontSize: '12px',
                             color: '#666',
@@ -718,9 +729,10 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             display: 'block',
                           }}
                         >
-                          URL 标识（可选）
+                          {t('file.detail.publishSlug')}
                         </label>
                         <input
+                          id="publish-slug-input"
                           type="text"
                           value={publishSlug}
                           onChange={(e) => setPublishSlug(e.target.value)}
@@ -730,18 +742,20 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           data-testid="publish-slug-input"
                         />
                         {slugValidationError && (
-                          <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
+                          <div
+                            className="alert"
+                            style={{ marginTop: '4px', fontSize: '12px' }}
+                            data-testid="publish-slug-error"
+                          >
                             {slugValidationError}
                           </div>
                         )}
-                        <small className="form-hint">
-                          留空则使用文件 ID。仅支持字母、数字、连字符和下划线
-                        </small>
+                        <small className="form-hint">{t('file.detail.publishSlugHint')}</small>
                       </div>
 
                       {/* Zoom levels */}
                       <div>
-                        <label
+                        <div
                           style={{
                             fontSize: '12px',
                             color: '#666',
@@ -749,14 +763,17 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             display: 'block',
                           }}
                         >
-                          缩放层级
+                          {t('file.detail.publishZoom')}
                           {file.tileFormat != null && (
-                            <span style={{ color: '#888', fontWeight: 'normal' }}> (只读)</span>
+                            <span style={{ color: '#888', fontWeight: 'normal' }}>
+                              {' '}
+                              ({t('file.detail.readOnly')})
+                            </span>
                           )}
-                        </label>
+                        </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                           <div style={{ flex: 1 }}>
-                            <small className="form-hint">最小</small>
+                            <small className="form-hint">{t('file.detail.min')}</small>
                             {file.tileFormat != null ? (
                               <div className="form-value">{file.minZoom ?? '-'}</div>
                             ) : (
@@ -781,7 +798,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             )}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <small className="form-hint">最大</small>
+                            <small className="form-hint">{t('file.detail.max')}</small>
                             {file.tileFormat != null ? (
                               <div className="form-value">{file.maxZoom ?? '-'}</div>
                             ) : (
@@ -807,7 +824,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           </div>
                         </div>
                         {file.tileFormat == null && (
-                          <small className="form-hint">动态矢量数据可设置 0-22 层级范围</small>
+                          <small className="form-hint">{t('file.detail.dynamicZoomHint')}</small>
                         )}
                         {zoomValidationError && (
                           <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
@@ -818,7 +835,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
                       {file.tileFormat == null && (
                         <div>
-                          <label
+                          <div
                             style={{
                               fontSize: '12px',
                               color: '#666',
@@ -826,8 +843,8 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                               display: 'block',
                             }}
                           >
-                            字段名称
-                          </label>
+                            {t('file.detail.fieldNameSetting')}
+                          </div>
                           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                             <label
                               style={{
@@ -843,7 +860,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                 checked={publishUseAliases}
                                 onChange={() => setPublishUseAliases(true)}
                               />
-                              <span style={{ fontSize: '12px' }}>使用别名</span>
+                              <span style={{ fontSize: '12px' }}>{t('file.detail.useAlias')}</span>
                             </label>
                             <label
                               style={{
@@ -859,16 +876,20 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                 checked={!publishUseAliases}
                                 onChange={() => setPublishUseAliases(false)}
                               />
-                              <span style={{ fontSize: '12px' }}>使用原始名称</span>
+                              <span style={{ fontSize: '12px' }}>
+                                {t('file.detail.useOriginalName')}
+                              </span>
                             </label>
                           </div>
-                          <small className="form-hint">控制公开发布瓦片中的属性字段名称</small>
+                          <small className="form-hint">
+                            {t('file.detail.controlFieldNameHint')}
+                          </small>
                         </div>
                       )}
 
                       {/* Public URL preview */}
                       <div>
-                        <label
+                        <div
                           style={{
                             fontSize: '12px',
                             color: '#666',
@@ -877,7 +898,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           }}
                         >
                           {t('file.detail.publicUrl')}
-                        </label>
+                        </div>
                         <div className="form-value code" style={{ fontSize: '12px' }}>
                           {getPublicUrlPath(publishSlug.trim() || file.id, file)}
                         </div>
@@ -1068,13 +1089,13 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
               {file.isPublic && (
                 <div className="detail-group">
-                  <div className="detail-label">缩放层级</div>
+                  <div className="detail-label">{t('file.detail.zoomLevels')}</div>
                   <div className="detail-value">
                     {editZoom ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                           <div style={{ flex: 1 }}>
-                            <small className="form-hint">最小</small>
+                            <small className="form-hint">{t('file.detail.min')}</small>
                             <input
                               type="number"
                               min="0"
@@ -1086,7 +1107,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             />
                           </div>
                           <div style={{ flex: 1 }}>
-                            <small className="form-hint">最大</small>
+                            <small className="form-hint">{t('file.detail.max')}</small>
                             <input
                               type="number"
                               min="0"
@@ -1111,7 +1132,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             disabled={isSavingZoom}
                             onClick={async () => {
                               if (minZoom > maxZoom) {
-                                setZoomError('最小层级不能大于最大层级');
+                                setZoomError(t('file.detail.zoomMinLargerThanMax'));
                                 return;
                               }
                               setZoomError('');
@@ -1123,13 +1144,13 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                   onZoomUpdate(file.id, minZoom, maxZoom);
                                 }
                               } catch (err) {
-                                setZoomError(err.message || '保存失败');
+                                setZoomError(err.message || t('file.detail.saveFailed'));
                               } finally {
                                 setIsSavingZoom(false);
                               }
                             }}
                           >
-                            {isSavingZoom ? '保存中...' : '保存'}
+                            {isSavingZoom ? t('common.saving') : t('common.save')}
                           </button>
                           <button
                             type="button"
@@ -1142,7 +1163,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                               setZoomError('');
                             }}
                           >
-                            取消
+                            {t('common.cancel')}
                           </button>
                         </div>
                       </div>
@@ -1164,14 +1185,14 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                             style={{ fontSize: '12px' }}
                             onClick={() => setEditZoom(true)}
                           >
-                            修改
+                            {t('common.modify')}
                           </button>
                         )}
                       </div>
                     )}
                     {file.tileFormat != null && !editZoom && (
                       <small className="form-hint" style={{ marginTop: '4px' }}>
-                        瓦片文件的缩放层级由源文件决定
+                        {t('file.detail.tileZoomHint')}
                       </small>
                     )}
                   </div>
@@ -1180,7 +1201,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
               {file.isPublic && file.tileFormat == null && (
                 <div className="detail-group">
-                  <div className="detail-label">字段名称</div>
+                  <div className="detail-label">{t('file.detail.fieldNameSetting')}</div>
                   <div className="detail-value">
                     {editUseAliases ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1199,7 +1220,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                               checked={useAliasesValue}
                               onChange={() => setUseAliasesValue(true)}
                             />
-                            <span style={{ fontSize: '12px' }}>使用别名</span>
+                            <span style={{ fontSize: '12px' }}>{t('file.detail.useAlias')}</span>
                           </label>
                           <label
                             style={{
@@ -1215,7 +1236,9 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                               checked={!useAliasesValue}
                               onChange={() => setUseAliasesValue(false)}
                             />
-                            <span style={{ fontSize: '12px' }}>使用原始名称</span>
+                            <span style={{ fontSize: '12px' }}>
+                              {t('file.detail.useOriginalName')}
+                            </span>
                           </label>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -1236,13 +1259,15 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                                   onUseAliasesUpdate(file.id, useAliasesValue);
                                 }
                               } catch (err) {
-                                setUseAliasesError(err.message || '更新字段名称设置失败');
+                                setUseAliasesError(
+                                  err.message || t('file.detail.updateFieldNameFailed'),
+                                );
                               } finally {
                                 setIsSavingUseAliases(false);
                               }
                             }}
                           >
-                            {isSavingUseAliases ? '保存中...' : '保存'}
+                            {isSavingUseAliases ? t('common.saving') : t('common.save')}
                           </button>
                           <button
                             type="button"
@@ -1254,7 +1279,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                               setUseAliasesError('');
                             }}
                           >
-                            取消
+                            {t('common.cancel')}
                           </button>
                         </div>
                         {useAliasesError && (
@@ -1271,19 +1296,23 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                           alignItems: 'center',
                         }}
                       >
-                        <span>{file.useAliases !== false ? '使用别名' : '使用原始名称'}</span>
+                        <span>
+                          {file.useAliases !== false
+                            ? t('file.detail.useAlias')
+                            : t('file.detail.useOriginalName')}
+                        </span>
                         <button
                           type="button"
                           className="btn-text"
                           style={{ fontSize: '12px' }}
                           onClick={() => setEditUseAliases(true)}
                         >
-                          修改
+                          {t('common.modify')}
                         </button>
                       </div>
                     )}
                     <small className="form-hint" style={{ marginTop: '4px' }}>
-                      控制公开发布瓦片中的属性字段名称
+                      {t('file.detail.controlFieldNameHint')}
                     </small>
                   </div>
                 </div>
@@ -1299,14 +1328,14 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                     onClick={handleUnpublishClick}
                     data-testid="unpublish-button"
                   >
-                    取消发布
+                    {t('file.detail.unpublish')}
                   </button>
                 </div>
               )}
             </div>
           ) : (
             <div className="tab-empty" role="tabpanel" id="tabpanel-publish">
-              文件处理完成后可进行发布操作
+              {t('file.detail.publishAvailableAfterReady')}
             </div>
           ))}
       </div>
@@ -1324,6 +1353,7 @@ export default function App() {
   const [showPostgisModal, setShowPostgisModal] = useState(false);
   const [postgisForm, setPostgisForm] = useState(INITIAL_POSTGIS_FORM);
   const [postgisMessage, setPostgisMessage] = useState('');
+  const [postgisMessageType, setPostgisMessageType] = useState('');
   const [isTestingPostgis, setIsTestingPostgis] = useState(false);
   const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
 
@@ -1339,6 +1369,7 @@ export default function App() {
   function resetPostgisForm() {
     setPostgisForm(INITIAL_POSTGIS_FORM);
     setPostgisMessage('');
+    setPostgisMessageType('');
   }
 
   function updatePostgisField(field, value) {
@@ -1356,6 +1387,7 @@ export default function App() {
 
   async function handleTestPostgisConnection() {
     setPostgisMessage('');
+    setPostgisMessageType('');
     setIsTestingPostgis(true);
     try {
       const payload = {
@@ -1370,10 +1402,15 @@ export default function App() {
       };
       const result = await testPostgisConnection(payload);
       setPostgisMessage(
-        `连接成功: PostgreSQL ${result.serverVersion}, ${result.postgisVersion.split(' ').slice(0, 2).join(' ')}`,
+        t('postgis.connectionSuccessDetail', {
+          serverVersion: result.serverVersion,
+          postgisVersion: result.postgisVersion.split(' ').slice(0, 2).join(' '),
+        }),
       );
+      setPostgisMessageType('success');
     } catch (error) {
-      setPostgisMessage(error instanceof Error ? error.message : 'PostGIS 连接测试失败');
+      setPostgisMessage(error instanceof Error ? error.message : t('postgis.connectionTestFailed'));
+      setPostgisMessageType('error');
     } finally {
       setIsTestingPostgis(false);
     }
@@ -1381,6 +1418,7 @@ export default function App() {
 
   async function handleRegisterPostgisSource() {
     setPostgisMessage('');
+    setPostgisMessageType('');
     setIsRegisteringPostgis(true);
     try {
       const payload = {
@@ -1404,7 +1442,8 @@ export default function App() {
       setShowPostgisModal(false);
       resetPostgisForm();
     } catch (error) {
-      setPostgisMessage(error instanceof Error ? error.message : 'PostGIS 数据源注册失败');
+      setPostgisMessage(error instanceof Error ? error.message : t('postgis.sourceRegisterFailed'));
+      setPostgisMessageType('error');
     } finally {
       setIsRegisteringPostgis(false);
     }
@@ -1476,7 +1515,7 @@ export default function App() {
         }
       } catch (error) {
         if (!cancelled) {
-          setErrorMessage('无法加载文件列表');
+          setErrorMessage(t('app.loadFilesFailed'));
         }
       } finally {
         if (!cancelled) {
@@ -1488,7 +1527,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   const orderedFiles = useMemo(() => {
     return [...files].sort((a, b) => {
@@ -1529,13 +1568,13 @@ export default function App() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || '上传失败');
+        throw new Error(data.error || t('app.uploadFailed'));
       }
       const data = await res.json();
       setFiles((prev) => [data, ...prev.filter((item) => item.id !== tempId)]);
       setSelectedId(data.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : '上传失败';
+      const message = error instanceof Error ? error.message : t('app.uploadFailed');
       setErrorMessage(message);
       setFiles((prev) =>
         prev.map((item) =>
@@ -1571,6 +1610,7 @@ export default function App() {
               onClick={() => {
                 setShowPostgisModal(true);
                 setPostgisMessage('');
+                setPostgisMessageType('');
               }}
             >
               {t('app.connectPostgis')}
@@ -1625,37 +1665,31 @@ export default function App() {
                   <div></div>
                 </div>
                 {orderedFiles.map((item) => (
-                  <div
+                  <button
                     key={item.id}
+                    type="button"
                     className={`row ${selectedId === item.id ? 'selected' : ''}`}
                     onClick={() => setSelectedId(item.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setSelectedId(item.id);
-                      }
-                    }}
-                    tabIndex={0}
-                    role="button"
                     aria-pressed={selectedId === item.id}
                     data-testid={`file-row-${item.id}`}
+                    style={{ width: '100%' }}
                   >
-                    <div>{item.name}</div>
-                    <div>
+                    <span>{item.name}</span>
+                    <span>
                       {item.type}
                       {item.tileSource === 'postgis' ? ' · PostGIS' : ''}
-                    </div>
-                    <div>{formatSize(item.size || 0)}</div>
-                    <div className="muted">
+                    </span>
+                    <span>{formatSize(item.size || 0)}</span>
+                    <span className="muted">
                       {item.uploadedAt ? new Date(item.uploadedAt).toLocaleString() : '--'}
-                    </div>
-                    <div
+                    </span>
+                    <span
                       className={`status ${item.status || 'uploaded'}`}
                       data-testid={`status-${item.status || 'uploaded'}`}
                     >
                       {getStatusLabel(t, item.status)}
-                    </div>
-                    <div onClick={(e) => e.stopPropagation()}>
+                    </span>
+                    <span>
                       {item.status === 'ready' && (
                         <a
                           href={`/preview/${item.id}`}
@@ -1664,12 +1698,15 @@ export default function App() {
                           className="btn-text"
                           title={t('fileList.viewInNewWindow')}
                           data-testid="preview-link"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
                         >
                           {t('fileList.view')}
                         </a>
                       )}
-                    </div>
-                  </div>
+                    </span>
+                  </button>
                 ))}
               </div>
             )}
@@ -1688,23 +1725,38 @@ export default function App() {
       </section>
 
       {showPostgisModal && (
-        <div className="modal-overlay" onClick={() => setShowPostgisModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <button
+            type="button"
+            className="modal-overlay"
+            aria-label={t('common.close')}
+            onClick={() => setShowPostgisModal(false)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              margin: 0,
+            }}
+          />
+          <div className="modal-content" style={{ position: 'relative' }}>
             <div className="modal-header">
               <h3>{t('postgis.connect')}</h3>
               <button
                 type="button"
                 className="modal-close"
                 onClick={() => setShowPostgisModal(false)}
-                aria-label="Close"
+                aria-label={t('common.close')}
               >
                 ×
               </button>
             </div>
             <div className="modal-body">
               <div className="form-group">
-                <label>Connection Name</label>
+                <label htmlFor="postgis-connection-name">{t('postgis.connectionName')}</label>
                 <input
+                  id="postgis-connection-name"
                   className="form-input"
                   value={postgisForm.connectionName}
                   onChange={(e) => updatePostgisField('connectionName', e.target.value)}
@@ -1713,16 +1765,18 @@ export default function App() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px' }}>
                 <div className="form-group">
-                  <label>Host</label>
+                  <label htmlFor="postgis-host">{t('postgis.host')}</label>
                   <input
+                    id="postgis-host"
                     className="form-input"
                     value={postgisForm.host}
                     onChange={(e) => updatePostgisField('host', e.target.value)}
                   />
                 </div>
                 <div className="form-group">
-                  <label>Port</label>
+                  <label htmlFor="postgis-port">{t('postgis.port')}</label>
                   <input
+                    id="postgis-port"
                     className="form-input"
                     type="number"
                     value={postgisForm.port}
@@ -1731,8 +1785,9 @@ export default function App() {
                 </div>
               </div>
               <div className="form-group">
-                <label>Database</label>
+                <label htmlFor="postgis-database">{t('postgis.database')}</label>
                 <input
+                  id="postgis-database"
                   className="form-input"
                   value={postgisForm.database}
                   onChange={(e) => updatePostgisField('database', e.target.value)}
@@ -1740,16 +1795,18 @@ export default function App() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="form-group">
-                  <label>Username</label>
+                  <label htmlFor="postgis-username">{t('postgis.username')}</label>
                   <input
+                    id="postgis-username"
                     className="form-input"
                     value={postgisForm.username}
                     onChange={(e) => updatePostgisField('username', e.target.value)}
                   />
                 </div>
                 <div className="form-group">
-                  <label>Password</label>
+                  <label htmlFor="postgis-password">{t('postgis.password')}</label>
                   <input
+                    id="postgis-password"
                     className="form-input"
                     type="password"
                     value={postgisForm.password}
@@ -1758,16 +1815,18 @@ export default function App() {
                 </div>
               </div>
               <div className="form-group">
-                <label>Schema</label>
+                <label htmlFor="postgis-schema">{t('postgis.schema')}</label>
                 <input
+                  id="postgis-schema"
                   className="form-input"
                   value={postgisForm.schema}
                   onChange={(e) => updatePostgisField('schema', e.target.value)}
                 />
               </div>
               <div className="form-group">
-                <label>Table/View</label>
+                <label htmlFor="postgis-object">{t('postgis.object')}</label>
                 <input
+                  id="postgis-object"
                   className="form-input"
                   value={postgisForm.object}
                   onChange={(e) => updatePostgisField('object', e.target.value)}
@@ -1776,16 +1835,18 @@ export default function App() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="form-group">
-                  <label>Geometry Column</label>
+                  <label htmlFor="postgis-geometry-column">{t('postgis.geometryColumn')}</label>
                   <input
+                    id="postgis-geometry-column"
                     className="form-input"
                     value={postgisForm.geometryColumn}
                     onChange={(e) => updatePostgisField('geometryColumn', e.target.value)}
                   />
                 </div>
                 <div className="form-group">
-                  <label>FID Column</label>
+                  <label htmlFor="postgis-fid-column">{t('postgis.fidColumn')}</label>
                   <input
+                    id="postgis-fid-column"
                     className="form-input"
                     value={postgisForm.fidColumn}
                     onChange={(e) => updatePostgisField('fidColumn', e.target.value)}
@@ -1793,8 +1854,9 @@ export default function App() {
                 </div>
               </div>
               <div className="form-group">
-                <label>Display Name (Optional)</label>
+                <label htmlFor="postgis-display-name">{t('postgis.displayName')}</label>
                 <input
+                  id="postgis-display-name"
                   className="form-input"
                   value={postgisForm.displayName}
                   onChange={(e) => updatePostgisField('displayName', e.target.value)}
@@ -1804,7 +1866,7 @@ export default function App() {
                 <div
                   className="form-hint"
                   style={{
-                    color: postgisMessage.startsWith('连接成功') ? '#2e7d32' : '#c62828',
+                    color: postgisMessageType === 'success' ? '#2e7d32' : '#c62828',
                     marginTop: '8px',
                   }}
                 >
@@ -1819,7 +1881,7 @@ export default function App() {
                 onClick={handleTestPostgisConnection}
                 disabled={isTestingPostgis || isRegisteringPostgis}
               >
-                {isTestingPostgis ? '测试中...' : '测试连接'}
+                {isTestingPostgis ? t('postgis.testing') : t('postgis.testConnection')}
               </button>
               <button
                 type="button"
@@ -1827,7 +1889,7 @@ export default function App() {
                 onClick={handleRegisterPostgisSource}
                 disabled={isTestingPostgis || isRegisteringPostgis}
               >
-                {isRegisteringPostgis ? '注册中...' : '注册为数据源'}
+                {isRegisteringPostgis ? t('postgis.registering') : t('postgis.registerAsSource')}
               </button>
             </div>
           </div>

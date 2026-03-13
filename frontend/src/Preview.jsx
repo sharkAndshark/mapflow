@@ -540,7 +540,7 @@ export default function Preview() {
         delete window.__MAPFLOW_PREVIEW_TEST__;
       }
     };
-  }, []);
+  }, [defaultStyle, selectedStyle, styleFunction]);
 
   return (
     <div
@@ -566,7 +566,7 @@ export default function Preview() {
             <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
             {meta.crsType === 'custom' ? (
               <span className="badge" style={{ backgroundColor: '#f0ad4e', color: '#fff' }}>
-                {meta.crs || 'Custom CRS'}
+                {meta.crs || t('preview.customCrs')}
               </span>
             ) : meta.crs ? (
               <span className="badge">{meta.crs}</span>
@@ -610,8 +610,9 @@ export default function Preview() {
               type="checkbox"
               checked={showTileGrid}
               onChange={(e) => setShowTileGrid(e.target.checked)}
+              data-testid="preview-tile-grid-toggle"
             />
-            Show Tile Grid
+            {t('preview.showTileGrid')}
           </label>
         </div>
       </header>
@@ -639,7 +640,7 @@ export default function Preview() {
             }}
           >
             <div className="spinner"></div>
-            <p>Loading Map Data...</p>
+            <p>{t('preview.loadingMapData')}</p>
           </div>
         )}
 
@@ -679,8 +680,8 @@ export default function Preview() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <h4 style={{ margin: 0 }}>
-                Feature Properties
+              <h4 style={{ margin: 0 }} data-testid="feature-inspector-title">
+                {t('preview.featureProperties')}
                 {popupFid !== null && (
                   <span style={{ marginLeft: '8px', fontSize: '11px', color: '#777' }}>
                     fid: {popupFid}
@@ -702,7 +703,9 @@ export default function Preview() {
               </div>
             )}
 
-            {popupLoading && <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>Loading…</p>}
+            {popupLoading && (
+              <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>{t('preview.loading')}</p>
+            )}
 
             {Array.isArray(popupContent) && (
               <table style={{ fontSize: '12px', width: '100%', borderCollapse: 'collapse' }}>
