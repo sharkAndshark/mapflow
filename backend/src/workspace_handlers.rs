@@ -672,28 +672,25 @@ pub async fn update_workspace(
     let name = validate_workspace_name(&req.name).map_err(|e| bad_req(&e))?;
     let conn = state.db.lock().await;
 
-    let owner_id: Option<String> = conn
+    let workspace_info: Option<(String, bool, Option<String>)> = conn
         .query_row(
-            "SELECT owner_id FROM workspaces WHERE id = ?",
+            "SELECT owner_id, is_personal, deleted_at FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let owner_id = owner_id.ok_or_else(|| not_found("Workspace not found"))?;
+    let (owner_id, is_personal, deleted_at) =
+        workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
 
     if user.id != owner_id {
         return Err(forbidden("Only workspace owner can update workspace"));
     }
 
-    let is_personal: bool = conn
-        .query_row(
-            "SELECT is_personal FROM workspaces WHERE id = ?",
-            duckdb::params![&workspace_id],
-            |row| row.get(0),
-        )
-        .map_err(internal_err)?;
+    if deleted_at.is_some() {
+        return Err(not_found("Workspace not found"));
+    }
 
     if is_personal {
         return Err(bad_req("Cannot rename personal workspace"));
