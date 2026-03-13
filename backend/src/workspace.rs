@@ -70,6 +70,7 @@ pub struct CurrentWorkspaceResponse {
 
 pub const WORKSPACE_NAME_MIN_LEN: usize = 3;
 pub const WORKSPACE_NAME_MAX_LEN: usize = 50;
+pub const LEGACY_SHARED_WORKSPACE_NAME: &str = "Migrated Workspace";
 
 pub fn validate_workspace_name(name: &str) -> Result<String, String> {
     let name = name.trim().to_string();
@@ -102,6 +103,10 @@ pub fn generate_deleted_workspace_name(original_name: &str, workspace_id: &str) 
 
 pub fn make_personal_workspace_name(username: &str) -> String {
     format!("{}的个人空间", username)
+}
+
+pub fn make_legacy_shared_workspace_name() -> &'static str {
+    LEGACY_SHARED_WORKSPACE_NAME
 }
 
 #[cfg(test)]
@@ -145,5 +150,13 @@ mod tests {
     fn make_personal_workspace_name_format() {
         let result = make_personal_workspace_name("alice");
         assert_eq!(result, "alice的个人空间");
+    }
+
+    #[test]
+    fn make_legacy_shared_workspace_name_format() {
+        assert_eq!(
+            make_legacy_shared_workspace_name(),
+            LEGACY_SHARED_WORKSPACE_NAME
+        );
     }
 }

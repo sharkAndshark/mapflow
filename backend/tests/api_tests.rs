@@ -2028,6 +2028,64 @@ async fn test_concurrent_init_system_requests() {
 }
 
 #[tokio::test]
+async fn test_init_system_sets_current_workspace_to_personal_workspace() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("init-system-current-workspace.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/auth/init")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"username":"founder","password":"Test123!@#"}"#,
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let conn = db.lock().await;
+    let current_workspace_id: Option<String> = conn
+        .query_row(
+            "SELECT current_workspace_id FROM users WHERE username = ?",
+            duckdb::params!["founder"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let current_workspace_id = current_workspace_id.expect("current workspace should be set");
+
+    let workspace: (String, bool) = conn
+        .query_row(
+            "SELECT name, is_personal FROM workspaces WHERE id = ?",
+            duckdb::params![&current_workspace_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(workspace.0, "founder的个人空间");
+    assert!(workspace.1);
+}
+
+#[tokio::test]
 async fn test_publish_file_with_custom_slug() {
     let (app, _temp) = setup_app().await;
 

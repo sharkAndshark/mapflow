@@ -41,7 +41,7 @@ export default function Settings() {
   const [inviteUsername, setInviteUsername] = useState('');
   const [inviteError, setInviteError] = useState('');
   const [isInviting, setIsInviting] = useState(false);
-  const inviteFeatureAvailable = false;
+  const inviteFeatureAvailable = true;
 
   async function refreshWorkspaces() {
     const [ws, archived] = await Promise.all([listWorkspaces(), listArchivedWorkspaces()]);
@@ -490,44 +490,63 @@ export default function Settings() {
 
       {showCreateModal && (
         <div
+          aria-hidden="true"
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0,0,0,0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 1000,
           }}
-          onClick={() => setShowCreateModal(false)}
         >
-          <div
+          <button
+            type="button"
+            aria-label="关闭创建工作空间弹窗"
+            onClick={() => setShowCreateModal(false)}
             style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(0,0,0,0.5)',
+              border: 'none',
+              padding: 0,
+            }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-workspace-title"
+            style={{
+              position: 'relative',
               background: 'white',
               borderRadius: '12px',
               padding: '24px',
               width: '400px',
               maxWidth: '90vw',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ marginBottom: '16px' }}>创建工作空间</h3>
+            <h3 id="create-workspace-title" style={{ marginBottom: '16px' }}>
+              创建工作空间
+            </h3>
             <form onSubmit={handleCreateWorkspace}>
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>
+                <label
+                  htmlFor="new-workspace-name"
+                  style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}
+                >
                   工作空间名称
                 </label>
                 <input
+                  id="new-workspace-name"
                   type="text"
                   value={newWorkspaceName}
                   onChange={(e) => setNewWorkspaceName(e.target.value)}
                   className="form-input"
                   style={{ width: '100%' }}
                   placeholder="3-50 个字符"
-                  autoFocus
                 />
                 {createError && (
                   <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '8px' }}>
@@ -554,22 +573,37 @@ export default function Settings() {
 
       {showMembersModal && selectedWorkspace && (
         <div
+          aria-hidden="true"
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0,0,0,0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 1000,
           }}
-          onClick={() => setShowMembersModal(false)}
         >
-          <div
+          <button
+            type="button"
+            aria-label="关闭成员管理弹窗"
+            onClick={() => setShowMembersModal(false)}
             style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(0,0,0,0.5)',
+              border: 'none',
+              padding: 0,
+            }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="workspace-members-title"
+            style={{
+              position: 'relative',
               background: 'white',
               borderRadius: '12px',
               padding: '24px',
@@ -578,9 +612,10 @@ export default function Settings() {
               maxHeight: '80vh',
               overflow: 'auto',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ marginBottom: '16px' }}>成员管理 - {selectedWorkspace.name}</h3>
+            <h3 id="workspace-members-title" style={{ marginBottom: '16px' }}>
+              成员管理 - {selectedWorkspace.name}
+            </h3>
 
             {inviteFeatureAvailable ? (
               <form onSubmit={handleInviteMember} style={{ marginBottom: '20px' }}>

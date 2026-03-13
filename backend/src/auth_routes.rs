@@ -316,6 +316,21 @@ async fn init_system(
             .into_response()
     })?;
 
+    conn.execute(
+        "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+        duckdb::params![&workspace_id, &user_id],
+    )
+    .map_err(|e| {
+        conn.execute("ROLLBACK", []).ok();
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to set current workspace: {}", e),
+            }),
+        )
+            .into_response()
+    })?;
+
     tracing::info!(user_id = %user_id, username = %req.username, workspace_id = %workspace_id, "Admin user and personal workspace created");
 
     // Mark system as initialized
