@@ -14,6 +14,13 @@ const resources = {
   },
 };
 
+function syncDocumentLanguage(language) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.documentElement.lang = language;
+}
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
@@ -29,5 +36,8 @@ i18n
       caches: ['localStorage'],
     },
   });
+
+syncDocumentLanguage(i18n.resolvedLanguage || i18n.language || 'en');
+i18n.on('languageChanged', syncDocumentLanguage);
 
 export default i18n;
