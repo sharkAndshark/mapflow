@@ -1346,6 +1346,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 export default function App() {
   const { t } = useTranslation();
   const { user, logout } = useAuth();
+  const loadFilesFailedMessageRef = useRef(t('app.loadFilesFailed'));
   const [files, setFiles] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -1356,6 +1357,10 @@ export default function App() {
   const [postgisMessageType, setPostgisMessageType] = useState('');
   const [isTestingPostgis, setIsTestingPostgis] = useState(false);
   const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
+
+  useEffect(() => {
+    loadFilesFailedMessageRef.current = t('app.loadFilesFailed');
+  }, [t]);
 
   async function refreshFiles(nextSelectedId = null) {
     const res = await fetch('/api/files');
@@ -1515,7 +1520,7 @@ export default function App() {
         }
       } catch (error) {
         if (!cancelled) {
-          setErrorMessage(t('app.loadFilesFailed'));
+          setErrorMessage(loadFilesFailedMessageRef.current);
         }
       } finally {
         if (!cancelled) {
@@ -1527,7 +1532,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, []);
 
   const orderedFiles = useMemo(() => {
     return [...files].sort((a, b) => {

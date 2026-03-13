@@ -348,8 +348,8 @@ h1 {
   }
 
   /* Hide less important columns on mobile list */
-  .row > div:nth-child(3) /* Size */,
-  .row > div:nth-child(4) /* Date */ {
+  .row > :nth-child(3) /* Size */,
+  .row > :nth-child(4) /* Date */ {
     display: none;
   }
 }

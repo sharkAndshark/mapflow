@@ -8,12 +8,17 @@ export default function Settings() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const loadFailedMessageRef = React.useRef(t('settings.loadFailed'));
   const [maxSizeMb, setMaxSizeMb] = useState('');
   const [originalValue, setOriginalValue] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    loadFailedMessageRef.current = t('settings.loadFailed');
+  }, [t]);
 
   useEffect(() => {
     if (!user) return;
@@ -32,7 +37,7 @@ export default function Settings() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err.message || t('settings.loadFailed'));
+          setError(err.message || loadFailedMessageRef.current);
         }
       } finally {
         if (!cancelled) {
@@ -44,7 +49,7 @@ export default function Settings() {
     return () => {
       cancelled = true;
     };
-  }, [user, navigate, t]);
+  }, [user, navigate]);
 
   async function handleSubmit(e) {
     e.preventDefault();
