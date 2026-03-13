@@ -77,11 +77,7 @@ function resolveDocsConfig(meta, pmtilesHeader) {
       };
     }
 
-    return {
-      minZoom: meta.minZoom ?? 0,
-      maxZoom: meta.maxZoom ?? 22,
-      tileFormat: meta.tileFormat ?? 'mvt',
-    };
+    return null;
   }
 
   return {
@@ -423,8 +419,11 @@ export default function TileDocs() {
 
     return resolveDocsConfig(meta, pmtilesHeader);
   }, [meta, pmtilesHeader]);
+  const isWaitingForDocsConfig = Boolean(
+    meta && !error && meta.tileSource === 'pmtiles' && !docsConfig,
+  );
 
-  const openLayersCode = meta ? generateOpenLayersCode(meta, origin) : '';
+  const openLayersCode = meta && docsConfig ? generateOpenLayersCode(meta, origin) : '';
   const markdownDoc = meta && docsConfig ? generateMarkdownDoc(meta, origin, docsConfig) : '';
 
   return (
@@ -457,12 +456,14 @@ export default function TileDocs() {
             ) : meta.crs ? (
               <span className="badge">{meta.crs}</span>
             ) : null}
-            <span
-              className="badge"
-              style={{ backgroundColor: '#5cb85c', color: '#fff', marginLeft: '4px' }}
-            >
-              {docsConfig?.tileFormat?.toUpperCase() || 'MVT'}
-            </span>
+            {docsConfig && (
+              <span
+                className="badge"
+                style={{ backgroundColor: '#5cb85c', color: '#fff', marginLeft: '4px' }}
+              >
+                {docsConfig.tileFormat.toUpperCase()}
+              </span>
+            )}
           </div>
         )}
       </header>
@@ -493,7 +494,14 @@ export default function TileDocs() {
             </div>
           )}
 
-          {meta && (
+          {isWaitingForDocsConfig && (
+            <div style={{ textAlign: 'center', padding: '24px' }}>
+              <div className="spinner"></div>
+              <p>{t('tileDocs.loadingDoc')}</p>
+            </div>
+          )}
+
+          {meta && docsConfig && (
             <>
               <section style={{ marginBottom: '24px' }}>
                 <h2
@@ -599,7 +607,7 @@ export default function TileDocs() {
                         {t('tileDocs.zoomRange')}
                       </td>
                       <td style={{ padding: '8px 0' }}>
-                        {docsConfig?.minZoom ?? 0} - {docsConfig?.maxZoom ?? 22}
+                        {docsConfig.minZoom} - {docsConfig.maxZoom}
                       </td>
                     </tr>
                     <tr>
@@ -626,9 +634,7 @@ export default function TileDocs() {
                       <td style={{ padding: '8px 0', fontWeight: '500' }}>
                         {t('tileDocs.format')}
                       </td>
-                      <td style={{ padding: '8px 0' }}>
-                        {docsConfig?.tileFormat?.toUpperCase() || 'MVT'}
-                      </td>
+                      <td style={{ padding: '8px 0' }}>{docsConfig.tileFormat.toUpperCase()}</td>
                     </tr>
                     <tr>
                       <td style={{ padding: '8px 0', fontWeight: '500' }}>
