@@ -77,7 +77,11 @@ function resolveDocsConfig(meta, pmtilesHeader) {
       };
     }
 
-    return null;
+    return {
+      minZoom: meta.minZoom ?? null,
+      maxZoom: meta.maxZoom ?? null,
+      tileFormat: meta.tileFormat ?? null,
+    };
   }
 
   return {
@@ -85,6 +89,14 @@ function resolveDocsConfig(meta, pmtilesHeader) {
     maxZoom: meta.maxZoom ?? 22,
     tileFormat: meta.tileFormat ?? 'mvt',
   };
+}
+
+function formatZoomValue(value) {
+  return value == null ? '-' : value;
+}
+
+function formatZoomRange(minZoom, maxZoom) {
+  return `${formatZoomValue(minZoom)} - ${formatZoomValue(maxZoom)}`;
 }
 
 function generateOpenLayersCode(meta, origin) {
@@ -422,8 +434,12 @@ export default function TileDocs() {
       return null;
     }
 
+    if (meta.tileSource === 'pmtiles' && pmtilesHeader == null && !pmtilesHeaderError) {
+      return null;
+    }
+
     return resolveDocsConfig(meta, pmtilesHeader);
-  }, [meta, pmtilesHeader]);
+  }, [meta, pmtilesHeader, pmtilesHeaderError]);
   const isWaitingForDocsConfig = Boolean(
     meta && !error && meta.tileSource === 'pmtiles' && !pmtilesHeaderError && pmtilesHeader == null,
   );
@@ -525,10 +541,7 @@ export default function TileDocs() {
                 {t('tileDocs.serviceUrls')}
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div
-                  style={{ display: 'flex', alignItems: 'center' }}
-                  data-testid="tile-docs-embed-url"
-                >
+                <div style={{ display: 'flex', alignItems: 'center' }}>
                   <span style={{ fontWeight: '500', width: '80px' }}>{t('tileDocs.tileUrl')}</span>
                   <code
                     style={{
@@ -569,7 +582,10 @@ export default function TileDocs() {
                     copiedLabel={t('common.copied')}
                   />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center' }}
+                  data-testid="tile-docs-embed-url"
+                >
                   <span style={{ fontWeight: '500', width: '80px' }}>{t('tileDocs.embedUrl')}</span>
                   <code
                     style={{
@@ -617,7 +633,7 @@ export default function TileDocs() {
                         {t('tileDocs.zoomRange')}
                       </td>
                       <td style={{ padding: '8px 0' }}>
-                        {docsConfig.minZoom} - {docsConfig.maxZoom}
+                        {formatZoomRange(docsConfig.minZoom, docsConfig.maxZoom)}
                       </td>
                     </tr>
                     <tr data-testid="tile-docs-crs-row">
@@ -644,7 +660,9 @@ export default function TileDocs() {
                       <td style={{ padding: '8px 0', fontWeight: '500' }}>
                         {t('tileDocs.format')}
                       </td>
-                      <td style={{ padding: '8px 0' }}>{docsConfig.tileFormat.toUpperCase()}</td>
+                      <td style={{ padding: '8px 0' }}>
+                        {docsConfig.tileFormat?.toUpperCase() ?? '-'}
+                      </td>
                     </tr>
                     <tr>
                       <td style={{ padding: '8px 0', fontWeight: '500' }}>
