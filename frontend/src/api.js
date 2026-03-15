@@ -46,6 +46,15 @@ export async function publishFile(fileId, options = {}) {
   return res.json();
 }
 
+export async function listFiles() {
+  const res = await fetchWithAuth('/api/files');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '无法加载文件列表');
+  }
+  return res.json();
+}
+
 export async function unpublishFile(fileId) {
   const res = await fetchWithAuth(`/api/files/${fileId}/unpublish`, {
     method: 'POST',

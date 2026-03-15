@@ -5,6 +5,7 @@ import {
   mergeServerFilesWithOptimistic,
 } from './polling.js';
 import {
+  listFiles,
   publishFile,
   registerPostgisSource,
   testPostgisConnection,
@@ -1313,8 +1314,8 @@ export default function App() {
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
 
   async function refreshFiles(nextSelectedId = null) {
-    const res = await fetch('/api/files');
-    const data = await res.json();
+    const data = await listFiles();
+    setErrorMessage('');
     setFiles(Array.isArray(data) ? data : []);
     if (nextSelectedId) {
       setSelectedId(nextSelectedId);
@@ -1450,14 +1451,16 @@ export default function App() {
 
     const intervalId = setInterval(async () => {
       try {
-        const res = await fetch('/api/files');
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await listFiles();
+        setErrorMessage('');
 
         setFiles((prevFiles) => {
           return mergeServerFilesWithOptimistic(prevFiles, data);
         });
       } catch (err) {
+        if (err instanceof Error) {
+          setErrorMessage(err.message);
+        }
         console.error('Polling failed', err);
       }
     }, 2000); // Poll every 2 seconds
@@ -1469,14 +1472,14 @@ export default function App() {
     let cancelled = false;
     async function fetchFiles() {
       try {
-        const res = await fetch('/api/files');
-        const data = await res.json();
+        const data = await listFiles();
         if (!cancelled) {
+          setErrorMessage('');
           setFiles(Array.isArray(data) ? data : []);
         }
       } catch (error) {
         if (!cancelled) {
-          setErrorMessage('无法加载文件列表');
+          setErrorMessage(error instanceof Error ? error.message : '无法加载文件列表');
         }
       } finally {
         if (!cancelled) {

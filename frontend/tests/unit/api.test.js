@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchWithAuth, setAuthContext } from '../../src/api.js';
+import { fetchWithAuth, listFiles, setAuthContext } from '../../src/api.js';
 
 describe('fetchWithAuth', () => {
   beforeEach(() => {
@@ -35,5 +35,19 @@ describe('fetchWithAuth', () => {
     await expect(fetchWithAuth('/api/settings')).rejects.toThrow('Unauthorized');
 
     expect(global.window.location.href).toBe('/');
+  });
+
+  it('surfaces backend file list errors instead of returning an empty list', async () => {
+    global.fetch.mockResolvedValue({
+      status: 409,
+      ok: false,
+      json: vi.fn().mockResolvedValue({
+        error: 'No active workspace available, please switch workspace',
+      }),
+    });
+
+    await expect(listFiles()).rejects.toThrow(
+      'No active workspace available, please switch workspace',
+    );
   });
 });

@@ -7000,6 +7000,351 @@ async fn test_list_members_rejects_archived_workspace_with_404() {
 }
 
 #[tokio::test]
+async fn test_leave_workspace_clears_current_workspace_without_fallback() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir
+        .path()
+        .join("workspace-leave-reassign-current.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let owner_cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-leave-owner-1",
+        "leaveowner",
+        "admin",
+    )
+    .await;
+    let member_cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-leave-member-1",
+        "leavemember",
+        "user",
+    )
+    .await;
+
+    let create_workspace_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &owner_cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Leave Team"}"#))
+        .unwrap();
+    let create_workspace_response = app.clone().oneshot(create_workspace_request).await.unwrap();
+    assert_eq!(
+        create_workspace_response.status(),
+        axum::http::StatusCode::CREATED
+    );
+    let create_workspace_body = create_workspace_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created_workspace: serde_json::Value =
+        serde_json::from_slice(&create_workspace_body).unwrap();
+    let workspace_id = created_workspace["id"].as_str().unwrap().to_string();
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![&workspace_id, "user-leave-member-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+            duckdb::params![&workspace_id, "user-leave-member-1"],
+        )
+        .unwrap();
+    }
+
+    let leave_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/workspaces/{}/leave", workspace_id))
+        .header("cookie", member_cookie)
+        .body(Body::empty())
+        .unwrap();
+    let leave_response = app.clone().oneshot(leave_request).await.unwrap();
+    assert_eq!(leave_response.status(), axum::http::StatusCode::NO_CONTENT);
+
+    let current_workspace_id: Option<String> = {
+        let conn = db.lock().await;
+        conn.query_row(
+            "SELECT current_workspace_id FROM users WHERE id = ?",
+            duckdb::params!["user-leave-member-1"],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert!(current_workspace_id.is_none());
+}
+
+#[tokio::test]
+async fn test_remove_member_clears_current_workspace_without_fallback() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir
+        .path()
+        .join("workspace-remove-reassign-current.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let owner_cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-remove-owner-1",
+        "removeowner",
+        "admin",
+    )
+    .await;
+    let _member_cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-remove-member-1",
+        "removemember",
+        "user",
+    )
+    .await;
+
+    let create_workspace_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &owner_cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Remove Team"}"#))
+        .unwrap();
+    let create_workspace_response = app.clone().oneshot(create_workspace_request).await.unwrap();
+    assert_eq!(
+        create_workspace_response.status(),
+        axum::http::StatusCode::CREATED
+    );
+    let create_workspace_body = create_workspace_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created_workspace: serde_json::Value =
+        serde_json::from_slice(&create_workspace_body).unwrap();
+    let workspace_id = created_workspace["id"].as_str().unwrap().to_string();
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![&workspace_id, "user-remove-member-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+            duckdb::params![&workspace_id, "user-remove-member-1"],
+        )
+        .unwrap();
+    }
+
+    let remove_request = Request::builder()
+        .method("DELETE")
+        .uri(format!(
+            "/api/workspaces/{}/members/user-remove-member-1",
+            workspace_id
+        ))
+        .header("cookie", owner_cookie)
+        .body(Body::empty())
+        .unwrap();
+    let remove_response = app.clone().oneshot(remove_request).await.unwrap();
+    assert_eq!(remove_response.status(), axum::http::StatusCode::NO_CONTENT);
+
+    let current_workspace_id: Option<String> = {
+        let conn = db.lock().await;
+        conn.query_row(
+            "SELECT current_workspace_id FROM users WHERE id = ?",
+            duckdb::params!["user-remove-member-1"],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert!(current_workspace_id.is_none());
+}
+
+#[tokio::test]
+async fn test_delete_workspace_reassigns_stale_current_workspace_users() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir
+        .path()
+        .join("workspace-delete-reassign-current.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+
+    let owner_cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-delete-owner-1",
+        "deleteowner",
+        "admin",
+    )
+    .await;
+    let _member_cookie = create_user_and_session(
+        &app,
+        db.clone(),
+        "user-delete-member-1",
+        "deletemember",
+        "user",
+    )
+    .await;
+
+    let create_workspace_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &owner_cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Delete Team"}"#))
+        .unwrap();
+    let create_workspace_response = app.clone().oneshot(create_workspace_request).await.unwrap();
+    assert_eq!(
+        create_workspace_response.status(),
+        axum::http::StatusCode::CREATED
+    );
+    let create_workspace_body = create_workspace_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created_workspace: serde_json::Value =
+        serde_json::from_slice(&create_workspace_body).unwrap();
+    let workspace_id = created_workspace["id"].as_str().unwrap().to_string();
+
+    let fallback_workspace_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &owner_cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Fallback Team"}"#))
+        .unwrap();
+    let fallback_workspace_response = app
+        .clone()
+        .oneshot(fallback_workspace_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        fallback_workspace_response.status(),
+        axum::http::StatusCode::CREATED
+    );
+    let fallback_workspace_body = fallback_workspace_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let fallback_workspace: serde_json::Value =
+        serde_json::from_slice(&fallback_workspace_body).unwrap();
+    let fallback_workspace_id = fallback_workspace["id"].as_str().unwrap().to_string();
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![&workspace_id, "user-delete-member-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![&fallback_workspace_id, "user-delete-member-1"],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE users SET current_workspace_id = ? WHERE id IN (?, ?)",
+            duckdb::params![&workspace_id, "user-delete-owner-1", "user-delete-member-1"],
+        )
+        .unwrap();
+    }
+
+    let delete_request = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/workspaces/{}", workspace_id))
+        .header("cookie", owner_cookie)
+        .body(Body::empty())
+        .unwrap();
+    let delete_response = app.clone().oneshot(delete_request).await.unwrap();
+    assert_eq!(delete_response.status(), axum::http::StatusCode::NO_CONTENT);
+
+    let reassigned_workspaces: (Option<String>, Option<String>) = {
+        let conn = db.lock().await;
+        conn.query_row(
+            "SELECT (SELECT current_workspace_id FROM users WHERE id = ?), (SELECT current_workspace_id FROM users WHERE id = ?)",
+            duckdb::params!["user-delete-owner-1", "user-delete-member-1"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap()
+    };
+
+    assert_eq!(
+        reassigned_workspaces.0.as_deref(),
+        Some(fallback_workspace_id.as_str())
+    );
+    assert_eq!(
+        reassigned_workspaces.1.as_deref(),
+        Some(fallback_workspace_id.as_str())
+    );
+}
+
+#[tokio::test]
 async fn test_invite_member_rejects_archived_workspace_with_404() {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");

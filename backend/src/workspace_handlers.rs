@@ -559,6 +559,8 @@ pub async fn remove_member(
         return Err(not_found("成员不存在"));
     }
 
+    reassign_current_workspace_for_user(&conn, &member_user_id, &workspace_id)?;
+
     info!(workspace_id = %workspace_id, removed_user_id = %member_user_id, removed_by = %user.id, "Member removed");
 
     Ok(StatusCode::NO_CONTENT)
@@ -602,6 +604,8 @@ pub async fn leave_workspace(
         return Err(not_found("您不是该工作空间的成员"));
     }
 
+    reassign_current_workspace_for_user(&conn, &user.id, &workspace_id)?;
+
     info!(workspace_id = %workspace_id, user_id = %user.id, "User left workspace");
 
     Ok(StatusCode::NO_CONTENT)
@@ -622,6 +626,57 @@ fn check_workspace_membership(
         .map_err(internal_err)?;
 
     Ok(is_member > 0)
+}
+
+#[allow(clippy::result_large_err)]
+fn reassign_current_workspace_for_user(
+    conn: &duckdb::Connection,
+    user_id: &str,
+    previous_workspace_id: &str,
+) -> ApiResult<()> {
+    conn.execute(
+        r"
+        UPDATE users
+        SET current_workspace_id = (
+            SELECT w.id
+            FROM workspace_members wm
+            JOIN workspaces w ON w.id = wm.workspace_id
+            WHERE wm.user_id = ? AND w.deleted_at IS NULL
+            ORDER BY w.is_personal DESC, w.created_at ASC
+            LIMIT 1
+        )
+        WHERE id = ? AND current_workspace_id = ?
+        ",
+        duckdb::params![user_id, user_id, previous_workspace_id],
+    )
+    .map_err(internal_err)?;
+
+    Ok(())
+}
+
+#[allow(clippy::result_large_err)]
+fn reassign_current_workspace_for_workspace(
+    conn: &duckdb::Connection,
+    previous_workspace_id: &str,
+) -> ApiResult<()> {
+    conn.execute(
+        r"
+        UPDATE users
+        SET current_workspace_id = (
+            SELECT w.id
+            FROM workspace_members wm
+            JOIN workspaces w ON w.id = wm.workspace_id
+            WHERE wm.user_id = users.id AND w.deleted_at IS NULL
+            ORDER BY w.is_personal DESC, w.created_at ASC
+            LIMIT 1
+        )
+        WHERE current_workspace_id = ?
+        ",
+        duckdb::params![previous_workspace_id],
+    )
+    .map_err(internal_err)?;
+
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -817,6 +872,11 @@ pub async fn delete_workspace(
             conn.execute_batch("ROLLBACK").ok();
             internal_err(err)
         })?;
+
+        if let Err(err) = reassign_current_workspace_for_workspace(conn, &workspace_id) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(err);
+        }
 
         conn.execute_batch("COMMIT").map_err(|err| {
             conn.execute_batch("ROLLBACK").ok();
