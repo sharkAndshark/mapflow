@@ -477,7 +477,7 @@ export default function TileDocs() {
             ) : meta.crs ? (
               <span className="badge">{meta.crs}</span>
             ) : null}
-            {docsConfig && (
+            {docsConfig?.tileFormat && (
               <span
                 className="badge"
                 style={{ backgroundColor: '#5cb85c', color: '#fff', marginLeft: '4px' }}
