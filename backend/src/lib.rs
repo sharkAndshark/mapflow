@@ -66,7 +66,7 @@ pub fn detect_public_viewer_available(web_dist_path: &Path) -> bool {
 
     #[cfg(feature = "embed-web-dist")]
     {
-        return embedded_spa_available();
+        embedded_spa_available()
     }
 
     #[cfg(not(feature = "embed-web-dist"))]

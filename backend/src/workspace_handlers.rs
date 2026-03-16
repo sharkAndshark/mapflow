@@ -747,6 +747,7 @@ pub struct UpdateWorkspaceRequest {
     pub name: String,
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn update_workspace(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
@@ -807,6 +808,7 @@ pub async fn update_workspace(
     Ok(Json(json!({ "id": workspace_id, "name": name })))
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn delete_workspace(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
@@ -896,6 +898,7 @@ pub struct RestoreWorkspaceRequest {
     pub name: Option<String>,
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn restore_workspace(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
