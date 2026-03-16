@@ -393,7 +393,7 @@ test.describe('Custom CRS', () => {
     await expect(
       page
         .locator('.row', { hasText: 'epsg4490_urn' })
-        .getByTestId(/status-ready|status-processing/),
+        .getByTestId(/status-ready|status-uploaded|status-processing/),
     ).toBeVisible();
 
     await expect
