@@ -52,9 +52,11 @@ async fn reset_test_state(State(state): State<AppState>) -> impl axum::response:
         }
     }
 
-    // Order matters because of foreign key constraints (published_files.file_id -> files.id).
+    // Order matters because of foreign key constraints:
+    // workspace_members -> workspaces -> users
+    // published_files -> files
     if let Err(e) = conn.execute_batch(
-        "DELETE FROM published_files;\nDELETE FROM dataset_columns;\nDELETE FROM files;\nDELETE FROM sessions;\nDELETE FROM users;\nDELETE FROM system_settings;",
+        "DELETE FROM published_files;\nDELETE FROM dataset_columns;\nDELETE FROM files;\nDELETE FROM workspace_members;\nDELETE FROM workspaces;\nDELETE FROM sessions;\nDELETE FROM users;\nDELETE FROM system_settings;",
     ) {
         warn!(error = ?e, "Test reset DB error");
         return (

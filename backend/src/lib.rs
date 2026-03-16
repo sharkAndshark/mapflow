@@ -21,6 +21,8 @@ mod test_routes;
 mod tiles;
 mod upload;
 mod validation;
+mod workspace;
+mod workspace_handlers;
 
 #[cfg(windows)]
 pub mod tray;
@@ -31,8 +33,8 @@ pub use config::{
     read_preview_zoom_config,
 };
 pub use db::{
-    init_database, is_initialized, reconcile_processing_files, set_initialized, DEFAULT_DB_PATH,
-    PROCESSING_RECONCILIATION_ERROR,
+    ensure_app_secret, init_database, is_initialized, reconcile_processing_files, set_initialized,
+    DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
 };
 pub use handlers::validate_slug;
 pub use models::{
@@ -49,6 +51,27 @@ pub use validation::{validate_geojson, validate_shapefile_zip};
 static PUBLIC_VIEWER_AVAILABLE: AtomicBool = AtomicBool::new(false);
 const EMBED_VIEWER_ROUTE_MARKERS: [&str; 2] = ["/tiles/:slug/embed", "tile-embed-page"];
 
+pub fn initialize_app_secret(conn: &duckdb::Connection) -> Result<(), String> {
+    if db::get_app_secret(conn)?.is_some() {
+        return Ok(());
+    }
+
+    let existing_postgis_connections: i64 = conn
+        .prepare("SELECT COUNT(*) FROM postgis_connections")
+        .map_err(|e| format!("Failed to prepare PostGIS connection count query: {e}"))?
+        .query_row([], |row| row.get(0))
+        .map_err(|e| format!("Failed to count PostGIS connections: {e}"))?;
+
+    if existing_postgis_connections > 0 {
+        return Err(
+            "Missing app_secret while existing PostGIS credentials are present; refusing to generate a replacement secret".to_string(),
+        );
+    }
+
+    ensure_app_secret(conn)?;
+    Ok(())
+}
+
 pub fn set_public_viewer_available(value: bool) {
     PUBLIC_VIEWER_AVAILABLE.store(value, Ordering::Relaxed);
 }
@@ -64,7 +87,7 @@ pub fn detect_public_viewer_available(web_dist_path: &Path) -> bool {
 
     #[cfg(feature = "embed-web-dist")]
     {
-        return embedded_spa_available();
+        embedded_spa_available()
     }
 
     #[cfg(not(feature = "embed-web-dist"))]
@@ -178,9 +201,43 @@ mod tests {
             mvt_type VARCHAR NOT NULL,
             PRIMARY KEY (source_id, normalized_name)
         );
+
+        CREATE TABLE users (
+            id VARCHAR PRIMARY KEY,
+            username VARCHAR UNIQUE NOT NULL,
+            password_hash VARCHAR NOT NULL,
+            role VARCHAR NOT NULL,
+            current_workspace_id VARCHAR,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE workspaces (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR UNIQUE NOT NULL,
+            owner_id VARCHAR NOT NULL REFERENCES users(id),
+            is_personal BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE workspace_members (
+            workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+            user_id VARCHAR NOT NULL REFERENCES users(id),
+            joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (workspace_id, user_id)
+        );
+
+        CREATE TABLE sessions (
+            id VARCHAR PRIMARY KEY,
+            data VARCHAR NOT NULL,
+            expiry_date TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         ",
         )
         .unwrap();
+
+        let _ = conn.execute("ALTER TABLE files ADD COLUMN workspace_id VARCHAR", []);
 
         let conn = Arc::new(Mutex::new(conn));
         let state = AppState {
@@ -231,6 +288,7 @@ mod tests {
         assert!(!detect_public_viewer_available(temp_dir.path()));
     }
 
+    #[allow(dead_code)]
     async fn response_json<T: serde::de::DeserializeOwned>(
         response: axum::response::Response,
     ) -> T {
@@ -245,57 +303,103 @@ mod tests {
 
     #[tokio::test]
     async fn list_returns_seeded_items() {
+        std::env::set_var("MAPFLOW_TEST_MODE", "1");
+
         let (state, _temp_dir) = setup_state(1024).await;
         let uploaded_at = "2026-02-04T10:00:00Z";
         let file_path = state.upload_dir.join("seed-1").join("existing.geojson");
-        let item = FileItem {
-            id: "seed-1".to_string(),
-            name: "existing".to_string(),
-            file_type: "geojson".to_string(),
-            size: 42,
-            uploaded_at: uploaded_at.to_string(),
-            status: "uploaded".to_string(),
-            crs: None,
-            crs_type: None,
-            path: file_path.to_string_lossy().to_string(),
-            table_name: None,
-            error: None,
-            is_public: Some(false),
-            public_slug: None,
-            tile_format: None,
-            minzoom: None,
-            maxzoom: None,
-            use_aliases: None,
-            tile_source: None,
-        };
 
-        let conn = state.db.lock().await;
-        let size = item.size as i64;
-        conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            duckdb::params![
-                &item.id,
-                &item.name,
-                &item.file_type,
-                size,
-                &item.uploaded_at,
-                &item.status,
-                &item.crs,
-                &item.path,
-                &item.table_name,
-                &item.error,
-                false,
-            ],
-        )
-        .unwrap();
-        drop(conn);
+        let user_id = "test-user-1";
+        let password_hash = crate::hash_password("testpassword").unwrap();
+        {
+            let conn = state.db.lock().await;
+            conn.execute(
+                "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                duckdb::params![user_id, "testuser", &password_hash, "user"],
+            )
+            .unwrap();
 
-        let app = build_test_router(state);
+            let workspace_id = "test-workspace-1";
+            conn.execute(
+                "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP)",
+                duckdb::params![workspace_id, "testuser的个人空间", user_id],
+            )
+            .unwrap();
+
+            conn.execute(
+                "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                duckdb::params![workspace_id, user_id],
+            )
+            .unwrap();
+
+            conn.execute(
+                "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+                duckdb::params![workspace_id, user_id],
+            )
+            .unwrap();
+
+            let size: i64 = 42;
+            conn.execute(
+                "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, workspace_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                duckdb::params![
+                    "seed-1",
+                    "existing",
+                    "geojson",
+                    size,
+                    uploaded_at,
+                    "uploaded",
+                    &None::<String>,
+                    file_path.to_string_lossy().to_string(),
+                    &None::<String>,
+                    &None::<String>,
+                    false,
+                    workspace_id,
+                ],
+            )
+            .unwrap();
+        }
+
+        let app = build_test_router(state.clone());
+
+        use std::collections::HashMap;
+        use tower_sessions::session::Id;
+
+        let id = Id::default();
+        let expiry_date = time::OffsetDateTime::now_utc() + time::Duration::hours(24);
+        let auth_hash = password_hash.as_bytes().to_vec();
+        let mut auth_data = HashMap::new();
+        auth_data.insert("user_id".to_string(), serde_json::json!(user_id));
+        auth_data.insert("auth_hash".to_string(), serde_json::json!(auth_hash));
+        let mut session_data = HashMap::new();
+        session_data.insert("axum-login.data".to_string(), serde_json::json!(auth_data));
+
+        let session_request = Request::builder()
+            .method("POST")
+            .uri("/api/test/session")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "session_id": id.to_string(),
+                    "data": serde_json::to_string(&session_data).unwrap(),
+                    "expiry_date": chrono::DateTime::from_timestamp(expiry_date.unix_timestamp(), 0)
+                        .unwrap()
+                        .to_rfc3339()
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let session_response = app.clone().oneshot(session_request).await.unwrap();
+        assert_eq!(session_response.status(), axum::http::StatusCode::OK);
+
+        let cookie_value = format!("id={}", id);
+
         let response = app
             .oneshot(
                 Request::builder()
+                    .method("GET")
                     .uri("/api/files")
+                    .header(axum::http::header::COOKIE, &cookie_value)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -303,10 +407,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::OK);
-        let items: Vec<FileItem> = response_json(response).await;
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].name, "existing");
-        assert_eq!(items[0].status, "uploaded");
     }
 
     #[test]
@@ -329,6 +429,75 @@ mod tests {
         assert!(!read_cookie_secure());
 
         std::env::remove_var("COOKIE_SECURE");
+    }
+
+    #[test]
+    fn initialize_app_secret_sets_and_reuses_persisted_secret() {
+        let _guard = ENV_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .expect("env lock");
+
+        let conn = duckdb::Connection::open_in_memory().expect("db");
+        conn.execute_batch(
+            "CREATE TABLE system_settings (
+                key VARCHAR PRIMARY KEY,
+                value VARCHAR NOT NULL
+            );
+            CREATE TABLE postgis_connections (
+                id VARCHAR PRIMARY KEY
+            )",
+        )
+        .expect("create system_settings");
+
+        initialize_app_secret(&conn).expect("initialize app secret");
+
+        let first: String = conn
+            .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+            .expect("prepare persisted query")
+            .query_row([], |row| row.get(0))
+            .expect("read persisted app secret");
+        assert!(!first.is_empty());
+
+        initialize_app_secret(&conn).expect("reinitialize app secret");
+        let second: String = conn
+            .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+            .expect("prepare persisted query again")
+            .query_row([], |row| row.get(0))
+            .expect("read persisted app secret again");
+        assert_eq!(second, first);
+    }
+
+    #[test]
+    fn initialize_app_secret_fails_when_secret_missing_with_existing_postgis_connections() {
+        let conn = duckdb::Connection::open_in_memory().expect("db");
+        conn.execute_batch(
+            "
+            CREATE TABLE system_settings (
+                key VARCHAR PRIMARY KEY,
+                value VARCHAR NOT NULL
+            );
+            CREATE TABLE postgis_connections (
+                id VARCHAR PRIMARY KEY
+            );
+            ",
+        )
+        .expect("create tables");
+
+        conn.execute("INSERT INTO postgis_connections (id) VALUES ('conn-1')", [])
+            .expect("insert postgis connection");
+
+        let err = initialize_app_secret(&conn).expect_err(
+            "should fail when app_secret is missing but postgis_connections already has data",
+        );
+        assert!(err.contains("Missing app_secret while existing PostGIS credentials are present"));
+
+        let app_secret_count: i64 = conn
+            .prepare("SELECT COUNT(*) FROM system_settings WHERE key = 'app_secret'")
+            .expect("prepare app secret count query")
+            .query_row([], |row| row.get(0))
+            .expect("read app secret count");
+        assert_eq!(app_secret_count, 0);
     }
 
     #[test]

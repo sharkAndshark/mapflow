@@ -13,6 +13,13 @@ Windows 桌面集成:
   console(backend.exe, dev/CI) → Ctrl+C/关窗事件 → shutdown_signal → CHECKPOINT
 ```
 
+**工作空间隔离：**
+- 每个文件属于一个工作空间（files.workspace_id）
+- 用户可属于多个工作空间（多对多：workspace_members）
+- Session 存储 currentWorkspaceId，所有文件操作基于此过滤
+- 个人工作空间：注册时自动创建，不可删除，名称格式 `{username}的个人空间`
+- 公开瓦片 URL 通过 slug 访问，不依赖工作空间过滤
+
 **MBTiles 支持：**
 - MBTiles 文件不导入 DuckDB，直接读取原始 SQLite 文件
 - 通过 `tile_format` 字段区分动态（NULL）、MVT、PNG
@@ -33,7 +40,9 @@ Windows 桌面集成:
 - `/api/postgis/connections/test`：仅做连接探测与版本检查
 - `/api/postgis/sources/register`：校验 schema/table(or view)/geom/fid 后注册为 `ready` 数据源（`type=postgis`）
 - 运行时按 `tile_source` 分流：DuckDB 本地表 vs PostGIS 远端查询（私有 `/api/files/:id/tiles/...` 与公开 `/tiles/:slug/...`）
-- 凭据存储：使用 `APP_SECRET` 派生密钥，对 PostGIS 密码做 AES-GCM 加密后写入 DuckDB
+- 凭据存储：使用 `system_settings.app_secret` 派生密钥，对 PostGIS 密码做 AES-GCM 加密后写入 DuckDB
+- 启动引导：`backend.exe` 与 `mapflow-desktop.exe` 都会先确保 `system_settings.app_secret` 存在（缺失时自动生成并持久化）
+- 安全边界（显式 tradeoff）：`app_secret` 与密文同库持久化，目标是“防止日志/界面明文泄露”和“避免重启后凭据失效”；**不防御**“DuckDB 文件泄露”场景。即：若数据库文件被拷贝/读取，应视为 PostGIS 凭据同时失陷（`DB compromise == credential compromise`）。
 
 ## 系统韧性
 

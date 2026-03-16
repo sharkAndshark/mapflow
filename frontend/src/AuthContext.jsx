@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import * as authApi from './auth.js';
+import { setAuthContext } from './api.js';
 
 const AuthContext = createContext(null);
 
@@ -54,10 +55,15 @@ export function AuthProvider({ children }) {
     return user;
   };
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await authApi.logout();
     setUser(null);
-  };
+  }, []);
+
+  useEffect(() => {
+    setAuthContext({ logout });
+    return () => setAuthContext(null);
+  }, [logout]);
 
   const initSystem = async (username, password) => {
     return await authApi.initSystem(username, password);

@@ -8,6 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use duckdb::OptionalExt;
 use tokio::sync::Mutex;
 
 pub const DEFAULT_DB_PATH: &str = "./data/mapflow.duckdb";
@@ -64,6 +65,261 @@ pub async fn reconcile_processing_files(
         "UPDATE files SET status = 'failed', error = ? WHERE status = 'processing'",
         duckdb::params![PROCESSING_RECONCILIATION_ERROR],
     )
+}
+
+fn ensure_workspace_schema_and_backfill(conn: &duckdb::Connection) {
+    let _ = conn.execute(
+        "ALTER TABLE users ADD COLUMN current_workspace_id VARCHAR",
+        [],
+    );
+    let _ = conn.execute("ALTER TABLE files ADD COLUMN workspace_id VARCHAR", []);
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_files_workspace ON files(workspace_id)",
+        [],
+    );
+
+    recover_detached_workspace_members(conn).expect("Failed to recover detached workspace members");
+    backfill_workspace_data(conn).expect("Failed to backfill workspace data");
+}
+
+fn recover_detached_workspace_members(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
+    let backup_rows = {
+        let mut stmt =
+            conn.prepare("SELECT workspace_id, user_id, joined_at FROM workspace_member_backups")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    for (workspace_id, user_id, joined_at) in &backup_rows {
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+            duckdb::params![workspace_id, user_id, joined_at],
+        )?;
+    }
+
+    if !backup_rows.is_empty() {
+        conn.execute("DELETE FROM workspace_member_backups", [])?;
+    }
+
+    Ok(())
+}
+
+fn backfill_workspace_data(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
+    let user_rows = {
+        let mut stmt = conn.prepare(
+            "SELECT id, username, created_at FROM users WHERE id NOT IN (SELECT owner_id FROM workspaces)",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    for (user_id, username, created_at) in user_rows {
+        let workspace_id = format!("personal-{}", user_id);
+        let workspace_name = unique_workspace_name(
+            conn,
+            &crate::workspace::make_personal_workspace_name(&username),
+            &workspace_id,
+        )?;
+
+        conn.execute(
+            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, ?)",
+            duckdb::params![&workspace_id, &workspace_name, &user_id, &created_at],
+        )?;
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?)",
+            duckdb::params![&workspace_id, &user_id, &created_at],
+        )?;
+    }
+
+    let orphan_members = {
+        let mut stmt = conn.prepare(
+            r"
+            SELECT w.id, w.owner_id, w.created_at
+            FROM workspaces w
+            LEFT JOIN workspace_members wm
+              ON wm.workspace_id = w.id AND wm.user_id = w.owner_id
+            WHERE wm.user_id IS NULL
+            ",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    for (workspace_id, owner_id, created_at) in orphan_members {
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?)",
+            duckdb::params![&workspace_id, &owner_id, &created_at],
+        )?;
+    }
+
+    let legacy_file_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM files WHERE workspace_id IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let legacy_shared_workspace_id = if legacy_file_count > 0 {
+        let shared_workspace_id = "legacy-shared-workspace".to_string();
+        let owner_row: Option<(String, String)> = conn
+            .query_row(
+                "SELECT id, created_at FROM users ORDER BY created_at ASC, id ASC LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+
+        if let Some((owner_id, created_at)) = owner_row {
+            let exists: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM workspaces WHERE id = ?",
+                duckdb::params![&shared_workspace_id],
+                |row| row.get(0),
+            )?;
+
+            if exists == 0 {
+                let workspace_name = unique_workspace_name(
+                    conn,
+                    crate::workspace::make_legacy_shared_workspace_name(),
+                    &shared_workspace_id,
+                )?;
+                conn.execute(
+                    "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, ?)",
+                    duckdb::params![&shared_workspace_id, &workspace_name, &owner_id, &created_at],
+                )?;
+            }
+
+            let all_user_rows = {
+                let mut stmt = conn.prepare("SELECT id, created_at FROM users")?;
+                let rows = stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            };
+
+            for (user_id, joined_at) in all_user_rows {
+                let member_exists: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
+                    duckdb::params![&shared_workspace_id, &user_id],
+                    |row| row.get(0),
+                )?;
+                if member_exists == 0 {
+                    conn.execute(
+                        "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?)",
+                        duckdb::params![&shared_workspace_id, &user_id, &joined_at],
+                    )?;
+                }
+            }
+
+            conn.execute(
+                "UPDATE files SET workspace_id = ? WHERE workspace_id IS NULL",
+                duckdb::params![&shared_workspace_id],
+            )?;
+
+            Some(shared_workspace_id)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let user_workspace_rows = {
+        let mut stmt = conn.prepare(
+            r"
+            SELECT u.id,
+                   u.current_workspace_id,
+                   (
+                     SELECT w.id
+                     FROM workspaces w
+                     JOIN workspace_members wm ON wm.workspace_id = w.id
+                     WHERE wm.user_id = u.id AND w.deleted_at IS NULL
+                     ORDER BY w.is_personal DESC, w.created_at ASC
+                     LIMIT 1
+                   ) AS fallback_workspace_id
+            FROM users u
+            ",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    for (user_id, current_workspace_id, fallback_workspace_id) in user_workspace_rows {
+        let target_workspace_id = match (&legacy_shared_workspace_id, fallback_workspace_id) {
+            (Some(shared_workspace_id), _) => shared_workspace_id.clone(),
+            (None, Some(fallback_workspace_id)) => fallback_workspace_id,
+            (None, None) => continue,
+        };
+
+        let current_is_valid = if let Some(current_workspace_id) = current_workspace_id {
+            let count: i64 = conn.query_row(
+                r"
+                SELECT COUNT(*)
+                FROM workspaces w
+                JOIN workspace_members wm ON wm.workspace_id = w.id
+                WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
+                ",
+                duckdb::params![&current_workspace_id, &user_id],
+                |row| row.get(0),
+            )?;
+            count > 0
+        } else {
+            false
+        };
+
+        if !current_is_valid {
+            conn.execute(
+                "UPDATE users SET current_workspace_id = ? WHERE id = ?",
+                duckdb::params![&target_workspace_id, &user_id],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn unique_workspace_name(
+    conn: &duckdb::Connection,
+    base_name: &str,
+    workspace_id: &str,
+) -> Result<String, duckdb::Error> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM workspaces WHERE name = ?",
+        duckdb::params![base_name],
+        |row| row.get(0),
+    )?;
+
+    if count == 0 {
+        return Ok(base_name.to_string());
+    }
+
+    Ok(format!(
+        "{} ({})",
+        base_name,
+        &workspace_id[..workspace_id.len().min(8)]
+    ))
 }
 
 pub fn init_database(db_path: &Path) -> duckdb::Connection {
@@ -166,6 +422,7 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             username VARCHAR UNIQUE NOT NULL,
             password_hash VARCHAR NOT NULL,
             role VARCHAR NOT NULL,
+            current_workspace_id VARCHAR,
             created_at TIMESTAMP NOT NULL
         );
 
@@ -236,6 +493,45 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         ",
     )
     .expect("Failed to create PostGIS source tables");
+
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS workspaces (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR UNIQUE NOT NULL,
+            owner_id VARCHAR NOT NULL REFERENCES users(id),
+            is_personal BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workspaces_owner
+            ON workspaces(owner_id);
+
+        CREATE INDEX IF NOT EXISTS idx_workspaces_deleted_at
+            ON workspaces(deleted_at);
+
+        CREATE TABLE IF NOT EXISTS workspace_members (
+            workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+            user_id VARCHAR NOT NULL REFERENCES users(id),
+            joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (workspace_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workspace_members_user
+            ON workspace_members(user_id);
+
+        CREATE TABLE IF NOT EXISTS workspace_member_backups (
+            workspace_id VARCHAR NOT NULL,
+            user_id VARCHAR NOT NULL,
+            joined_at TIMESTAMP NOT NULL,
+            PRIMARY KEY (workspace_id, user_id)
+        );
+        ",
+    )
+    .expect("Failed to create workspace tables");
+
+    ensure_workspace_schema_and_backfill(&conn);
 
     conn
 }
@@ -807,9 +1103,59 @@ pub fn set_initialized(conn: &duckdb::Connection) -> Result<(), duckdb::Error> {
     Ok(())
 }
 
+pub fn ensure_app_secret(conn: &duckdb::Connection) -> Result<String, String> {
+    let new_secret = generate_random_secret();
+
+    let rows_affected = conn
+        .execute(
+            "INSERT INTO system_settings (key, value) VALUES ('app_secret', ?) ON CONFLICT (key) DO NOTHING",
+            duckdb::params![&new_secret],
+        )
+        .map_err(|e| format!("Failed to store app_secret: {}", e))?;
+
+    if rows_affected > 0 {
+        tracing::info!("Generated and stored new app_secret for PostGIS credential encryption");
+        return Ok(new_secret);
+    }
+
+    let mut stmt = conn
+        .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+        .map_err(|e| format!("Failed to prepare app_secret query: {}", e))?;
+
+    stmt.query_row([], |row| row.get(0))
+        .map_err(|e| format!("Failed to read app_secret after conflict: {}", e))
+}
+
+pub fn get_app_secret(conn: &duckdb::Connection) -> Result<Option<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT value FROM system_settings WHERE key = 'app_secret'")
+        .map_err(|e| format!("Failed to prepare app_secret query: {}", e))?;
+
+    match stmt.query_row([], |row| row.get(0)) {
+        Ok(secret) => Ok(Some(secret)),
+        Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to read app_secret: {}", e)),
+    }
+}
+
+fn generate_random_secret() -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const SECRET_LENGTH: usize = 64;
+
+    let mut rng = rand::thread_rng();
+    (0..SECRET_LENGTH)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::{make_legacy_shared_workspace_name, make_personal_workspace_name};
 
     #[test]
     fn resolve_candidates_prefers_explicit_env_path() {
@@ -1118,5 +1464,164 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o600);
+    }
+
+    #[test]
+    fn init_database_backfills_legacy_users_files_and_current_workspace() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("legacy.duckdb");
+
+        let conn = duckdb::Connection::open(&db_path).expect("open legacy db");
+        conn.execute_batch(
+            r"
+            CREATE TABLE users (
+                id VARCHAR PRIMARY KEY,
+                username VARCHAR UNIQUE NOT NULL,
+                password_hash VARCHAR NOT NULL,
+                role VARCHAR NOT NULL,
+                created_at TIMESTAMP NOT NULL
+            );
+            CREATE TABLE files (
+                id VARCHAR PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                type VARCHAR NOT NULL,
+                size BIGINT NOT NULL,
+                uploaded_at TIMESTAMP NOT NULL,
+                status VARCHAR NOT NULL,
+                crs VARCHAR,
+                path VARCHAR NOT NULL,
+                table_name VARCHAR,
+                error VARCHAR,
+                is_public BOOLEAN DEFAULT FALSE,
+                tile_format VARCHAR,
+                minzoom INTEGER,
+                maxzoom INTEGER,
+                tile_bounds VARCHAR
+            );
+            CREATE TABLE published_files (
+                file_id VARCHAR PRIMARY KEY,
+                slug VARCHAR UNIQUE NOT NULL,
+                published_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                minzoom INTEGER,
+                maxzoom INTEGER,
+                FOREIGN KEY (file_id) REFERENCES files(id)
+            );
+            ",
+        )
+        .expect("seed legacy schema");
+
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+            duckdb::params!["legacy-user-1", "alice", "hash", "admin", "2026-01-01 00:00:00"],
+        )
+        .expect("insert legacy user 1");
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+            duckdb::params!["legacy-user-2", "bob", "hash", "user", "2026-01-02 00:00:00"],
+        )
+        .expect("insert legacy user 2");
+        conn.execute(
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            duckdb::params![
+                "legacy-file-1",
+                "roads",
+                "geojson",
+                1_i64,
+                "2026-01-03 00:00:00",
+                "ready",
+                Option::<String>::None,
+                "./uploads/roads.geojson",
+                Option::<String>::None,
+                Option::<String>::None,
+                false,
+            ],
+        )
+        .expect("insert legacy file");
+        drop(conn);
+
+        let conn = init_database(&db_path);
+
+        let current_workspace_columns: Vec<String> = {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(users)")
+                .expect("users pragma");
+            stmt.query_map([], |row| row.get::<_, String>(1))
+                .expect("query columns")
+                .map(|row| row.expect("column"))
+                .collect()
+        };
+        assert!(
+            current_workspace_columns.contains(&"current_workspace_id".to_string()),
+            "expected current_workspace_id column to be added"
+        );
+
+        let shared_workspace_name: String = conn
+            .query_row(
+                "SELECT name FROM workspaces WHERE id = 'legacy-shared-workspace'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("shared workspace exists");
+        assert_eq!(shared_workspace_name, make_legacy_shared_workspace_name());
+
+        let shared_member_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = 'legacy-shared-workspace'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("shared member count");
+        assert_eq!(shared_member_count, 2);
+
+        let alice_personal_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM workspaces WHERE owner_id = ? AND is_personal = TRUE AND name = ?",
+                duckdb::params!["legacy-user-1", make_personal_workspace_name("alice")],
+                |row| row.get(0),
+            )
+            .expect("alice personal workspace");
+        assert_eq!(alice_personal_exists, 1);
+
+        let bob_personal_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM workspaces WHERE owner_id = ? AND is_personal = TRUE AND name = ?",
+                duckdb::params!["legacy-user-2", make_personal_workspace_name("bob")],
+                |row| row.get(0),
+            )
+            .expect("bob personal workspace");
+        assert_eq!(bob_personal_exists, 1);
+
+        let file_workspace_id: String = conn
+            .query_row(
+                "SELECT workspace_id FROM files WHERE id = 'legacy-file-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("file workspace id");
+        assert_eq!(file_workspace_id, "legacy-shared-workspace");
+
+        let alice_current_workspace: Option<String> = conn
+            .query_row(
+                "SELECT current_workspace_id FROM users WHERE id = 'legacy-user-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("alice current workspace");
+        assert_eq!(
+            alice_current_workspace.as_deref(),
+            Some("legacy-shared-workspace")
+        );
+
+        let bob_current_workspace: Option<String> = conn
+            .query_row(
+                "SELECT current_workspace_id FROM users WHERE id = 'legacy-user-2'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("bob current workspace");
+        assert_eq!(
+            bob_current_workspace.as_deref(),
+            Some("legacy-shared-workspace")
+        );
     }
 }
