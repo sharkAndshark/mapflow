@@ -13,6 +13,13 @@ Windows 桌面集成:
   console(backend.exe, dev/CI) → Ctrl+C/关窗事件 → shutdown_signal → CHECKPOINT
 ```
 
+**工作空间隔离：**
+- 每个文件属于一个工作空间（files.workspace_id）
+- 用户可属于多个工作空间（多对多：workspace_members）
+- Session 存储 currentWorkspaceId，所有文件操作基于此过滤
+- 个人工作空间：注册时自动创建，不可删除，名称格式 `{username}的个人空间`
+- 公开瓦片 URL 通过 slug 访问，不依赖工作空间过滤
+
 **MBTiles 支持：**
 - MBTiles 文件不导入 DuckDB，直接读取原始 SQLite 文件
 - 通过 `tile_format` 字段区分动态（NULL）、MVT、PNG

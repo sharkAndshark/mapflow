@@ -6,6 +6,7 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use axum_login::AuthSession;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use chrono::Utc;
+use duckdb::OptionalExt;
 use rand::RngCore;
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -59,7 +60,7 @@ pub async fn test_postgis_connection(
     State(_state): State<AppState>,
     Json(req): Json<PostgisConnectionTestRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    require_postgis_admin(&auth_session)?;
+    let _ = require_postgis_admin(&auth_session)?;
 
     let cfg = validate_connection_config(req.connection).map_err(|e| bad_request(&e))?;
     let (server_version, postgis_version) = probe_postgis_versions(&cfg).await.map_err(|e| {
@@ -83,7 +84,44 @@ pub async fn register_postgis_source(
     State(state): State<AppState>,
     Json(req): Json<RegisterPostgisSourceRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    require_postgis_admin(&auth_session)?;
+    let user = require_postgis_admin(&auth_session)?;
+
+    let workspace_id = user.current_workspace_id.clone().ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "No active workspace available, please switch workspace".to_string(),
+            }),
+        )
+    })?;
+
+    {
+        let conn = state.db.lock().await;
+        let active_workspace: Option<String> = conn
+            .query_row(
+                r"
+                SELECT w.id
+                FROM workspaces w
+                JOIN workspace_members wm ON w.id = wm.workspace_id
+                WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
+                LIMIT 1
+                ",
+                duckdb::params![&workspace_id, &user.id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(internal_error)?;
+
+        if active_workspace.is_none() {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ErrorResponse {
+                    error: "Current workspace is archived or inaccessible, please switch workspace"
+                        .to_string(),
+                }),
+            ));
+        }
+    }
 
     let connection_name = req.connection_name.trim().to_string();
     if connection_name.is_empty() {
@@ -128,8 +166,8 @@ pub async fn register_postgis_source(
 
     let register_result: Result<(), String> = (|| {
         conn.execute(
-            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, tile_source, crs_type, tile_bounds)
-             VALUES (?, ?, 'postgis', 0, ?, 'ready', ?, ?, NULL, NULL, FALSE, ?, 'standard', ?)",
+            "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, tile_source, crs_type, tile_bounds, workspace_id)
+             VALUES (?, ?, 'postgis', 0, ?, 'ready', ?, ?, NULL, NULL, FALSE, ?, 'standard', ?, ?)",
             duckdb::params![
                 &file_id,
                 &display_name,
@@ -137,7 +175,8 @@ pub async fn register_postgis_source(
                 &crs,
                 &source_path,
                 TILE_SOURCE_POSTGIS,
-                tile_bounds_json
+                tile_bounds_json,
+                &workspace_id
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -224,7 +263,7 @@ pub async fn register_postgis_source(
 
 fn require_postgis_admin(
     auth_session: &AuthSession<crate::AuthBackend>,
-) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<crate::User, (StatusCode, Json<ErrorResponse>)> {
     let Some(user) = auth_session.user.as_ref() else {
         return Err((
             StatusCode::UNAUTHORIZED,
@@ -243,7 +282,7 @@ fn require_postgis_admin(
         ));
     }
 
-    Ok(())
+    Ok(user.clone())
 }
 
 pub fn fetch_postgis_source_config(

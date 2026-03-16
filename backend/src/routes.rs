@@ -1,6 +1,6 @@
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, patch, post, put},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use axum_login::AuthManagerLayerBuilder;
@@ -21,6 +21,11 @@ use crate::{
     postgis::{register_postgis_source, test_postgis_connection},
     public::{get_public_pmtiles, get_public_tile, get_public_tile_meta, head_public_pmtiles},
     upload::upload_file,
+    workspace_handlers::{
+        create_workspace, delete_workspace, get_current_workspace, get_workspace, invite_member,
+        leave_workspace, list_archived_workspaces, list_members, list_workspaces, remove_member,
+        restore_workspace, switch_workspace, update_workspace,
+    },
     AppState,
 };
 
@@ -107,6 +112,31 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .route(
             "/api/files/{id}/publish-settings",
             patch(update_publish_settings),
+        )
+        .route(
+            "/api/workspaces",
+            get(list_workspaces).post(create_workspace),
+        )
+        .route("/api/workspaces/archived", get(list_archived_workspaces))
+        .route(
+            "/api/workspaces/current",
+            get(get_current_workspace).put(switch_workspace),
+        )
+        .route(
+            "/api/workspaces/{id}",
+            get(get_workspace)
+                .put(update_workspace)
+                .delete(delete_workspace),
+        )
+        .route("/api/workspaces/{id}/leave", post(leave_workspace))
+        .route("/api/workspaces/{id}/restore", post(restore_workspace))
+        .route(
+            "/api/workspaces/{id}/members",
+            get(list_members).post(invite_member),
+        )
+        .route(
+            "/api/workspaces/{id}/members/{user_id}",
+            delete(remove_member),
         );
 
     if with_auth {

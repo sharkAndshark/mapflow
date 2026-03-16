@@ -22,10 +22,13 @@ pub fn payload_too_large(message: &str) -> (StatusCode, Json<ErrorResponse>) {
 
 pub fn internal_error<E: std::fmt::Debug>(error: E) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!(error = ?error, "Internal server error");
+    let message = if cfg!(debug_assertions) {
+        format!("Internal Server Error: {:?}", error)
+    } else {
+        "Internal Server Error".to_string()
+    };
     (
         StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse {
-            error: "Internal Server Error".to_string(),
-        }),
+        Json(ErrorResponse { error: message }),
     )
 }
