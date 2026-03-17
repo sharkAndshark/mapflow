@@ -13,8 +13,11 @@ use crate::{
     import::import_spatial_data,
     mbtiles,
     models::ErrorResponse,
-    AppState,
+    AppState, config::BYTES_PER_MB,
 };
+
+const MAX_IMPORT_FILES: usize = 20;
+const MAX_FILE_SIZE_MB: u64 = 1024;
 
 type ApiResult<T> = Result<T, Response>;
 
@@ -192,14 +195,13 @@ pub async fn browse_directory(
 
         let full_path = canonical.join(&name);
         
-        // Canonicalize entry to resolve symlinks, then check if allowed
         let entry_canonical = match full_path.canonicalize() {
             Ok(c) => c,
-            Err(_) => continue, // Broken symlink or inaccessible
+            Err(_) => continue,
         };
         
         if !is_canonical_path_allowed(&entry_canonical, &allowed_dirs) {
-            continue; // Symlink points outside allowed dirs
+            continue;
         }
 
         let metadata = match entry.metadata() {
@@ -307,11 +309,12 @@ pub async fn import_files(
         return Err(bad_req("No files specified"));
     }
 
-    if req.files.len() > 50 {
-        return Err(bad_req("Maximum 50 files per import"));
+    if req.files.len() > MAX_IMPORT_FILES {
+        return Err(bad_req(&format!("Maximum {} files per import", MAX_IMPORT_FILES)));
     }
 
     let allowed_dirs = get_allowed_directories_canonical();
+    let max_size_bytes = *state.max_size.read().await;
     let mut imported = Vec::new();
     let mut failed = Vec::new();
     let conn = state.db.lock().await;
@@ -319,11 +322,10 @@ pub async fn import_files(
     for file in &req.files {
         let path = PathBuf::from(&file.path);
 
-        // Canonicalize first to resolve all symlinks, then check if allowed
         let canonical = match path.canonicalize() {
             Ok(c) => c,
             Err(e) => {
-                warn!(path = %file.path, error = %e, "Import failed: file not found");
+                warn!(error = %e, "Import failed: file not found");
                 failed.push(FailedFile {
                     path: file.path.clone(),
                     reason: "File not found".to_string(),
@@ -332,9 +334,8 @@ pub async fn import_files(
             }
         };
 
-        // Security: verify canonical path is within allowed directories
         if !is_canonical_path_allowed(&canonical, &allowed_dirs) {
-            warn!(path = %file.path, canonical = %canonical.display(), "Import blocked: path outside allowed directories");
+            warn!("Import blocked: path outside allowed directories");
             failed.push(FailedFile {
                 path: file.path.clone(),
                 reason: "Path outside allowed directories".to_string(),
@@ -343,7 +344,7 @@ pub async fn import_files(
         }
 
         if !canonical.is_file() {
-            warn!(path = %file.path, "Import failed: not a file");
+            warn!("Import failed: not a file");
             failed.push(FailedFile {
                 path: file.path.clone(),
                 reason: "Not a file".to_string(),
@@ -357,7 +358,7 @@ pub async fn import_files(
         
         if let Some(ref e) = ext {
             if !is_supported_extension(e) {
-                warn!(path = %file.path, ext = %e, "Import failed: unsupported file type");
+                warn!(ext = %e, "Import failed: unsupported file type");
                 failed.push(FailedFile {
                     path: file.path.clone(),
                     reason: format!("Unsupported file type: {}", e),
@@ -375,7 +376,7 @@ pub async fn import_files(
         let metadata = match std::fs::metadata(&canonical) {
             Ok(m) => m,
             Err(e) => {
-                warn!(path = %file.path, error = %e, "Import failed: cannot read metadata");
+                warn!(error = %e, "Import failed: cannot read metadata");
                 failed.push(FailedFile {
                     path: file.path.clone(),
                     reason: "Cannot read file metadata".to_string(),
@@ -384,18 +385,48 @@ pub async fn import_files(
             }
         };
 
+        let file_size = metadata.len();
+        if file_size > max_size_bytes {
+            let max_mb = max_size_bytes / BYTES_PER_MB;
+            let file_mb = file_size / BYTES_PER_MB;
+            warn!(file_mb = file_mb, max_mb = max_mb, "Import failed: file too large");
+            failed.push(FailedFile {
+                path: file.path.clone(),
+                reason: format!("File too large ({}MB > {}MB limit)", file_mb, max_mb),
+            });
+            continue;
+        }
+
         let file_name = canonical
             .file_stem()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "imported".to_string());
 
-        let file_size = metadata.len() as i64;
         let file_type = ext.unwrap_or_else(|| "unknown".to_string());
         let file_path_str = canonical.to_string_lossy().to_string();
+
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM files WHERE path = ? AND workspace_id = ?",
+                duckdb::params![&file_path_str, &workspace_id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        if let Some(existing_id) = existing {
+            warn!(existing_id = %existing_id, "Import skipped: file already imported");
+            failed.push(FailedFile {
+                path: file.path.clone(),
+                reason: "File already imported".to_string(),
+            });
+            continue;
+        }
+
         let file_id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let file_size_i64 = file_size as i64;
 
-        // Insert into database with source_type = 'server_import'
         let insert_result = conn.execute(
             r#"
             INSERT INTO files (id, name, type, size, uploaded_at, status, path, workspace_id, source_type)
@@ -405,7 +436,7 @@ pub async fn import_files(
                 &file_id,
                 &file_name,
                 &file_type,
-                file_size,
+                file_size_i64,
                 &now,
                 &file_path_str,
                 &workspace_id
@@ -414,7 +445,7 @@ pub async fn import_files(
 
         match insert_result {
             Ok(_) => {
-                info!(file_id = %file_id, path = %file_path_str, workspace_id = %workspace_id, "Server file imported");
+                info!(file_id = %file_id, workspace_id = %workspace_id, "Server file imported");
                 imported.push(ImportedFile {
                     id: file_id.clone(),
                     name: file_name.clone(),
@@ -475,7 +506,7 @@ pub async fn import_files(
                 );
             }
             Err(e) => {
-                warn!(path = %file.path, error = %e, "Import failed: database error");
+                warn!(error = %e, "Import failed: database error");
                 failed.push(FailedFile {
                     path: file.path.clone(),
                     reason: "Database error".to_string(),
