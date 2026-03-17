@@ -15,6 +15,7 @@ mod password;
 mod postgis;
 mod public;
 mod routes;
+mod server_files_handlers;
 mod session_store;
 mod static_assets;
 mod test_routes;

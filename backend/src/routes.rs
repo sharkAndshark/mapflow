@@ -20,6 +20,7 @@ use crate::{
     },
     postgis::{register_postgis_source, test_postgis_connection},
     public::{get_public_pmtiles, get_public_tile, get_public_tile_meta, head_public_pmtiles},
+    server_files_handlers::{browse_directory, import_files, list_directories},
     upload::upload_file,
     workspace_handlers::{
         create_workspace, delete_workspace, get_current_workspace, get_workspace, invite_member,
@@ -137,7 +138,11 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .route(
             "/api/workspaces/{id}/members/{user_id}",
             delete(remove_member),
-        );
+        )
+        // Server file import routes
+        .route("/api/server-files/directories", get(list_directories))
+        .route("/api/server-files/browse", get(browse_directory))
+        .route("/api/server-files/import", post(import_files));
 
     if with_auth {
         api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));
