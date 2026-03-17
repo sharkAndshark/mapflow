@@ -1315,7 +1315,6 @@ export default function App() {
   );
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
-  
   // Server file import states
   const [showServerImportModal, setShowServerImportModal] = useState(false);
   const [serverDirectories, setServerDirectories] = useState([]);
@@ -1431,11 +1430,11 @@ export default function App() {
     setImportError('');
     setSelectedFiles([]);
     setIsLoadingBrowse(true);
-    
+
     try {
       const dirs = await listServerDirectories();
       setServerDirectories(dirs.directories || []);
-      
+
       if (dirs.directories && dirs.directories.length > 0) {
         await browseServerPath(dirs.directories[0].path);
       }
@@ -1450,7 +1449,7 @@ export default function App() {
     setIsLoadingBrowse(true);
     setCurrentBrowsePath(path);
     setImportError('');
-    
+
     try {
       const result = await browseServerDirectory(path);
       setCurrentBrowsePath(result.currentPath);
@@ -1466,11 +1465,11 @@ export default function App() {
 
   function toggleFileSelection(item) {
     if (item.type !== 'file') return;
-    
+
     const filePath = joinPath(currentBrowsePath, item.name);
-    setSelectedFiles(prev => {
+    setSelectedFiles((prev) => {
       if (prev.includes(filePath)) {
-        return prev.filter(f => f !== filePath);
+        return prev.filter((f) => f !== filePath);
       } else {
         return [...prev, filePath];
       }
@@ -1501,13 +1500,13 @@ export default function App() {
 
     try {
       const result = await importServerFiles(selectedFiles);
-      
+
       if (result.failed && result.failed.length > 0) {
-        const failedNames = result.failed.map(f => `${f.path}: ${f.reason}`).join('\n');
+        const failedNames = result.failed.map((f) => `${f.path}: ${f.reason}`).join('\n');
         setImportError(`部分文件导入失败:\n${failedNames}`);
         setSelectedFiles([]);
       }
-      
+
       if (result.imported && result.imported.length > 0) {
         await refreshFiles(result.imported[0].id);
         if (!result.failed || result.failed.length === 0) {
@@ -1814,11 +1813,7 @@ export default function App() {
             上传
           </label>
           {user && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={openServerImportModal}
-            >
+            <button type="button" className="btn-secondary" onClick={openServerImportModal}>
               从服务器导入
             </button>
           )}
@@ -2068,7 +2063,11 @@ export default function App() {
       {/* Server File Import Modal */}
       {showServerImportModal && (
         <div className="modal-backdrop" onClick={() => setShowServerImportModal(false)}>
-          <div className="modal-content" style={{ maxWidth: '700px' }} onClick={e => e.stopPropagation()}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '700px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3>从服务器导入</h3>
               <button
@@ -2083,7 +2082,7 @@ export default function App() {
               <div className="form-hint" style={{ marginBottom: '12px', color: '#666' }}>
                 ⚠️ 文件将被引用，不会被复制。原文件变更会影响数据。
               </div>
-              
+
               {importError && (
                 <div className="form-hint" style={{ color: '#c62828', marginBottom: '12px' }}>
                   {importError}
@@ -2091,23 +2090,27 @@ export default function App() {
               )}
 
               {/* Directory breadcrumb */}
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '8px', 
-                marginBottom: '12px',
-                padding: '8px 12px',
-                background: '#f5f5f5',
-                borderRadius: '4px',
-                fontSize: '14px'
-              }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '12px',
+                  padding: '8px 12px',
+                  background: '#f5f5f5',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                }}
+              >
                 <span style={{ color: '#666' }}>📂</span>
-                <span style={{ 
-                  maxWidth: '500px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
+                <span
+                  style={{
+                    maxWidth: '500px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {currentBrowsePath || '/data'}
                 </span>
               </div>
@@ -2121,8 +2124,10 @@ export default function App() {
                     onChange={(e) => browseServerPath(e.target.value)}
                     style={{ fontSize: '14px' }}
                   >
-                    {serverDirectories.map(dir => (
-                      <option key={dir.path} value={dir.path}>{dir.name}</option>
+                    {serverDirectories.map((dir) => (
+                      <option key={dir.path} value={dir.path}>
+                        {dir.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -2142,32 +2147,41 @@ export default function App() {
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px'
+                        gap: '8px',
                       }}
                     >
                       <span>📁</span>
                       <span style={{ color: '#666' }}>..</span>
                     </div>
                   )}
-                  
+
                   {/* Items list */}
                   {browseItems.length === 0 ? (
-                    <div className="empty" style={{ padding: '20px' }}>目录为空</div>
+                    <div className="empty" style={{ padding: '20px' }}>
+                      目录为空
+                    </div>
                   ) : (
                     browseItems.map((item, index) => (
                       <div
                         key={index}
-                        onClick={() => item.type === 'directory' ? browseServerPath(joinPath(currentBrowsePath, item.name)) : toggleFileSelection(item)}
+                        onClick={() =>
+                          item.type === 'directory'
+                            ? browseServerPath(joinPath(currentBrowsePath, item.name))
+                            : toggleFileSelection(item)
+                        }
                         style={{
                           padding: '10px 12px',
-                          borderBottom: index < browseItems.length - 1 ? '1px solid #e0e0e0' : 'none',
+                          borderBottom:
+                            index < browseItems.length - 1 ? '1px solid #e0e0e0' : 'none',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px',
-                          background: item.type === 'file' && selectedFiles.includes(joinPath(currentBrowsePath, item.name)) 
-                            ? '#e3f2fd' 
-                            : 'transparent'
+                          background:
+                            item.type === 'file' &&
+                            selectedFiles.includes(joinPath(currentBrowsePath, item.name))
+                              ? '#e3f2fd'
+                              : 'transparent',
                         }}
                       >
                         {item.type === 'directory' ? (
@@ -2180,7 +2194,9 @@ export default function App() {
                           <>
                             <input
                               type="checkbox"
-                              checked={selectedFiles.includes(joinPath(currentBrowsePath, item.name))}
+                              checked={selectedFiles.includes(
+                                joinPath(currentBrowsePath, item.name),
+                              )}
                               onChange={() => {}}
                               onClick={(e) => e.stopPropagation()}
                               style={{ marginRight: '4px' }}
@@ -2219,7 +2235,9 @@ export default function App() {
                 onClick={handleImportFiles}
                 disabled={isImporting || selectedFiles.length === 0}
               >
-                {isImporting ? '导入中...' : `导入选中文件${selectedFiles.length > 0 ? ` (${selectedFiles.length})` : ''}`}
+                {isImporting
+                  ? '导入中...'
+                  : `导入选中文件${selectedFiles.length > 0 ? ` (${selectedFiles.length})` : ''}`}
               </button>
             </div>
           </div>
