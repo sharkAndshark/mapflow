@@ -317,205 +317,219 @@ pub async fn import_files(
     let max_size_bytes = *state.max_size.read().await;
     let mut imported = Vec::new();
     let mut failed = Vec::new();
-    let conn = state.db.lock().await;
+    let mut files_to_process: Vec<(String, String, PathBuf)> = Vec::new();
 
-    for file in &req.files {
-        let path = PathBuf::from(&file.path);
+    {
+        let conn = state.db.lock().await;
 
-        let canonical = match path.canonicalize() {
-            Ok(c) => c,
-            Err(e) => {
-                warn!(error = %e, "Import failed: file not found");
+        for file in &req.files {
+            let path = PathBuf::from(&file.path);
+
+            let canonical = match path.canonicalize() {
+                Ok(c) => c,
+                Err(e) => {
+                    warn!(error = %e, "Import failed: file not found");
+                    failed.push(FailedFile {
+                        path: file.path.clone(),
+                        reason: "File not found".to_string(),
+                    });
+                    continue;
+                }
+            };
+
+            if !is_canonical_path_allowed(&canonical, &allowed_dirs) {
+                warn!("Import blocked: path outside allowed directories");
                 failed.push(FailedFile {
                     path: file.path.clone(),
-                    reason: "File not found".to_string(),
+                    reason: "Path outside allowed directories".to_string(),
                 });
                 continue;
             }
-        };
 
-        if !is_canonical_path_allowed(&canonical, &allowed_dirs) {
-            warn!("Import blocked: path outside allowed directories");
-            failed.push(FailedFile {
-                path: file.path.clone(),
-                reason: "Path outside allowed directories".to_string(),
-            });
-            continue;
-        }
-
-        if !canonical.is_file() {
-            warn!("Import failed: not a file");
-            failed.push(FailedFile {
-                path: file.path.clone(),
-                reason: "Not a file".to_string(),
-            });
-            continue;
-        }
-
-        let ext = canonical
-            .extension()
-            .map(|e| e.to_string_lossy().to_lowercase());
-        
-        if let Some(ref e) = ext {
-            if !is_supported_extension(e) {
-                warn!(ext = %e, "Import failed: unsupported file type");
+            if !canonical.is_file() {
+                warn!("Import failed: not a file");
                 failed.push(FailedFile {
                     path: file.path.clone(),
-                    reason: format!("Unsupported file type: {}", e),
+                    reason: "Not a file".to_string(),
                 });
                 continue;
             }
-        } else {
-            failed.push(FailedFile {
-                path: file.path.clone(),
-                reason: "File has no extension".to_string(),
-            });
-            continue;
-        }
 
-        let metadata = match std::fs::metadata(&canonical) {
-            Ok(m) => m,
-            Err(e) => {
-                warn!(error = %e, "Import failed: cannot read metadata");
+            let ext = canonical
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase());
+            
+            if let Some(ref e) = ext {
+                if !is_supported_extension(e) {
+                    warn!(ext = %e, "Import failed: unsupported file type");
+                    failed.push(FailedFile {
+                        path: file.path.clone(),
+                        reason: format!("Unsupported file type: {}", e),
+                    });
+                    continue;
+                }
+            } else {
                 failed.push(FailedFile {
                     path: file.path.clone(),
-                    reason: "Cannot read file metadata".to_string(),
+                    reason: "File has no extension".to_string(),
                 });
                 continue;
             }
-        };
 
-        let file_size = metadata.len();
-        if file_size > max_size_bytes {
-            let max_mb = max_size_bytes / BYTES_PER_MB;
-            let file_mb = file_size / BYTES_PER_MB;
-            warn!(file_mb = file_mb, max_mb = max_mb, "Import failed: file too large");
-            failed.push(FailedFile {
-                path: file.path.clone(),
-                reason: format!("File too large ({}MB > {}MB limit)", file_mb, max_mb),
-            });
-            continue;
-        }
+            let metadata = match std::fs::metadata(&canonical) {
+                Ok(m) => m,
+                Err(e) => {
+                    warn!(error = %e, "Import failed: cannot read metadata");
+                    failed.push(FailedFile {
+                        path: file.path.clone(),
+                        reason: "Cannot read file metadata".to_string(),
+                    });
+                    continue;
+                }
+            };
 
-        let file_name = canonical
-            .file_stem()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "imported".to_string());
-
-        let file_type = ext.unwrap_or_else(|| "unknown".to_string());
-        let file_path_str = canonical.to_string_lossy().to_string();
-
-        let existing: Option<String> = conn
-            .query_row(
-                "SELECT id FROM files WHERE path = ? AND workspace_id = ?",
-                duckdb::params![&file_path_str, &workspace_id],
-                |row| row.get(0),
-            )
-            .ok()
-            .flatten();
-
-        if let Some(existing_id) = existing {
-            warn!(existing_id = %existing_id, "Import skipped: file already imported");
-            failed.push(FailedFile {
-                path: file.path.clone(),
-                reason: "File already imported".to_string(),
-            });
-            continue;
-        }
-
-        let file_id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let file_size_i64 = file_size as i64;
-
-        let insert_result = conn.execute(
-            r#"
-            INSERT INTO files (id, name, type, size, uploaded_at, status, path, workspace_id, source_type)
-            VALUES (?, ?, ?, ?, ?, 'uploaded', ?, ?, 'server_import')
-            "#,
-            duckdb::params![
-                &file_id,
-                &file_name,
-                &file_type,
-                file_size_i64,
-                &now,
-                &file_path_str,
-                &workspace_id
-            ],
-        );
-
-        match insert_result {
-            Ok(_) => {
-                info!(file_id = %file_id, workspace_id = %workspace_id, "Server file imported");
-                imported.push(ImportedFile {
-                    id: file_id.clone(),
-                    name: file_name.clone(),
-                    path: file_path_str.clone(),
-                    status: "uploaded".to_string(),
-                });
-                
-                let db = state.db.clone();
-                let file_id_clone = file_id.clone();
-                let file_type_clone = file_type.clone();
-                let file_path_clone = canonical.clone();
-                let span = info_span!("server_import", file_id = %file_id, file_type = %file_type);
-                
-                tokio::spawn(
-                    async move {
-                        tracing::info!("Starting server file import processing");
-                        {
-                            let conn = db.lock().await;
-                            let _ = conn.execute(
-                                "UPDATE files SET status = 'processing' WHERE id = ?",
-                                duckdb::params![&file_id_clone],
-                            );
-                        }
-
-                        let result = match file_type_clone.as_str() {
-                            "mbtiles" => mbtiles::import_mbtiles(&db, &file_id_clone, &file_path_clone).await,
-                            "pmtiles" => {
-                                let conn = db.lock().await;
-                                let _ = conn.execute(
-                                    "UPDATE files SET status = 'ready', tile_source = 'pmtiles' WHERE id = ?",
-                                    duckdb::params![&file_id_clone],
-                                );
-                                Ok(())
-                            }
-                            _ => import_spatial_data(&db, &file_id_clone, &file_path_clone).await,
-                        };
-
-                        match result {
-                            Ok(_) => {
-                                tracing::info!("Server file import completed successfully");
-                                let conn = db.lock().await;
-                                let _ = conn.execute(
-                                    "UPDATE files SET status = 'ready' WHERE id = ?",
-                                    duckdb::params![&file_id_clone],
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(error = %e, "Server file import failed");
-                                let conn = db.lock().await;
-                                let _ = conn.execute(
-                                    "UPDATE files SET status = 'failed', error = ? WHERE id = ?",
-                                    duckdb::params![e.to_string(), &file_id_clone],
-                                );
-                            }
-                        }
-                    }
-                    .instrument(span),
-                );
-            }
-            Err(e) => {
-                warn!(error = %e, "Import failed: database error");
+            let file_size = metadata.len();
+            if file_size > max_size_bytes {
+                let max_mb = max_size_bytes / BYTES_PER_MB;
+                let file_mb = file_size / BYTES_PER_MB;
+                warn!(file_mb = file_mb, max_mb = max_mb, "Import failed: file too large");
                 failed.push(FailedFile {
                     path: file.path.clone(),
-                    reason: "Database error".to_string(),
+                    reason: format!("File too large ({}MB > {}MB limit)", file_mb, max_mb),
                 });
+                continue;
+            }
+
+            let file_name = canonical
+                .file_stem()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "imported".to_string());
+
+            let file_type = ext.unwrap_or_else(|| "unknown".to_string());
+            let file_path_str = canonical.to_string_lossy().to_string();
+
+            let existing: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM files WHERE path = ? AND workspace_id = ?",
+                    duckdb::params![&file_path_str, &workspace_id],
+                    |row| row.get(0),
+                )
+                .ok()
+                .flatten();
+
+            if let Some(existing_id) = existing {
+                warn!(existing_id = %existing_id, "Import skipped: file already imported");
+                failed.push(FailedFile {
+                    path: file.path.clone(),
+                    reason: "File already imported".to_string(),
+                });
+                continue;
+            }
+
+            let file_id = uuid::Uuid::new_v4().to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let file_size_i64 = file_size as i64;
+
+            let insert_result = conn.execute(
+                r#"
+                INSERT INTO files (id, name, type, size, uploaded_at, status, path, workspace_id, source_type)
+                VALUES (?, ?, ?, ?, ?, 'uploaded', ?, ?, 'server_import')
+                "#,
+                duckdb::params![
+                    &file_id,
+                    &file_name,
+                    &file_type,
+                    file_size_i64,
+                    &now,
+                    &file_path_str,
+                    &workspace_id
+                ],
+            );
+
+            match insert_result {
+                Ok(_) => {
+                    info!(file_id = %file_id, workspace_id = %workspace_id, "Server file imported");
+                    imported.push(ImportedFile {
+                        id: file_id.clone(),
+                        name: file_name.clone(),
+                        path: file_path_str.clone(),
+                        status: "uploaded".to_string(),
+                    });
+                    files_to_process.push((file_id, file_type, canonical));
+                }
+                Err(e) => {
+                    warn!(error = %e, "Import failed: database error");
+                    failed.push(FailedFile {
+                        path: file.path.clone(),
+                        reason: "Database error".to_string(),
+                    });
+                }
             }
         }
     }
 
-    drop(conn);
+    for (file_id, file_type, file_path) in files_to_process {
+        let db = state.db.clone();
+        let span = info_span!("server_import", file_id = %file_id, file_type = %file_type);
+        
+        tokio::spawn(
+            async move {
+                tracing::info!("Starting server file import processing");
+                {
+                    let conn = db.lock().await;
+                    if let Err(e) = conn.execute(
+                        "UPDATE files SET status = 'processing' WHERE id = ?",
+                        duckdb::params![&file_id],
+                    ) {
+                        tracing::error!(error = %e, file_id = %file_id, "Failed to update status to processing");
+                        return;
+                    }
+                }
+
+                let result = match file_type.as_str() {
+                    "mbtiles" => mbtiles::import_mbtiles(&db, &file_id, &file_path).await,
+                    "pmtiles" => {
+                        let conn = db.lock().await;
+                        match conn.execute(
+                            "UPDATE files SET status = 'ready', tile_source = 'pmtiles' WHERE id = ?",
+                            duckdb::params![&file_id],
+                        ) {
+                            Ok(_) => Ok(()),
+                            Err(e) => {
+                                tracing::error!(error = %e, file_id = %file_id, "Failed to update pmtiles status");
+                                Err(e.into())
+                            }
+                        }
+                    }
+                    _ => import_spatial_data(&db, &file_id, &file_path).await,
+                };
+
+                match result {
+                    Ok(_) => {
+                        tracing::info!(file_id = %file_id, "Server file import completed successfully");
+                        let conn = db.lock().await;
+                        if let Err(e) = conn.execute(
+                            "UPDATE files SET status = 'ready' WHERE id = ?",
+                            duckdb::params![&file_id],
+                        ) {
+                            tracing::error!(error = %e, file_id = %file_id, "Failed to update status to ready");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, file_id = %file_id, "Server file import failed");
+                        let conn = db.lock().await;
+                        if let Err(update_err) = conn.execute(
+                            "UPDATE files SET status = 'failed', error = ? WHERE id = ?",
+                            duckdb::params![e.to_string(), &file_id],
+                        ) {
+                            tracing::error!(error = %update_err, file_id = %file_id, "Failed to update status to failed");
+                        }
+                    }
+                }
+            }
+            .instrument(span),
+        );
+    }
 
     if imported.is_empty() {
         return Err(bad_req("No files could be imported"));

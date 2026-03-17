@@ -1501,14 +1501,19 @@ export default function App() {
 
     try {
       const result = await importServerFiles(selectedFiles);
+      
       if (result.failed && result.failed.length > 0) {
         const failedNames = result.failed.map(f => `${f.path}: ${f.reason}`).join('\n');
         setImportError(`部分文件导入失败:\n${failedNames}`);
-      }
-      if (result.imported && result.imported.length > 0) {
-        setShowServerImportModal(false);
         setSelectedFiles([]);
+      }
+      
+      if (result.imported && result.imported.length > 0) {
         await refreshFiles(result.imported[0].id);
+        if (!result.failed || result.failed.length === 0) {
+          setShowServerImportModal(false);
+          setSelectedFiles([]);
+        }
       }
     } catch (error) {
       setImportError(error instanceof Error ? error.message : '导入文件失败');
