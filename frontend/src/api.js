@@ -310,7 +310,7 @@ export async function listServerDirectories() {
 }
 
 export async function browseServerDirectory(path) {
-  const url = path 
+  const url = path
     ? `/api/server-files/browse?path=${encodeURIComponent(path)}`
     : '/api/server-files/browse';
   const res = await fetchWithAuth(url);
@@ -325,7 +325,7 @@ export async function importServerFiles(files) {
   const res = await fetchWithAuth('/api/server-files/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files: files.map(f => ({ path: f })) }),
+    body: JSON.stringify({ files: files.map((f) => ({ path: f })) }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
