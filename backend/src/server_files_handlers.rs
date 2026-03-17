@@ -73,6 +73,36 @@ fn is_path_allowed(path: &PathBuf) -> bool {
     false
 }
 
+/// Check if a symlink target is within allowed directories
+/// Returns error message if symlink points outside allowed dirs, None if ok
+fn check_symlink_target(path: &PathBuf) -> Option<String> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(_) => return None,
+    };
+
+    if !metadata.file_type().is_symlink() {
+        return None;
+    }
+
+    let target = match std::fs::read_link(path) {
+        Ok(t) => t,
+        Err(_) => return Some("Cannot read symlink target".to_string()),
+    };
+
+    let resolved_target = if target.is_relative() {
+        path.parent()?.join(target)
+    } else {
+        target
+    };
+
+    if !is_path_allowed(&resolved_target) {
+        return Some("Symlink points outside allowed directories".to_string());
+    }
+
+    None
+}
+
 /// Validate file extension is supported
 fn is_supported_extension(ext: &str) -> bool {
     let ext_lower = ext.to_lowercase();
@@ -112,8 +142,9 @@ pub async fn list_directories(
     let directories: Vec<DirectoryInfo> = dirs
         .into_iter()
         .filter_map(|p| {
-            let name = p.file_name()?.to_string_lossy().to_string();
-            let path = p.to_string_lossy().to_string();
+            let canonical = p.canonicalize().ok()?;
+            let name = canonical.file_name()?.to_string_lossy().to_string();
+            let path = canonical.to_string_lossy().to_string();
             Some(DirectoryInfo { path, name })
         })
         .collect();
@@ -204,6 +235,10 @@ pub async fn browse_directory(
         };
 
         if metadata.is_dir() {
+            let full_path = canonical.join(&name);
+            if check_symlink_target(&full_path).is_some() {
+                continue;
+            }
             items.push(BrowseItem {
                 name,
                 item_type: "directory".to_string(),
@@ -211,18 +246,21 @@ pub async fn browse_directory(
                 ext: None,
             });
         } else if metadata.is_file() {
+            let full_path = canonical.join(&name);
+            if check_symlink_target(&full_path).is_some() {
+                continue;
+            }
             let ext = path
                 .extension()
                 .map(|e| format!(".{}", e.to_string_lossy()));
             
-            // Only show supported file types
             if let Some(ref e) = ext {
                 let ext_without_dot = e.trim_start_matches('.');
                 if !is_supported_extension(ext_without_dot) {
                     continue;
                 }
             } else {
-                continue; // Skip files without extension
+                continue;
             }
 
             items.push(BrowseItem {
@@ -278,8 +316,15 @@ pub struct ImportedFile {
 }
 
 #[derive(Debug, Serialize)]
+pub struct FailedFile {
+    pub path: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ImportResponse {
     pub imported: Vec<ImportedFile>,
+    pub failed: Vec<FailedFile>,
 }
 
 /// POST /api/server-files/import
@@ -302,32 +347,51 @@ pub async fn import_files(
     }
 
     let mut imported = Vec::new();
+    let mut failed = Vec::new();
     let conn = state.db.lock().await;
 
     for file in &req.files {
         let path = PathBuf::from(&file.path);
 
-        // Security checks
         if !is_path_allowed(&path) {
             warn!(path = %file.path, "Import blocked: path outside allowed directories");
+            failed.push(FailedFile {
+                path: file.path.clone(),
+                reason: "Path outside allowed directories".to_string(),
+            });
             continue;
         }
 
-        // Check file exists and is readable
+        if let Some(err) = check_symlink_target(&path) {
+            warn!(path = %file.path, "Import blocked: {}", err);
+            failed.push(FailedFile {
+                path: file.path.clone(),
+                reason: err,
+            });
+            continue;
+        }
+
         let canonical = match path.canonicalize() {
             Ok(c) => c,
             Err(e) => {
                 warn!(path = %file.path, error = %e, "Import failed: file not found");
+                failed.push(FailedFile {
+                    path: file.path.clone(),
+                    reason: "File not found".to_string(),
+                });
                 continue;
             }
         };
 
         if !canonical.is_file() {
             warn!(path = %file.path, "Import failed: not a file");
+            failed.push(FailedFile {
+                path: file.path.clone(),
+                reason: "Not a file".to_string(),
+            });
             continue;
         }
 
-        // Validate extension
         let ext = canonical
             .extension()
             .map(|e| e.to_string_lossy().to_lowercase());
@@ -335,17 +399,28 @@ pub async fn import_files(
         if let Some(ref e) = ext {
             if !is_supported_extension(e) {
                 warn!(path = %file.path, ext = %e, "Import failed: unsupported file type");
+                failed.push(FailedFile {
+                    path: file.path.clone(),
+                    reason: format!("Unsupported file type: {}", e),
+                });
                 continue;
             }
         } else {
+            failed.push(FailedFile {
+                path: file.path.clone(),
+                reason: "File has no extension".to_string(),
+            });
             continue;
         }
 
-        // Get file metadata
         let metadata = match std::fs::metadata(&canonical) {
             Ok(m) => m,
             Err(e) => {
                 warn!(path = %file.path, error = %e, "Import failed: cannot read metadata");
+                failed.push(FailedFile {
+                    path: file.path.clone(),
+                    reason: "Cannot read file metadata".to_string(),
+                });
                 continue;
             }
         };
@@ -388,7 +463,6 @@ pub async fn import_files(
                     status: "uploaded".to_string(),
                 });
                 
-                // Start background processing (same as upload)
                 let db = state.db.clone();
                 let file_id_clone = file_id.clone();
                 let file_type_clone = file_type.clone();
@@ -443,6 +517,10 @@ pub async fn import_files(
             }
             Err(e) => {
                 warn!(path = %file.path, error = %e, "Import failed: database error");
+                failed.push(FailedFile {
+                    path: file.path.clone(),
+                    reason: "Database error".to_string(),
+                });
             }
         }
     }
@@ -453,5 +531,5 @@ pub async fn import_files(
         return Err(bad_req("No files could be imported"));
     }
 
-    Ok(Json(ImportResponse { imported }))
+    Ok(Json(ImportResponse { imported, failed }))
 }

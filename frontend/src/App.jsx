@@ -1467,7 +1467,7 @@ export default function App() {
   function toggleFileSelection(item) {
     if (item.type !== 'file') return;
     
-    const filePath = `${currentBrowsePath}/${item.name}`;
+    const filePath = joinPath(currentBrowsePath, item.name);
     setSelectedFiles(prev => {
       if (prev.includes(filePath)) {
         return prev.filter(f => f !== filePath);
@@ -1485,6 +1485,11 @@ export default function App() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
+  function joinPath(base, name) {
+    const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
+    return `${normalizedBase}/${name}`;
+  }
+
   async function handleImportFiles() {
     if (selectedFiles.length === 0) {
       setImportError('请选择要导入的文件');
@@ -1496,9 +1501,15 @@ export default function App() {
 
     try {
       const result = await importServerFiles(selectedFiles);
-      setShowServerImportModal(false);
-      setSelectedFiles([]);
-      await refreshFiles(result.imported?.[0]?.id);
+      if (result.failed && result.failed.length > 0) {
+        const failedNames = result.failed.map(f => `${f.path}: ${f.reason}`).join('\n');
+        setImportError(`部分文件导入失败:\n${failedNames}`);
+      }
+      if (result.imported && result.imported.length > 0) {
+        setShowServerImportModal(false);
+        setSelectedFiles([]);
+        await refreshFiles(result.imported[0].id);
+      }
     } catch (error) {
       setImportError(error instanceof Error ? error.message : '导入文件失败');
     } finally {
@@ -2141,7 +2152,7 @@ export default function App() {
                     browseItems.map((item, index) => (
                       <div
                         key={index}
-                        onClick={() => item.type === 'directory' ? browseServerPath(`${currentBrowsePath}/${item.name}`) : toggleFileSelection(item)}
+                        onClick={() => item.type === 'directory' ? browseServerPath(joinPath(currentBrowsePath, item.name)) : toggleFileSelection(item)}
                         style={{
                           padding: '10px 12px',
                           borderBottom: index < browseItems.length - 1 ? '1px solid #e0e0e0' : 'none',
@@ -2149,7 +2160,7 @@ export default function App() {
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px',
-                          background: item.type === 'file' && selectedFiles.includes(`${currentBrowsePath}/${item.name}`) 
+                          background: item.type === 'file' && selectedFiles.includes(joinPath(currentBrowsePath, item.name)) 
                             ? '#e3f2fd' 
                             : 'transparent'
                         }}
@@ -2164,7 +2175,7 @@ export default function App() {
                           <>
                             <input
                               type="checkbox"
-                              checked={selectedFiles.includes(`${currentBrowsePath}/${item.name}`)}
+                              checked={selectedFiles.includes(joinPath(currentBrowsePath, item.name))}
                               onChange={() => {}}
                               onClick={(e) => e.stopPropagation()}
                               style={{ marginRight: '4px' }}
