@@ -13,6 +13,7 @@ export POSTGIS_TEST_USER="${POSTGIS_TEST_USER:-mapflow}"
 export POSTGIS_TEST_PASSWORD="${POSTGIS_TEST_PASSWORD:-mapflow}"
 export MAPFLOW_RUN_POSTGIS_TESTS=1
 export APP_SECRET="${APP_SECRET:-postgis-integration-secret}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 
 KEEP_FIXTURE="${KEEP_POSTGIS_FIXTURE:-false}"
 
@@ -25,6 +26,9 @@ cleanup() {
   docker compose -f "${COMPOSE_FILE}" down -v >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+echo "[postgis-integration] prebuilding postgis integration test binary"
+cargo test --manifest-path "${ROOT_DIR}/backend/Cargo.toml" --test postgis_integration --no-run
 
 echo "[postgis-integration] starting postgis fixture"
 docker compose -f "${COMPOSE_FILE}" up -d postgis >/dev/null
