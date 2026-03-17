@@ -491,20 +491,15 @@ pub async fn import_files(
                     }
                 }
 
-                let result = match file_type.as_str() {
+                let result: Result<(), String> = match file_type.as_str() {
                     "mbtiles" => mbtiles::import_mbtiles(&db, &file_id, &file_path).await,
                     "pmtiles" => {
                         let conn = db.lock().await;
-                        match conn.execute(
+                        conn.execute(
                             "UPDATE files SET status = 'ready', tile_source = 'pmtiles' WHERE id = ?",
                             duckdb::params![&file_id],
-                        ) {
-                            Ok(_) => Ok(()),
-                            Err(e) => {
-                                tracing::error!(error = %e, file_id = %file_id, "Failed to update pmtiles status");
-                                Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) as Box<dyn std::error::Error + Send + Sync>)
-                            }
-                        }
+                        ).map_err(|e| e.to_string())?;
+                        Ok(())
                     }
                     _ => import_spatial_data(&db, &file_id, &file_path).await,
                 };
