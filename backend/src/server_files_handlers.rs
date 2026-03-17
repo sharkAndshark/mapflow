@@ -495,11 +495,13 @@ pub async fn import_files(
                     "mbtiles" => mbtiles::import_mbtiles(&db, &file_id, &file_path).await,
                     "pmtiles" => {
                         let conn = db.lock().await;
-                        conn.execute(
+                        match conn.execute(
                             "UPDATE files SET status = 'ready', tile_source = 'pmtiles' WHERE id = ?",
                             duckdb::params![&file_id],
-                        ).map_err(|e| e.to_string())?;
-                        Ok(())
+                        ) {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(e.to_string()),
+                        }
                     }
                     _ => import_spatial_data(&db, &file_id, &file_path).await,
                 };
