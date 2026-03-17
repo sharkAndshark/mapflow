@@ -1797,7 +1797,7 @@ export default function App() {
             />
             上传
           </label>
-          {user?.role === 'admin' && (
+          {user && (
             <button
               type="button"
               className="btn-secondary"
