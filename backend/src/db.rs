@@ -399,10 +399,6 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         "ALTER TABLE published_files ADD COLUMN use_aliases BOOLEAN DEFAULT TRUE",
         [],
     );
-    let _ = conn.execute(
-        "ALTER TABLE files ADD COLUMN source_type VARCHAR DEFAULT 'upload'",
-        [],
-    );
 
     conn.execute_batch(
         r"
