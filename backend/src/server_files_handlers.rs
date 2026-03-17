@@ -55,52 +55,17 @@ fn get_allowed_directories() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Check if a path is within allowed directories
-fn is_path_allowed(path: &PathBuf) -> bool {
-    let canonical = match path.canonicalize() {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    let allowed_dirs = get_allowed_directories();
-    for allowed in allowed_dirs {
-        if let Ok(allowed_canonical) = allowed.canonicalize() {
-            if canonical.starts_with(&allowed_canonical) {
-                return true;
-            }
-        }
-    }
-    false
+/// Get canonicalized allowed directories (cached for request lifetime)
+fn get_allowed_directories_canonical() -> Vec<PathBuf> {
+    get_allowed_directories()
+        .into_iter()
+        .filter_map(|p| p.canonicalize().ok())
+        .collect()
 }
 
-/// Check if a symlink target is within allowed directories
-/// Returns error message if symlink points outside allowed dirs, None if ok
-fn check_symlink_target(path: &PathBuf) -> Option<String> {
-    let metadata = match std::fs::symlink_metadata(path) {
-        Ok(m) => m,
-        Err(_) => return None,
-    };
-
-    if !metadata.file_type().is_symlink() {
-        return None;
-    }
-
-    let target = match std::fs::read_link(path) {
-        Ok(t) => t,
-        Err(_) => return Some("Cannot read symlink target".to_string()),
-    };
-
-    let resolved_target = if target.is_relative() {
-        path.parent()?.join(target)
-    } else {
-        target
-    };
-
-    if !is_path_allowed(&resolved_target) {
-        return Some("Symlink points outside allowed directories".to_string());
-    }
-
-    None
+/// Check if a canonical path is within allowed directories
+fn is_canonical_path_allowed(canonical: &PathBuf, allowed_dirs: &[PathBuf]) -> bool {
+    allowed_dirs.iter().any(|allowed| canonical.starts_with(allowed))
 }
 
 /// Validate file extension is supported
@@ -183,27 +148,24 @@ pub async fn browse_directory(
     _auth_session: AuthSession<crate::AuthBackend>,
     Query(query): Query<BrowseQuery>,
 ) -> ApiResult<impl IntoResponse> {
-    let base_dirs = get_allowed_directories();
-    if base_dirs.is_empty() {
+    let allowed_dirs = get_allowed_directories_canonical();
+    if allowed_dirs.is_empty() {
         return Err(bad_req("No data directories configured"));
     }
 
-    // Default to first allowed directory
-    let target_path = match query.path {
+    // Resolve path: canonicalize first, then check if allowed
+    let canonical = match query.path {
         Some(ref p) if !p.is_empty() => {
             let path = PathBuf::from(p);
-            if !is_path_allowed(&path) {
-                return Err(forbidden("Access denied: path outside allowed directories"));
-            }
-            path
+            path.canonicalize().map_err(|_| not_found("Directory not found"))?
         }
-        _ => base_dirs.into_iter().next().unwrap(),
+        _ => allowed_dirs.first().cloned().unwrap(),
     };
 
-    // Security check for path traversal
-    let canonical = target_path.canonicalize().map_err(|_| {
-        not_found("Directory not found")
-    })?;
+    // Security: verify canonical path is within allowed directories
+    if !is_canonical_path_allowed(&canonical, &allowed_dirs) {
+        return Err(forbidden("Access denied: path outside allowed directories"));
+    }
 
     if !canonical.is_dir() {
         return Err(bad_req("Not a directory"));
@@ -218,9 +180,8 @@ pub async fn browse_directory(
             Err(_) => continue,
         };
 
-        let path = entry.path();
-        let name = match path.file_name() {
-            Some(n) => n.to_string_lossy().to_string(),
+        let name = match entry.file_name().to_str() {
+            Some(n) => n.to_string(),
             None => continue,
         };
 
@@ -229,16 +190,24 @@ pub async fn browse_directory(
             continue;
         }
 
+        let full_path = canonical.join(&name);
+        
+        // Canonicalize entry to resolve symlinks, then check if allowed
+        let entry_canonical = match full_path.canonicalize() {
+            Ok(c) => c,
+            Err(_) => continue, // Broken symlink or inaccessible
+        };
+        
+        if !is_canonical_path_allowed(&entry_canonical, &allowed_dirs) {
+            continue; // Symlink points outside allowed dirs
+        }
+
         let metadata = match entry.metadata() {
             Ok(m) => m,
             Err(_) => continue,
         };
 
         if metadata.is_dir() {
-            let full_path = canonical.join(&name);
-            if check_symlink_target(&full_path).is_some() {
-                continue;
-            }
             items.push(BrowseItem {
                 name,
                 item_type: "directory".to_string(),
@@ -246,11 +215,7 @@ pub async fn browse_directory(
                 ext: None,
             });
         } else if metadata.is_file() {
-            let full_path = canonical.join(&name);
-            if check_symlink_target(&full_path).is_some() {
-                continue;
-            }
-            let ext = path
+            let ext = full_path
                 .extension()
                 .map(|e| format!(".{}", e.to_string_lossy()));
             
@@ -283,7 +248,7 @@ pub async fn browse_directory(
 
     // Calculate parent path if within allowed directories
     let parent_path = canonical.parent().and_then(|p| {
-        if is_path_allowed(&p.to_path_buf()) {
+        if is_canonical_path_allowed(&p.to_path_buf(), &allowed_dirs) {
             Some(p.to_string_lossy().to_string())
         } else {
             None
@@ -346,6 +311,7 @@ pub async fn import_files(
         return Err(bad_req("Maximum 50 files per import"));
     }
 
+    let allowed_dirs = get_allowed_directories_canonical();
     let mut imported = Vec::new();
     let mut failed = Vec::new();
     let conn = state.db.lock().await;
@@ -353,24 +319,7 @@ pub async fn import_files(
     for file in &req.files {
         let path = PathBuf::from(&file.path);
 
-        if !is_path_allowed(&path) {
-            warn!(path = %file.path, "Import blocked: path outside allowed directories");
-            failed.push(FailedFile {
-                path: file.path.clone(),
-                reason: "Path outside allowed directories".to_string(),
-            });
-            continue;
-        }
-
-        if let Some(err) = check_symlink_target(&path) {
-            warn!(path = %file.path, "Import blocked: {}", err);
-            failed.push(FailedFile {
-                path: file.path.clone(),
-                reason: err,
-            });
-            continue;
-        }
-
+        // Canonicalize first to resolve all symlinks, then check if allowed
         let canonical = match path.canonicalize() {
             Ok(c) => c,
             Err(e) => {
@@ -382,6 +331,16 @@ pub async fn import_files(
                 continue;
             }
         };
+
+        // Security: verify canonical path is within allowed directories
+        if !is_canonical_path_allowed(&canonical, &allowed_dirs) {
+            warn!(path = %file.path, canonical = %canonical.display(), "Import blocked: path outside allowed directories");
+            failed.push(FailedFile {
+                path: file.path.clone(),
+                reason: "Path outside allowed directories".to_string(),
+            });
+            continue;
+        }
 
         if !canonical.is_file() {
             warn!(path = %file.path, "Import failed: not a file");
