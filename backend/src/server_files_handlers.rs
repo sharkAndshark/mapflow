@@ -10,7 +10,6 @@ use tracing::{info, warn};
 
 use crate::{
     handlers::get_workspace_id,
-    http_errors::internal_error,
     models::ErrorResponse,
     AppState,
 };
@@ -288,7 +287,9 @@ pub async fn import_files(
     State(state): State<AppState>,
     Json(req): Json<ImportRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+    let workspace_id = get_workspace_id(&auth_session, &state)
+        .await
+        .map_err(|(status, json)| err(status, &json.error))?;
 
     if req.files.is_empty() {
         return Err(bad_req("No files specified"));
