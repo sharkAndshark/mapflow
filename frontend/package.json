@@ -26,10 +26,10 @@
     "react-router-dom": "^7.13.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.6",
+    "@biomejs/biome": "^2.4.7",
     "@playwright/test": "^1.50.0",
-    "@vitejs/plugin-react": "^5.1.4",
-    "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.0"
   }
 }
