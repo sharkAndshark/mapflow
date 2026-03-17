@@ -9,11 +9,8 @@ use std::path::PathBuf;
 use tracing::{info, info_span, warn, Instrument};
 
 use crate::{
-    handlers::get_workspace_id,
-    import::import_spatial_data,
-    mbtiles,
-    models::ErrorResponse,
-    AppState, config::BYTES_PER_MB,
+    config::BYTES_PER_MB, handlers::get_workspace_id, import::import_spatial_data, mbtiles,
+    models::ErrorResponse, AppState,
 };
 
 const MAX_IMPORT_FILES: usize = 20;
@@ -68,7 +65,9 @@ fn get_allowed_directories_canonical() -> Vec<PathBuf> {
 
 /// Check if a canonical path is within allowed directories
 fn is_canonical_path_allowed(canonical: &PathBuf, allowed_dirs: &[PathBuf]) -> bool {
-    allowed_dirs.iter().any(|allowed| canonical.starts_with(allowed))
+    allowed_dirs
+        .iter()
+        .any(|allowed| canonical.starts_with(allowed))
 }
 
 /// Validate file extension is supported
@@ -160,7 +159,8 @@ pub async fn browse_directory(
     let canonical = match query.path {
         Some(ref p) if !p.is_empty() => {
             let path = PathBuf::from(p);
-            path.canonicalize().map_err(|_| not_found("Directory not found"))?
+            path.canonicalize()
+                .map_err(|_| not_found("Directory not found"))?
         }
         _ => allowed_dirs.first().cloned().unwrap(),
     };
@@ -194,12 +194,12 @@ pub async fn browse_directory(
         }
 
         let full_path = canonical.join(&name);
-        
+
         let entry_canonical = match full_path.canonicalize() {
             Ok(c) => c,
             Err(_) => continue,
         };
-        
+
         if !is_canonical_path_allowed(&entry_canonical, &allowed_dirs) {
             continue;
         }
@@ -220,7 +220,7 @@ pub async fn browse_directory(
             let ext = full_path
                 .extension()
                 .map(|e| format!(".{}", e.to_string_lossy()));
-            
+
             if let Some(ref e) = ext {
                 let ext_without_dot = e.trim_start_matches('.');
                 if !is_supported_extension(ext_without_dot) {
@@ -240,12 +240,10 @@ pub async fn browse_directory(
     }
 
     // Sort: directories first, then files, both alphabetically
-    items.sort_by(|a, b| {
-        match (a.item_type.as_str(), b.item_type.as_str()) {
-            ("directory", "file") => std::cmp::Ordering::Less,
-            ("file", "directory") => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        }
+    items.sort_by(|a, b| match (a.item_type.as_str(), b.item_type.as_str()) {
+        ("directory", "file") => std::cmp::Ordering::Less,
+        ("file", "directory") => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
 
     // Calculate parent path if within allowed directories
@@ -310,7 +308,10 @@ pub async fn import_files(
     }
 
     if req.files.len() > MAX_IMPORT_FILES {
-        return Err(bad_req(&format!("Maximum {} files per import", MAX_IMPORT_FILES)));
+        return Err(bad_req(&format!(
+            "Maximum {} files per import",
+            MAX_IMPORT_FILES
+        )));
     }
 
     let allowed_dirs = get_allowed_directories_canonical();
@@ -358,7 +359,7 @@ pub async fn import_files(
             let ext = canonical
                 .extension()
                 .map(|e| e.to_string_lossy().to_lowercase());
-            
+
             if let Some(ref e) = ext {
                 if !is_supported_extension(e) {
                     warn!(ext = %e, "Import failed: unsupported file type");
@@ -392,7 +393,11 @@ pub async fn import_files(
             if file_size > max_size_bytes {
                 let max_mb = max_size_bytes / BYTES_PER_MB;
                 let file_mb = file_size / BYTES_PER_MB;
-                warn!(file_mb = file_mb, max_mb = max_mb, "Import failed: file too large");
+                warn!(
+                    file_mb = file_mb,
+                    max_mb = max_mb,
+                    "Import failed: file too large"
+                );
                 failed.push(FailedFile {
                     path: file.path.clone(),
                     reason: format!("File too large ({}MB > {}MB limit)", file_mb, max_mb),
@@ -471,7 +476,7 @@ pub async fn import_files(
     for (file_id, file_type, file_path) in files_to_process {
         let db = state.db.clone();
         let span = info_span!("server_import", file_id = %file_id, file_type = %file_type);
-        
+
         tokio::spawn(
             async move {
                 tracing::info!("Starting server file import processing");
