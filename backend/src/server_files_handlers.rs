@@ -6,10 +6,12 @@ use axum::{
 use axum_login::AuthSession;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tracing::{info, warn};
+use tracing::{info, info_span, warn, Instrument};
 
 use crate::{
     handlers::get_workspace_id,
+    import::import_spatial_data,
+    mbtiles,
     models::ErrorResponse,
     AppState,
 };
@@ -380,11 +382,64 @@ pub async fn import_files(
             Ok(_) => {
                 info!(file_id = %file_id, path = %file_path_str, workspace_id = %workspace_id, "Server file imported");
                 imported.push(ImportedFile {
-                    id: file_id,
-                    name: file_name,
-                    path: file_path_str,
+                    id: file_id.clone(),
+                    name: file_name.clone(),
+                    path: file_path_str.clone(),
                     status: "uploaded".to_string(),
                 });
+                
+                // Start background processing (same as upload)
+                let db = state.db.clone();
+                let file_id_clone = file_id.clone();
+                let file_type_clone = file_type.clone();
+                let file_path_clone = canonical.clone();
+                let span = info_span!("server_import", file_id = %file_id, file_type = %file_type);
+                
+                tokio::spawn(
+                    async move {
+                        tracing::info!("Starting server file import processing");
+                        {
+                            let conn = db.lock().await;
+                            let _ = conn.execute(
+                                "UPDATE files SET status = 'processing' WHERE id = ?",
+                                duckdb::params![&file_id_clone],
+                            );
+                        }
+
+                        let result = match file_type_clone.as_str() {
+                            "mbtiles" => mbtiles::import_mbtiles(&db, &file_id_clone, &file_path_clone).await,
+                            "pmtiles" => {
+                                let conn = db.lock().await;
+                                let _ = conn.execute(
+                                    "UPDATE files SET status = 'ready', tile_source = 'pmtiles' WHERE id = ?",
+                                    duckdb::params![&file_id_clone],
+                                );
+                                Ok(())
+                            }
+                            _ => import_spatial_data(&db, &file_id_clone, &file_path_clone).await,
+                        };
+
+                        match result {
+                            Ok(_) => {
+                                tracing::info!("Server file import completed successfully");
+                                let conn = db.lock().await;
+                                let _ = conn.execute(
+                                    "UPDATE files SET status = 'ready' WHERE id = ?",
+                                    duckdb::params![&file_id_clone],
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(error = %e, "Server file import failed");
+                                let conn = db.lock().await;
+                                let _ = conn.execute(
+                                    "UPDATE files SET status = 'failed', error = ? WHERE id = ?",
+                                    duckdb::params![e.to_string(), &file_id_clone],
+                                );
+                            }
+                        }
+                    }
+                    .instrument(span),
+                );
             }
             Err(e) => {
                 warn!(path = %file.path, error = %e, "Import failed: database error");
