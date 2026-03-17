@@ -15,6 +15,9 @@ import {
   updatePublishSettings,
   listWorkspaces,
   switchWorkspace,
+  listServerDirectories,
+  browseServerDirectory,
+  importServerFiles,
 } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 
@@ -1312,6 +1315,16 @@ export default function App() {
   );
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  // Server file import states
+  const [showServerImportModal, setShowServerImportModal] = useState(false);
+  const [serverDirectories, setServerDirectories] = useState([]);
+  const [currentBrowsePath, setCurrentBrowsePath] = useState('');
+  const [parentPath, setParentPath] = useState(null);
+  const [browseItems, setBrowseItems] = useState([]);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [isLoadingBrowse, setIsLoadingBrowse] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState('');
 
   async function refreshFiles(nextSelectedId = null) {
     const data = await listFiles();
@@ -1408,6 +1421,103 @@ export default function App() {
       setPostgisMessage(error instanceof Error ? error.message : 'PostGIS 数据源注册失败');
     } finally {
       setIsRegisteringPostgis(false);
+    }
+  }
+
+  // Server file import functions
+  async function openServerImportModal() {
+    setShowServerImportModal(true);
+    setImportError('');
+    setSelectedFiles([]);
+    setIsLoadingBrowse(true);
+
+    try {
+      const dirs = await listServerDirectories();
+      setServerDirectories(dirs.directories || []);
+
+      if (dirs.directories && dirs.directories.length > 0) {
+        await browseServerPath(dirs.directories[0].path);
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : '获取服务器目录失败');
+    } finally {
+      setIsLoadingBrowse(false);
+    }
+  }
+
+  async function browseServerPath(path) {
+    setIsLoadingBrowse(true);
+    setCurrentBrowsePath(path);
+    setImportError('');
+
+    try {
+      const result = await browseServerDirectory(path);
+      setCurrentBrowsePath(result.currentPath);
+      setParentPath(result.parentPath);
+      setBrowseItems(result.items || []);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : '浏览目录失败');
+      setBrowseItems([]);
+    } finally {
+      setIsLoadingBrowse(false);
+    }
+  }
+
+  function toggleFileSelection(item) {
+    if (item.type !== 'file') return;
+
+    const filePath = joinPath(currentBrowsePath, item.name);
+    setSelectedFiles((prev) => {
+      if (prev.includes(filePath)) {
+        return prev.filter((f) => f !== filePath);
+      } else {
+        return [...prev, filePath];
+      }
+    });
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function joinPath(base, name) {
+    const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
+    return `${normalizedBase}/${name}`;
+  }
+
+  async function handleImportFiles() {
+    if (selectedFiles.length === 0) {
+      setImportError('请选择要导入的文件');
+      return;
+    }
+
+    setIsImporting(true);
+    setImportError('');
+
+    try {
+      const result = await importServerFiles(selectedFiles);
+
+      if (result.failed && result.failed.length > 0) {
+        const failedNames = result.failed.map((f) => `${f.path}: ${f.reason}`).join('\n');
+        setImportError(`部分文件导入失败:\n${failedNames}`);
+        setSelectedFiles([]);
+      }
+
+      if (result.imported && result.imported.length > 0) {
+        await refreshFiles(result.imported[0].id);
+        if (!result.failed || result.failed.length === 0) {
+          setShowServerImportModal(false);
+          setSelectedFiles([]);
+        }
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : '导入文件失败');
+    } finally {
+      setIsImporting(false);
     }
   }
 
@@ -1703,6 +1813,11 @@ export default function App() {
             上传
           </label>
           {user && (
+            <button type="button" className="btn-secondary" onClick={openServerImportModal}>
+              从服务器导入
+            </button>
+          )}
+          {user && (
             <button type="button" className="btn-secondary" onClick={handleLogout}>
               登出
             </button>
@@ -1939,6 +2054,190 @@ export default function App() {
                 disabled={isTestingPostgis || isRegisteringPostgis}
               >
                 {isRegisteringPostgis ? '注册中...' : '注册为数据源'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Server File Import Modal */}
+      {showServerImportModal && (
+        <div className="modal-backdrop" onClick={() => setShowServerImportModal(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '700px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3>从服务器导入</h3>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setShowServerImportModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '450px', overflow: 'auto' }}>
+              <div className="form-hint" style={{ marginBottom: '12px', color: '#666' }}>
+                ⚠️ 文件将被引用，不会被复制。原文件变更会影响数据。
+              </div>
+
+              {importError && (
+                <div className="form-hint" style={{ color: '#c62828', marginBottom: '12px' }}>
+                  {importError}
+                </div>
+              )}
+
+              {/* Directory breadcrumb */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '12px',
+                  padding: '8px 12px',
+                  background: '#f5f5f5',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                }}
+              >
+                <span style={{ color: '#666' }}>📂</span>
+                <span
+                  style={{
+                    maxWidth: '500px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {currentBrowsePath || '/data'}
+                </span>
+              </div>
+
+              {/* Directory selector */}
+              {serverDirectories.length > 1 && (
+                <div style={{ marginBottom: '12px' }}>
+                  <select
+                    className="form-input"
+                    value={currentBrowsePath}
+                    onChange={(e) => browseServerPath(e.target.value)}
+                    style={{ fontSize: '14px' }}
+                  >
+                    {serverDirectories.map((dir) => (
+                      <option key={dir.path} value={dir.path}>
+                        {dir.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {isLoadingBrowse ? (
+                <div className="empty">加载中...</div>
+              ) : (
+                <div style={{ border: '1px solid #e0e0e0', borderRadius: '4px' }}>
+                  {/* Parent directory link */}
+                  {parentPath && (
+                    <div
+                      onClick={() => browseServerPath(parentPath)}
+                      style={{
+                        padding: '10px 12px',
+                        borderBottom: '1px solid #e0e0e0',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <span>📁</span>
+                      <span style={{ color: '#666' }}>..</span>
+                    </div>
+                  )}
+
+                  {/* Items list */}
+                  {browseItems.length === 0 ? (
+                    <div className="empty" style={{ padding: '20px' }}>
+                      目录为空
+                    </div>
+                  ) : (
+                    browseItems.map((item, index) => (
+                      <div
+                        key={index}
+                        onClick={() =>
+                          item.type === 'directory'
+                            ? browseServerPath(joinPath(currentBrowsePath, item.name))
+                            : toggleFileSelection(item)
+                        }
+                        style={{
+                          padding: '10px 12px',
+                          borderBottom:
+                            index < browseItems.length - 1 ? '1px solid #e0e0e0' : 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background:
+                            item.type === 'file' &&
+                            selectedFiles.includes(joinPath(currentBrowsePath, item.name))
+                              ? '#e3f2fd'
+                              : 'transparent',
+                        }}
+                      >
+                        {item.type === 'directory' ? (
+                          <>
+                            <span>📁</span>
+                            <span style={{ flex: 1 }}>{item.name}</span>
+                            <span style={{ color: '#999' }}>▶</span>
+                          </>
+                        ) : (
+                          <>
+                            <input
+                              type="checkbox"
+                              checked={selectedFiles.includes(
+                                joinPath(currentBrowsePath, item.name),
+                              )}
+                              onChange={() => {}}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ marginRight: '4px' }}
+                            />
+                            <span>📄</span>
+                            <span style={{ flex: 1 }}>{item.name}</span>
+                            <span style={{ color: '#999', fontSize: '12px' }}>
+                              {formatFileSize(item.size || 0)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* Selection summary */}
+              {selectedFiles.length > 0 && (
+                <div style={{ marginTop: '12px', color: '#666', fontSize: '14px' }}>
+                  已选择 {selectedFiles.length} 个文件
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowServerImportModal(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="upload-button"
+                onClick={handleImportFiles}
+                disabled={isImporting || selectedFiles.length === 0}
+              >
+                {isImporting
+                  ? '导入中...'
+                  : `导入选中文件${selectedFiles.length > 0 ? ` (${selectedFiles.length})` : ''}`}
               </button>
             </div>
           </div>

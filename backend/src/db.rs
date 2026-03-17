@@ -77,6 +77,14 @@ fn ensure_workspace_schema_and_backfill(conn: &duckdb::Connection) {
         "CREATE INDEX IF NOT EXISTS idx_files_workspace ON files(workspace_id)",
         [],
     );
+    let _ = conn.execute(
+        "ALTER TABLE files ADD COLUMN source_type VARCHAR DEFAULT 'upload'",
+        [],
+    );
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_files_source_type ON files(source_type)",
+        [],
+    );
 
     recover_detached_workspace_members(conn).expect("Failed to recover detached workspace members");
     backfill_workspace_data(conn).expect("Failed to backfill workspace data");

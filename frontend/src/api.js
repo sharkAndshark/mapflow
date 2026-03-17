@@ -298,3 +298,38 @@ export async function leaveWorkspace(workspaceId) {
   }
   return null;
 }
+
+// Server file import APIs
+export async function listServerDirectories() {
+  const res = await fetchWithAuth('/api/server-files/directories');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '获取服务器目录失败');
+  }
+  return res.json();
+}
+
+export async function browseServerDirectory(path) {
+  const url = path
+    ? `/api/server-files/browse?path=${encodeURIComponent(path)}`
+    : '/api/server-files/browse';
+  const res = await fetchWithAuth(url);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '浏览目录失败');
+  }
+  return res.json();
+}
+
+export async function importServerFiles(files) {
+  const res = await fetchWithAuth('/api/server-files/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: files.map((f) => ({ path: f })) }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '导入文件失败');
+  }
+  return res.json();
+}

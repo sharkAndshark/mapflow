@@ -56,7 +56,7 @@ pub type TileFileMetadata = (
     Option<String>,
 );
 
-async fn get_workspace_id(
+pub async fn get_workspace_id(
     auth_session: &AuthSession<crate::AuthBackend>,
     state: &AppState,
 ) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
