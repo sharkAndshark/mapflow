@@ -502,7 +502,7 @@ pub async fn import_files(
                             Ok(_) => Ok(()),
                             Err(e) => {
                                 tracing::error!(error = %e, file_id = %file_id, "Failed to update pmtiles status");
-                                Err(e.into())
+                                Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) as Box<dyn std::error::Error + Send + Sync>)
                             }
                         }
                     }
