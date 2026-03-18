@@ -1,5 +1,12 @@
 let authContext = null;
 
+function extractBackendError(data) {
+  if (data && typeof data.error === 'string') {
+    return data.error;
+  }
+  return '';
+}
+
 export function setAuthContext(context) {
   authContext = context;
 }
@@ -41,7 +48,7 @@ export async function publishFile(fileId, options = {}) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Publish failed');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -50,7 +57,7 @@ export async function listFiles() {
   const res = await fetchWithAuth('/api/files');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to load file list');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -61,7 +68,7 @@ export async function unpublishFile(fileId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Unpublish failed');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -78,7 +85,7 @@ export async function updateTileZoom(fileId, minZoom, maxZoom) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to update zoom levels');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -91,7 +98,7 @@ export async function updateFieldAliases(fileId, fields) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to update field aliases');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -107,7 +114,7 @@ export async function updatePublishSettings(fileId, settings) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to update publish settings');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -116,7 +123,7 @@ export async function getSettings() {
   const res = await fetchWithAuth('/api/settings');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to get settings');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -129,7 +136,7 @@ export async function updateSettings(maxSizeMb) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to update settings');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -142,7 +149,7 @@ export async function testPostgisConnection(payload) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'PostGIS connection test failed');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -155,7 +162,7 @@ export async function registerPostgisSource(payload) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'PostGIS source registration failed');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -164,7 +171,7 @@ export async function listWorkspaces() {
   const res = await fetchWithAuth('/api/workspaces');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to get workspace list');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -177,7 +184,7 @@ export async function createWorkspace(name) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to create workspace');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -190,7 +197,7 @@ export async function updateWorkspace(workspaceId, name) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to update workspace');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -201,7 +208,7 @@ export async function deleteWorkspace(workspaceId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to delete workspace');
+    throw new Error(extractBackendError(data));
   }
   return null;
 }
@@ -219,7 +226,7 @@ export async function restoreWorkspace(workspaceId, newName) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to restore workspace');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -228,7 +235,7 @@ export async function listArchivedWorkspaces() {
   const res = await fetchWithAuth('/api/workspaces/archived');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to get archived workspaces');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -241,7 +248,7 @@ export async function switchWorkspace(workspaceId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to switch workspace');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -250,7 +257,7 @@ export async function getCurrentWorkspace() {
   const res = await fetchWithAuth('/api/workspaces/current');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to get current workspace');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -259,7 +266,7 @@ export async function listWorkspaceMembers(workspaceId) {
   const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/members`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to get member list');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -272,7 +279,7 @@ export async function inviteWorkspaceMember(workspaceId, username) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to invite member');
+    throw new Error(extractBackendError(data));
   }
   return res.json();
 }
@@ -283,7 +290,7 @@ export async function removeWorkspaceMember(workspaceId, userId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to remove member');
+    throw new Error(extractBackendError(data));
   }
   return null;
 }
@@ -294,7 +301,7 @@ export async function leaveWorkspace(workspaceId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to leave workspace');
+    throw new Error(extractBackendError(data));
   }
   return null;
 }

@@ -90,15 +90,15 @@ if [ ! -f "$EN_JSON" ] || [ ! -f "$ZH_JSON" ]; then
     ERRORS=$((ERRORS + 1))
 else
     # Extract all t('xxx') keys from source files
-    # Match patterns: t('key'), t("key")
+    # Match patterns: t('key'), t("key"), t('key', {...})
     # Use word boundary to avoid matching getId('fid') as t('fid')
     # Exclude: CSS selectors (starting with .), paths (containing /), numbers
-    USED_KEYS=$(grep -roh --include="*.jsx" --include="*.js" \
+    USED_KEYS=$(grep -rohE --include="*.jsx" --include="*.js" \
         --exclude-dir="node_modules" \
         --exclude-dir="locales" \
-        -E "\bt\(['\"]([a-zA-Z][a-zA-Z0-9_.\-]*)['\"]\)" \
+        "(^|[^[:alnum:]_])t\(['\"]([a-zA-Z][a-zA-Z0-9_.\-]*)['\"]([[:space:]]*,[^)]*)?\)" \
         "$SRC_DIR" 2>/dev/null | \
-        sed -E "s/\bt\(['\"]([a-zA-Z][a-zA-Z0-9_.\-]*)['\"]\)/\1/" | \
+        sed -E "s/.*(^|[^[:alnum:]_])t\(['\"]([a-zA-Z][a-zA-Z0-9_.\-]*)['\"].*/\2/" | \
         sort -u || true)
 
     if [ -z "$USED_KEYS" ]; then
