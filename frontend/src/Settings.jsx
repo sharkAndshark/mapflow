@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useTranslation } from "react-i18next";
-import { useAuth } from "./AuthContext.jsx";
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { useAuth } from './AuthContext.jsx';
 import {
   getSettings,
   updateSettings,
@@ -15,53 +15,50 @@ import {
   inviteWorkspaceMember,
   removeWorkspaceMember,
   leaveWorkspace,
-} from "./api.js";
+} from './api.js';
 
 export default function Settings() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const loadFailedMessageRef = React.useRef(t("settings.loadFailed"));
-  const [maxSizeMb, setMaxSizeMb] = useState("");
+  const loadFailedMessageRef = React.useRef(t('settings.loadFailed'));
+  const [maxSizeMb, setMaxSizeMb] = useState('');
   const [originalValue, setOriginalValue] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const [workspaces, setWorkspaces] = useState([]);
   const [archivedWorkspaces, setArchivedWorkspaces] = useState([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [createError, setCreateError] = useState("");
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [createError, setCreateError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState(null);
   const [members, setMembers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
-  const [inviteUsername, setInviteUsername] = useState("");
-  const [inviteError, setInviteError] = useState("");
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [inviteError, setInviteError] = useState('');
   const [isInviting, setIsInviting] = useState(false);
   const inviteFeatureAvailable = true;
 
   async function refreshWorkspaces() {
-    const [ws, archived] = await Promise.all([
-      listWorkspaces(),
-      listArchivedWorkspaces(),
-    ]);
+    const [ws, archived] = await Promise.all([listWorkspaces(), listArchivedWorkspaces()]);
     setWorkspaces(ws);
     setArchivedWorkspaces(archived);
   }
 
   useEffect(() => {
-    loadFailedMessageRef.current = t("settings.loadFailed");
+    loadFailedMessageRef.current = t('settings.loadFailed');
   }, [t]);
 
   useEffect(() => {
     if (!user) return;
-    if (user.role !== "admin") {
+    if (user.role !== 'admin') {
       setIsLoading(false);
       return;
     }
@@ -96,16 +93,13 @@ export default function Settings() {
     let cancelled = false;
     async function loadWorkspaces() {
       try {
-        const [ws, archived] = await Promise.all([
-          listWorkspaces(),
-          listArchivedWorkspaces(),
-        ]);
+        const [ws, archived] = await Promise.all([listWorkspaces(), listArchivedWorkspaces()]);
         if (!cancelled) {
           setWorkspaces(ws);
           setArchivedWorkspaces(archived);
         }
       } catch (err) {
-        console.error("Failed to load workspaces:", err);
+        console.error('Failed to load workspaces:', err);
       } finally {
         if (!cancelled) {
           setWorkspacesLoading(false);
@@ -120,16 +114,16 @@ export default function Settings() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setError("");
-    setSuccess("");
+    setError('');
+    setSuccess('');
 
     const value = parseInt(maxSizeMb, 10);
     if (isNaN(value) || value < 1) {
-      setError(t("settings.invalidValue"));
+      setError(t('settings.invalidValue'));
       return;
     }
     if (value > 102400) {
-      setError(t("settings.maxValueExceeded"));
+      setError(t('settings.maxValueExceeded'));
       return;
     }
 
@@ -138,9 +132,9 @@ export default function Settings() {
       const data = await updateSettings(value);
       setMaxSizeMb(String(data.maxSizeMb));
       setOriginalValue(data.maxSizeMb);
-      setSuccess(t("settings.saved"));
+      setSuccess(t('settings.saved'));
     } catch (err) {
-      setError(err.message || t("settings.saveFailed"));
+      setError(err.message || t('settings.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -148,17 +142,17 @@ export default function Settings() {
 
   function handleReset() {
     setMaxSizeMb(String(originalValue));
-    setError("");
-    setSuccess("");
+    setError('');
+    setSuccess('');
   }
 
   async function handleCreateWorkspace(e) {
     e.preventDefault();
-    setCreateError("");
+    setCreateError('');
 
     const name = newWorkspaceName.trim();
     if (name.length < 3 || name.length > 50) {
-      setCreateError(t("workspace.nameLengthError"));
+      setCreateError(t('workspace.nameLengthError'));
       return;
     }
 
@@ -167,16 +161,16 @@ export default function Settings() {
       await createWorkspace(name);
       await refreshWorkspaces();
       setShowCreateModal(false);
-      setNewWorkspaceName("");
+      setNewWorkspaceName('');
     } catch (err) {
-      setCreateError(err.message || t("workspace.createFailed"));
+      setCreateError(err.message || t('workspace.createFailed'));
     } finally {
       setIsCreating(false);
     }
   }
 
   async function handleDeleteWorkspace(workspaceId) {
-    if (!confirm(t("workspace.deleteConfirm"))) return;
+    if (!confirm(t('workspace.deleteConfirm'))) return;
 
     try {
       await deleteWorkspace(workspaceId);
@@ -189,7 +183,7 @@ export default function Settings() {
         ]);
       }
     } catch (err) {
-      alert(err.message || t("workspace.deleteFailed"));
+      alert(err.message || t('workspace.deleteFailed'));
     }
   }
 
@@ -198,20 +192,20 @@ export default function Settings() {
       await restoreWorkspace(workspaceId);
       await refreshWorkspaces();
     } catch (err) {
-      const message = err.message || t("workspace.restoreFailed");
-      const isNameConflict = message.includes(t("workspace.nameInUse"));
+      const message = err.message || t('workspace.restoreFailed');
+      const isNameConflict = message.includes(t('workspace.nameInUse'));
       if (!isNameConflict) {
         alert(message);
         return;
       }
 
-      const newNameInput = prompt(t("workspace.nameInUsePrompt"));
+      const newNameInput = prompt(t('workspace.nameInUsePrompt'));
       if (!newNameInput) {
         return;
       }
       const newName = newNameInput.trim();
       if (newName.length < 3 || newName.length > 50) {
-        alert(t("workspace.nameLengthError"));
+        alert(t('workspace.nameLengthError'));
         return;
       }
 
@@ -219,7 +213,7 @@ export default function Settings() {
         await restoreWorkspace(workspaceId, newName);
         await refreshWorkspaces();
       } catch (retryErr) {
-        alert(retryErr.message || t("workspace.restoreFailed"));
+        alert(retryErr.message || t('workspace.restoreFailed'));
       }
     }
   }
@@ -228,14 +222,14 @@ export default function Settings() {
     setSelectedWorkspace(workspace);
     setShowMembersModal(true);
     setMembersLoading(true);
-    setInviteUsername("");
-    setInviteError("");
+    setInviteUsername('');
+    setInviteError('');
 
     try {
       const data = await listWorkspaceMembers(workspace.id);
       setMembers(data);
     } catch (err) {
-      console.error("Failed to load members:", err);
+      console.error('Failed to load members:', err);
     } finally {
       setMembersLoading(false);
     }
@@ -243,48 +237,45 @@ export default function Settings() {
 
   async function handleInviteMember(e) {
     e.preventDefault();
-    setInviteError("");
+    setInviteError('');
 
     const username = inviteUsername.trim();
     if (!username) {
-      setInviteError(t("workspace.inviteEmptyError"));
+      setInviteError(t('workspace.inviteEmptyError'));
       return;
     }
 
     setIsInviting(true);
     try {
-      const newMember = await inviteWorkspaceMember(
-        selectedWorkspace.id,
-        username,
-      );
+      const newMember = await inviteWorkspaceMember(selectedWorkspace.id, username);
       setMembers([...members, newMember]);
-      setInviteUsername("");
+      setInviteUsername('');
     } catch (err) {
-      setInviteError(err.message || t("workspace.inviteFailed"));
+      setInviteError(err.message || t('workspace.inviteFailed'));
     } finally {
       setIsInviting(false);
     }
   }
 
   async function handleRemoveMember(userId) {
-    if (!confirm(t("workspace.removeConfirm"))) return;
+    if (!confirm(t('workspace.removeConfirm'))) return;
 
     try {
       await removeWorkspaceMember(selectedWorkspace.id, userId);
       setMembers(members.filter((m) => m.userId !== userId));
     } catch (err) {
-      alert(err.message || t("workspace.removeFailed"));
+      alert(err.message || t('workspace.removeFailed'));
     }
   }
 
   async function handleLeaveWorkspace(workspaceId) {
-    if (!confirm(t("workspace.leaveConfirm"))) return;
+    if (!confirm(t('workspace.leaveConfirm'))) return;
 
     try {
       await leaveWorkspace(workspaceId);
       setWorkspaces(workspaces.filter((w) => w.id !== workspaceId));
     } catch (err) {
-      alert(err.message || t("workspace.leaveFailed"));
+      alert(err.message || t('workspace.leaveFailed'));
     }
   }
 
@@ -302,55 +293,47 @@ export default function Settings() {
     <div className="page">
       <header className="header">
         <div>
-          <h1>{t("settings.title")}</h1>
+          <h1>{t('settings.title')}</h1>
           <p className="subtitle">
-            {user.role === "admin"
-              ? t("settings.subtitleWithWorkspace")
-              : t("workspace.management")}
+            {user.role === 'admin'
+              ? t('settings.subtitleWithWorkspace')
+              : t('workspace.management')}
           </p>
         </div>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => navigate("/")}
-        >
-          {t("common.back")}
+        <button type="button" className="btn-secondary" onClick={() => navigate('/')}>
+          {t('common.back')}
         </button>
       </header>
 
-      <section className="panel" style={{ marginTop: "28px" }}>
+      <section className="panel" style={{ marginTop: '28px' }}>
         <div
           className="panel-header"
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
           }}
         >
-          <h2>{t("workspace.management")}</h2>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => setShowCreateModal(true)}
-          >
-            {t("workspace.createNew")}
+          <h2>{t('workspace.management')}</h2>
+          <button type="button" className="btn-primary" onClick={() => setShowCreateModal(true)}>
+            {t('workspace.createNew')}
           </button>
         </div>
-        <div className="panel-body" style={{ flexDirection: "column" }}>
+        <div className="panel-body" style={{ flexDirection: 'column' }}>
           {workspacesLoading ? (
-            <div className="empty">{t("common.loading")}</div>
+            <div className="empty">{t('common.loading')}</div>
           ) : workspaces.length === 0 ? (
-            <div className="empty">{t("workspace.noWorkspaces")}</div>
+            <div className="empty">{t('workspace.noWorkspaces')}</div>
           ) : (
             workspaces.map((ws) => (
               <div
                 key={ws.id}
                 style={{
-                  padding: "16px",
-                  borderBottom: "1px solid #eee",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
+                  padding: '16px',
+                  borderBottom: '1px solid #eee',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
                 }}
               >
                 <div>
@@ -359,54 +342,54 @@ export default function Settings() {
                     {ws.isPersonal && (
                       <span
                         style={{
-                          marginLeft: "8px",
-                          padding: "2px 8px",
-                          background: "#e8f4f8",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                          color: "#0066cc",
+                          marginLeft: '8px',
+                          padding: '2px 8px',
+                          background: '#e8f4f8',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          color: '#0066cc',
                         }}
                       >
-                        {t("workspace.personalBadge")}
+                        {t('workspace.personalBadge')}
                       </span>
                     )}
                   </div>
                   <div
                     style={{
-                      fontSize: "12px",
-                      color: "#666",
-                      marginTop: "4px",
+                      fontSize: '12px',
+                      color: '#666',
+                      marginTop: '4px',
                     }}
                   >
-                    {t("workspace.memberCount", { count: ws.memberCount })}
+                    {t('workspace.memberCount', { count: ws.memberCount })}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     type="button"
                     className="btn-secondary"
                     onClick={() => handleOpenMembers(ws)}
                   >
-                    {t("workspace.manageMembers")}
+                    {t('workspace.manageMembers')}
                   </button>
                   {!ws.isPersonal && ws.ownerId === user.id && (
                     <button
                       type="button"
                       className="btn-secondary"
-                      style={{ color: "#dc3545" }}
+                      style={{ color: '#dc3545' }}
                       onClick={() => handleDeleteWorkspace(ws.id)}
                     >
-                      {t("common.delete")}
+                      {t('common.delete')}
                     </button>
                   )}
                   {!ws.isPersonal && ws.ownerId !== user.id && (
                     <button
                       type="button"
                       className="btn-secondary"
-                      style={{ color: "#dc3545" }}
+                      style={{ color: '#dc3545' }}
                       onClick={() => handleLeaveWorkspace(ws.id)}
                     >
-                      {t("workspace.leave")}
+                      {t('workspace.leave')}
                     </button>
                   )}
                 </div>
@@ -417,35 +400,35 @@ export default function Settings() {
       </section>
 
       {archivedWorkspaces.length > 0 && (
-        <section className="panel" style={{ marginTop: "20px" }}>
+        <section className="panel" style={{ marginTop: '20px' }}>
           <div className="panel-header">
-            <h2>{t("workspace.archived")}</h2>
+            <h2>{t('workspace.archived')}</h2>
           </div>
-          <div className="panel-body" style={{ flexDirection: "column" }}>
+          <div className="panel-body" style={{ flexDirection: 'column' }}>
             {archivedWorkspaces.map((ws) => (
               <div
                 key={ws.id}
                 style={{
-                  padding: "16px",
-                  borderBottom: "1px solid #eee",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
+                  padding: '16px',
+                  borderBottom: '1px solid #eee',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
                 }}
               >
                 <div>
                   <div style={{ fontWeight: 500 }}>{ws.name}</div>
                   <div
                     style={{
-                      fontSize: "12px",
-                      color: "#666",
-                      marginTop: "4px",
+                      fontSize: '12px',
+                      color: '#666',
+                      marginTop: '4px',
                     }}
                   >
-                    {t("workspace.deletedAt")}{" "}
+                    {t('workspace.deletedAt')}{' '}
                     {ws.deletedAt
                       ? new Date(ws.deletedAt).toLocaleString()
-                      : t("workspace.unknown")}
+                      : t('workspace.unknown')}
                   </div>
                 </div>
                 {ws.ownerId === user.id && (
@@ -454,7 +437,7 @@ export default function Settings() {
                     className="btn-secondary"
                     onClick={() => handleRestoreWorkspace(ws.id)}
                   >
-                    {t("workspace.restore")}
+                    {t('workspace.restore')}
                   </button>
                 )}
               </div>
@@ -463,33 +446,33 @@ export default function Settings() {
         </section>
       )}
 
-      {user.role === "admin" && (
-        <section className="panel" style={{ marginTop: "28px" }}>
+      {user.role === 'admin' && (
+        <section className="panel" style={{ marginTop: '28px' }}>
           <div className="panel-header">
-            <h2>{t("settings.uploadSettings")}</h2>
+            <h2>{t('settings.uploadSettings')}</h2>
           </div>
-          <div className="panel-body" style={{ flexDirection: "column" }}>
+          <div className="panel-body" style={{ flexDirection: 'column' }}>
             {isLoading ? (
-              <div className="empty">{t("common.loading")}</div>
+              <div className="empty">{t('common.loading')}</div>
             ) : (
               <form
                 onSubmit={handleSubmit}
                 style={{
-                  padding: "24px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "20px",
+                  padding: '24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '20px',
                 }}
               >
                 {error && <div className="alert">{error}</div>}
                 {success && (
                   <div
                     style={{
-                      padding: "12px 16px",
-                      borderRadius: "10px",
-                      background: "#f0fff0",
-                      color: "#1a7a1a",
-                      border: "1px solid #caf0ca",
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      background: '#f0fff0',
+                      color: '#1a7a1a',
+                      border: '1px solid #caf0ca',
                     }}
                   >
                     {success}
@@ -497,9 +480,7 @@ export default function Settings() {
                 )}
 
                 <div className="detail-group">
-                  <div className="detail-label">
-                    {t("settings.maxUploadSize")}
-                  </div>
+                  <div className="detail-label">{t('settings.maxUploadSize')}</div>
                   <div className="detail-value">
                     <input
                       type="number"
@@ -508,25 +489,22 @@ export default function Settings() {
                       value={maxSizeMb}
                       onChange={(e) => setMaxSizeMb(e.target.value)}
                       className="form-input"
-                      style={{ width: "200px" }}
+                      style={{ width: '200px' }}
                       disabled={isSaving}
                     />
-                    <small
-                      className="form-hint"
-                      style={{ display: "block", marginTop: "4px" }}
-                    >
-                      {t("settings.maxSizeHint")}
+                    <small className="form-hint" style={{ display: 'block', marginTop: '4px' }}>
+                      {t('settings.maxSizeHint')}
                     </small>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     type="submit"
                     className="btn-primary"
                     disabled={isSaving || !hasChanges || !isValid}
                   >
-                    {isSaving ? t("common.saving") : t("common.save")}
+                    {isSaving ? t('common.saving') : t('common.save')}
                   </button>
                   <button
                     type="button"
@@ -534,7 +512,7 @@ export default function Settings() {
                     onClick={handleReset}
                     disabled={isSaving || !hasChanges}
                   >
-                    {t("common.reset")}
+                    {t('common.reset')}
                   </button>
                 </div>
               </form>
@@ -547,26 +525,26 @@ export default function Settings() {
         <div
           aria-hidden="true"
           style={{
-            position: "fixed",
+            position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             zIndex: 1000,
           }}
         >
           <button
             type="button"
-            aria-label={t("workspace.closeCreateModal")}
+            aria-label={t('workspace.closeCreateModal')}
             onClick={() => setShowCreateModal(false)}
             style={{
-              position: "absolute",
+              position: 'absolute',
               inset: 0,
-              background: "rgba(0,0,0,0.5)",
-              border: "none",
+              background: 'rgba(0,0,0,0.5)',
+              border: 'none',
               padding: 0,
             }}
           />
@@ -575,28 +553,28 @@ export default function Settings() {
             aria-modal="true"
             aria-labelledby="create-workspace-title"
             style={{
-              position: "relative",
-              background: "white",
-              borderRadius: "12px",
-              padding: "24px",
-              width: "400px",
-              maxWidth: "90vw",
+              position: 'relative',
+              background: 'white',
+              borderRadius: '12px',
+              padding: '24px',
+              width: '400px',
+              maxWidth: '90vw',
             }}
           >
-            <h3 id="create-workspace-title" style={{ marginBottom: "16px" }}>
-              {t("workspace.createTitle")}
+            <h3 id="create-workspace-title" style={{ marginBottom: '16px' }}>
+              {t('workspace.createTitle')}
             </h3>
             <form onSubmit={handleCreateWorkspace}>
-              <div style={{ marginBottom: "16px" }}>
+              <div style={{ marginBottom: '16px' }}>
                 <label
                   htmlFor="new-workspace-name"
                   style={{
-                    display: "block",
-                    marginBottom: "8px",
+                    display: 'block',
+                    marginBottom: '8px',
                     fontWeight: 500,
                   }}
                 >
-                  {t("workspace.nameLabel")}
+                  {t('workspace.nameLabel')}
                 </label>
                 <input
                   id="new-workspace-name"
@@ -604,15 +582,15 @@ export default function Settings() {
                   value={newWorkspaceName}
                   onChange={(e) => setNewWorkspaceName(e.target.value)}
                   className="form-input"
-                  style={{ width: "100%" }}
-                  placeholder={t("workspace.namePlaceholder")}
+                  style={{ width: '100%' }}
+                  placeholder={t('workspace.namePlaceholder')}
                 />
                 {createError && (
                   <div
                     style={{
-                      color: "#dc3545",
-                      fontSize: "14px",
-                      marginTop: "8px",
+                      color: '#dc3545',
+                      fontSize: '14px',
+                      marginTop: '8px',
                     }}
                   >
                     {createError}
@@ -621,9 +599,9 @@ export default function Settings() {
               </div>
               <div
                 style={{
-                  display: "flex",
-                  gap: "8px",
-                  justifyContent: "flex-end",
+                  display: 'flex',
+                  gap: '8px',
+                  justifyContent: 'flex-end',
                 }}
               >
                 <button
@@ -631,14 +609,10 @@ export default function Settings() {
                   className="btn-secondary"
                   onClick={() => setShowCreateModal(false)}
                 >
-                  {t("common.cancel")}
+                  {t('common.cancel')}
                 </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={isCreating}
-                >
-                  {isCreating ? t("workspace.creating") : t("workspace.create")}
+                <button type="submit" className="btn-primary" disabled={isCreating}>
+                  {isCreating ? t('workspace.creating') : t('workspace.create')}
                 </button>
               </div>
             </form>
@@ -650,26 +624,26 @@ export default function Settings() {
         <div
           aria-hidden="true"
           style={{
-            position: "fixed",
+            position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             zIndex: 1000,
           }}
         >
           <button
             type="button"
-            aria-label={t("workspace.closeMembersModal")}
+            aria-label={t('workspace.closeMembersModal')}
             onClick={() => setShowMembersModal(false)}
             style={{
-              position: "absolute",
+              position: 'absolute',
               inset: 0,
-              background: "rgba(0,0,0,0.5)",
-              border: "none",
+              background: 'rgba(0,0,0,0.5)',
+              border: 'none',
               padding: 0,
             }}
           />
@@ -678,50 +652,41 @@ export default function Settings() {
             aria-modal="true"
             aria-labelledby="workspace-members-title"
             style={{
-              position: "relative",
-              background: "white",
-              borderRadius: "12px",
-              padding: "24px",
-              width: "500px",
-              maxWidth: "90vw",
-              maxHeight: "80vh",
-              overflow: "auto",
+              position: 'relative',
+              background: 'white',
+              borderRadius: '12px',
+              padding: '24px',
+              width: '500px',
+              maxWidth: '90vw',
+              maxHeight: '80vh',
+              overflow: 'auto',
             }}
           >
-            <h3 id="workspace-members-title" style={{ marginBottom: "16px" }}>
-              {t("workspace.membersTitle", { name: selectedWorkspace.name })}
+            <h3 id="workspace-members-title" style={{ marginBottom: '16px' }}>
+              {t('workspace.membersTitle', { name: selectedWorkspace.name })}
             </h3>
 
             {inviteFeatureAvailable ? (
-              <form
-                onSubmit={handleInviteMember}
-                style={{ marginBottom: "20px" }}
-              >
-                <div style={{ display: "flex", gap: "8px" }}>
+              <form onSubmit={handleInviteMember} style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <input
                     type="text"
                     value={inviteUsername}
                     onChange={(e) => setInviteUsername(e.target.value)}
                     className="form-input"
                     style={{ flex: 1 }}
-                    placeholder={t("workspace.invitePlaceholder")}
+                    placeholder={t('workspace.invitePlaceholder')}
                   />
-                  <button
-                    type="submit"
-                    className="btn-primary"
-                    disabled={isInviting}
-                  >
-                    {isInviting
-                      ? t("workspace.inviting")
-                      : t("workspace.invite")}
+                  <button type="submit" className="btn-primary" disabled={isInviting}>
+                    {isInviting ? t('workspace.inviting') : t('workspace.invite')}
                   </button>
                 </div>
                 {inviteError && (
                   <div
                     style={{
-                      color: "#dc3545",
-                      fontSize: "14px",
-                      marginTop: "8px",
+                      color: '#dc3545',
+                      fontSize: '14px',
+                      marginTop: '8px',
                     }}
                   >
                     {inviteError}
@@ -731,35 +696,35 @@ export default function Settings() {
             ) : (
               <div
                 style={{
-                  marginBottom: "20px",
-                  padding: "10px 12px",
-                  background: "#f8f9fa",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  color: "#495057",
+                  marginBottom: '20px',
+                  padding: '10px 12px',
+                  background: '#f8f9fa',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  color: '#495057',
                 }}
               >
-                {t("workspace.inviteUnavailable")}
+                {t('workspace.inviteUnavailable')}
               </div>
             )}
 
-            <div style={{ marginBottom: "8px", fontWeight: 500 }}>
-              {t("workspace.currentMembers")} ({members.length})
+            <div style={{ marginBottom: '8px', fontWeight: 500 }}>
+              {t('workspace.currentMembers')} ({members.length})
             </div>
             {membersLoading ? (
-              <div className="empty">{t("common.loading")}</div>
+              <div className="empty">{t('common.loading')}</div>
             ) : (
-              <div style={{ maxHeight: "300px", overflow: "auto" }}>
+              <div style={{ maxHeight: '300px', overflow: 'auto' }}>
                 {members.map((m) => (
                   <div
                     key={m.userId}
                     style={{
-                      padding: "12px",
-                      borderBottom: "1px solid #eee",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
+                      padding: '12px',
+                      borderBottom: '1px solid #eee',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
                     }}
                   >
                     <div>
@@ -767,12 +732,12 @@ export default function Settings() {
                       {m.isOwner && (
                         <span
                           style={{
-                            marginLeft: "8px",
-                            fontSize: "12px",
-                            color: "#666",
+                            marginLeft: '8px',
+                            fontSize: '12px',
+                            color: '#666',
                           }}
                         >
-                          {t("workspace.owner")}
+                          {t('workspace.owner')}
                         </span>
                       )}
                     </div>
@@ -781,13 +746,13 @@ export default function Settings() {
                         type="button"
                         className="btn-secondary"
                         style={{
-                          fontSize: "12px",
-                          padding: "4px 8px",
-                          color: "#dc3545",
+                          fontSize: '12px',
+                          padding: '4px 8px',
+                          color: '#dc3545',
                         }}
                         onClick={() => handleRemoveMember(m.userId)}
                       >
-                        {t("workspace.remove")}
+                        {t('workspace.remove')}
                       </button>
                     )}
                   </div>
@@ -797,9 +762,9 @@ export default function Settings() {
 
             <div
               style={{
-                marginTop: "20px",
-                display: "flex",
-                justifyContent: "flex-end",
+                marginTop: '20px',
+                display: 'flex',
+                justifyContent: 'flex-end',
               }}
             >
               <button
@@ -807,7 +772,7 @@ export default function Settings() {
                 className="btn-secondary"
                 onClick={() => setShowMembersModal(false)}
               >
-                {t("common.close")}
+                {t('common.close')}
               </button>
             </div>
           </div>

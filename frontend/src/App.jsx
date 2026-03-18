@@ -1750,7 +1750,9 @@ export default function App() {
                 >
                   {currentWorkspace?.id === ws.id && '✓ '} {ws.name}
                   {ws.isPersonal && (
-                    <span style={{ color: '#888', marginLeft: '8px' }}>{t('workspace.personal')}</span>
+                    <span style={{ color: '#888', marginLeft: '8px' }}>
+                      {t('workspace.personal')}
+                    </span>
                   )}
                 </button>
               ))}
