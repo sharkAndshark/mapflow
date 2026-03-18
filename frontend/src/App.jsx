@@ -1716,7 +1716,7 @@ export default function App() {
             disabled={workspaceLoading}
             style={{ minWidth: '150px', textAlign: 'left' }}
           >
-            {currentWorkspace ? currentWorkspace.name : '选择工作空间'} ▾
+            {currentWorkspace ? currentWorkspace.name : t('workspace.selectWorkspace')} ▾
           </button>
           {showWorkspaceDropdown && (
             <div
@@ -1750,7 +1750,7 @@ export default function App() {
                 >
                   {currentWorkspace?.id === ws.id && '✓ '} {ws.name}
                   {ws.isPersonal && (
-                    <span style={{ color: '#888', marginLeft: '8px' }}>(个人)</span>
+                    <span style={{ color: '#888', marginLeft: '8px' }}>{t('workspace.personal')}</span>
                   )}
                 </button>
               ))}
@@ -1765,7 +1765,7 @@ export default function App() {
                     textDecoration: 'none',
                   }}
                 >
-                  管理工作空间...
+                  {t('workspace.manageWorkspaces')}
                 </a>
               </div>
             </div>

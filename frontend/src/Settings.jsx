@@ -152,7 +152,7 @@ export default function Settings() {
 
     const name = newWorkspaceName.trim();
     if (name.length < 3 || name.length > 50) {
-      setCreateError('名称长度需要在 3-50 个字符之间');
+      setCreateError(t('workspace.nameLengthError'));
       return;
     }
 
@@ -163,14 +163,14 @@ export default function Settings() {
       setShowCreateModal(false);
       setNewWorkspaceName('');
     } catch (err) {
-      setCreateError(err.message || '创建失败');
+      setCreateError(err.message || t('workspace.createFailed'));
     } finally {
       setIsCreating(false);
     }
   }
 
   async function handleDeleteWorkspace(workspaceId) {
-    if (!confirm('确定要删除此工作空间吗？删除后可以恢复。')) return;
+    if (!confirm(t('workspace.deleteConfirm'))) return;
 
     try {
       await deleteWorkspace(workspaceId);
@@ -183,7 +183,7 @@ export default function Settings() {
         ]);
       }
     } catch (err) {
-      alert(err.message || '删除失败');
+      alert(err.message || t('workspace.deleteFailed'));
     }
   }
 
@@ -192,20 +192,20 @@ export default function Settings() {
       await restoreWorkspace(workspaceId);
       await refreshWorkspaces();
     } catch (err) {
-      const message = err.message || '恢复失败';
-      const isNameConflict = message.includes('名称已被使用');
+      const message = err.message || t('workspace.restoreFailed');
+      const isNameConflict = message.includes(t('workspace.nameInUse'));
       if (!isNameConflict) {
         alert(message);
         return;
       }
 
-      const newNameInput = prompt('该名称已被使用，请输入新的工作空间名称（3-50个字符）');
+      const newNameInput = prompt(t('workspace.nameInUsePrompt'));
       if (!newNameInput) {
         return;
       }
       const newName = newNameInput.trim();
       if (newName.length < 3 || newName.length > 50) {
-        alert('名称长度需要在 3-50 个字符之间');
+        alert(t('workspace.nameLengthError'));
         return;
       }
 
@@ -213,7 +213,7 @@ export default function Settings() {
         await restoreWorkspace(workspaceId, newName);
         await refreshWorkspaces();
       } catch (retryErr) {
-        alert(retryErr.message || '恢复失败');
+        alert(retryErr.message || t('workspace.restoreFailed'));
       }
     }
   }
@@ -241,7 +241,7 @@ export default function Settings() {
 
     const username = inviteUsername.trim();
     if (!username) {
-      setInviteError('请输入用户名');
+      setInviteError(t('workspace.inviteEmptyError'));
       return;
     }
 
@@ -251,31 +251,31 @@ export default function Settings() {
       setMembers([...members, newMember]);
       setInviteUsername('');
     } catch (err) {
-      setInviteError(err.message || '邀请失败');
+      setInviteError(err.message || t('workspace.inviteFailed'));
     } finally {
       setIsInviting(false);
     }
   }
 
   async function handleRemoveMember(userId) {
-    if (!confirm('确定要移除此成员吗？')) return;
+    if (!confirm(t('workspace.removeConfirm'))) return;
 
     try {
       await removeWorkspaceMember(selectedWorkspace.id, userId);
       setMembers(members.filter((m) => m.userId !== userId));
     } catch (err) {
-      alert(err.message || '移除失败');
+      alert(err.message || t('workspace.removeFailed'));
     }
   }
 
   async function handleLeaveWorkspace(workspaceId) {
-    if (!confirm('确定要离开此工作空间吗？')) return;
+    if (!confirm(t('workspace.leaveConfirm'))) return;
 
     try {
       await leaveWorkspace(workspaceId);
       setWorkspaces(workspaces.filter((w) => w.id !== workspaceId));
     } catch (err) {
-      alert(err.message || '离开失败');
+      alert(err.message || t('workspace.leaveFailed'));
     }
   }
 
@@ -293,9 +293,9 @@ export default function Settings() {
     <div className="page">
       <header className="header">
         <div>
-          <h1>设置</h1>
+          <h1>{t('settings.title')}</h1>
           <p className="subtitle">
-            {user.role === 'admin' ? '系统配置与工作空间管理' : '工作空间管理'}
+            {user.role === 'admin' ? t('settings.subtitleWithWorkspace') : t('workspace.management')}
           </p>
         </div>
         <button type="button" className="btn-secondary" onClick={() => navigate('/')}>
@@ -308,16 +308,16 @@ export default function Settings() {
           className="panel-header"
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
         >
-          <h2>工作空间管理</h2>
+          <h2>{t('workspace.management')}</h2>
           <button type="button" className="btn-primary" onClick={() => setShowCreateModal(true)}>
-            + 新建
+            {t('workspace.createNew')}
           </button>
         </div>
         <div className="panel-body" style={{ flexDirection: 'column' }}>
           {workspacesLoading ? (
-            <div className="empty">加载中...</div>
+            <div className="empty">{t('common.loading')}</div>
           ) : workspaces.length === 0 ? (
-            <div className="empty">暂无工作空间</div>
+            <div className="empty">{t('workspace.noWorkspaces')}</div>
           ) : (
             workspaces.map((ws) => (
               <div
@@ -333,23 +333,23 @@ export default function Settings() {
                 <div>
                   <div style={{ fontWeight: 500 }}>
                     {ws.name}
-                    {ws.isPersonal && (
-                      <span
-                        style={{
-                          marginLeft: '8px',
-                          padding: '2px 8px',
-                          background: '#e8f4f8',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          color: '#0066cc',
-                        }}
-                      >
-                        个人
-                      </span>
-                    )}
+{ws.isPersonal && (
+                        <span
+                          style={{
+                            marginLeft: '8px',
+                            padding: '2px 8px',
+                            background: '#e8f4f8',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            color: '#0066cc',
+                          }}
+                        >
+                          {t('workspace.personalBadge')}
+                        </span>
+                      )}
                   </div>
                   <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                    {ws.memberCount} 个成员
+                    {t('workspace.memberCount', { count: ws.memberCount })}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -358,7 +358,7 @@ export default function Settings() {
                     className="btn-secondary"
                     onClick={() => handleOpenMembers(ws)}
                   >
-                    管理成员
+                    {t('workspace.manageMembers')}
                   </button>
                   {!ws.isPersonal && ws.ownerId === user.id && (
                     <button
@@ -367,7 +367,7 @@ export default function Settings() {
                       style={{ color: '#dc3545' }}
                       onClick={() => handleDeleteWorkspace(ws.id)}
                     >
-                      删除
+                      {t('common.delete')}
                     </button>
                   )}
                   {!ws.isPersonal && ws.ownerId !== user.id && (
@@ -377,7 +377,7 @@ export default function Settings() {
                       style={{ color: '#dc3545' }}
                       onClick={() => handleLeaveWorkspace(ws.id)}
                     >
-                      离开
+                      {t('workspace.leave')}
                     </button>
                   )}
                 </div>
@@ -390,7 +390,7 @@ export default function Settings() {
       {archivedWorkspaces.length > 0 && (
         <section className="panel" style={{ marginTop: '20px' }}>
           <div className="panel-header">
-            <h2>已归档的工作空间</h2>
+            <h2>{t('workspace.archived')}</h2>
           </div>
           <div className="panel-body" style={{ flexDirection: 'column' }}>
             {archivedWorkspaces.map((ws) => (
@@ -407,7 +407,7 @@ export default function Settings() {
                 <div>
                   <div style={{ fontWeight: 500 }}>{ws.name}</div>
                   <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                    删除于 {ws.deletedAt ? new Date(ws.deletedAt).toLocaleString() : '未知'}
+                    {t('workspace.deletedAt')} {ws.deletedAt ? new Date(ws.deletedAt).toLocaleString() : t('workspace.unknown')}
                   </div>
                 </div>
                 {ws.ownerId === user.id && (
@@ -416,7 +416,7 @@ export default function Settings() {
                     className="btn-secondary"
                     onClick={() => handleRestoreWorkspace(ws.id)}
                   >
-                    恢复
+                    {t('workspace.restore')}
                   </button>
                 )}
               </div>
@@ -428,11 +428,11 @@ export default function Settings() {
       {user.role === 'admin' && (
         <section className="panel" style={{ marginTop: '28px' }}>
           <div className="panel-header">
-            <h2>上传设置</h2>
+            <h2>{t('settings.uploadSettings')}</h2>
           </div>
           <div className="panel-body" style={{ flexDirection: 'column' }}>
             {isLoading ? (
-              <div className="empty">加载中...</div>
+              <div className="empty">{t('common.loading')}</div>
             ) : (
               <form
                 onSubmit={handleSubmit}
@@ -454,7 +454,7 @@ export default function Settings() {
                 )}
 
                 <div className="detail-group">
-                  <div className="detail-label">最大上传大小 (MB)</div>
+                  <div className="detail-label">{t('settings.maxUploadSize')}</div>
                   <div className="detail-value">
                     <input
                       type="number"
@@ -467,7 +467,7 @@ export default function Settings() {
                       disabled={isSaving}
                     />
                     <small className="form-hint" style={{ display: 'block', marginTop: '4px' }}>
-                      范围：1 MB - 100 GB
+                      {t('settings.maxSizeHint')}
                     </small>
                   </div>
                 </div>
@@ -478,7 +478,7 @@ export default function Settings() {
                     className="btn-primary"
                     disabled={isSaving || !hasChanges || !isValid}
                   >
-                    {isSaving ? '保存中...' : '保存'}
+                    {isSaving ? t('common.saving') : t('common.save')}
                   </button>
                   <button
                     type="button"
@@ -486,8 +486,7 @@ export default function Settings() {
                     onClick={handleReset}
                     disabled={isSaving || !hasChanges}
                   >
-                    重置
-                  </button>
+                    {t('common.reset')}
                 </div>
               </form>
             )}
@@ -512,7 +511,7 @@ export default function Settings() {
         >
           <button
             type="button"
-            aria-label="关闭创建工作空间弹窗"
+            aria-label={t('workspace.closeCreateModal')}
             onClick={() => setShowCreateModal(false)}
             style={{
               position: 'absolute',
@@ -535,17 +534,16 @@ export default function Settings() {
               maxWidth: '90vw',
             }}
           >
-            <h3 id="create-workspace-title" style={{ marginBottom: '16px' }}>
-              创建工作空间
-            </h3>
+              <h3 id="create-workspace-title" style={{ marginBottom: '16px' }}>
+                {t('workspace.createTitle')}
+              </h3>
             <form onSubmit={handleCreateWorkspace}>
               <div style={{ marginBottom: '16px' }}>
                 <label
                   htmlFor="new-workspace-name"
                   style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}
                 >
-                  工作空间名称
-                </label>
+                  {t('workspace.nameLabel')}
                 <input
                   id="new-workspace-name"
                   type="text"
@@ -553,8 +551,7 @@ export default function Settings() {
                   onChange={(e) => setNewWorkspaceName(e.target.value)}
                   className="form-input"
                   style={{ width: '100%' }}
-                  placeholder="3-50 个字符"
-                />
+                  placeholder={t('workspace.namePlaceholder')}
                 {createError && (
                   <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '8px' }}>
                     {createError}
@@ -567,11 +564,9 @@ export default function Settings() {
                   className="btn-secondary"
                   onClick={() => setShowCreateModal(false)}
                 >
-                  取消
-                </button>
+                  {t('common.cancel')}
                 <button type="submit" className="btn-primary" disabled={isCreating}>
-                  {isCreating ? '创建中...' : '创建'}
-                </button>
+                  {isCreating ? t('workspace.creating') : t('workspace.create')}
               </div>
             </form>
           </div>
@@ -595,7 +590,7 @@ export default function Settings() {
         >
           <button
             type="button"
-            aria-label="关闭成员管理弹窗"
+            aria-label={t('workspace.closeMembersModal')}
             onClick={() => setShowMembersModal(false)}
             style={{
               position: 'absolute',
@@ -621,8 +616,7 @@ export default function Settings() {
             }}
           >
             <h3 id="workspace-members-title" style={{ marginBottom: '16px' }}>
-              成员管理 - {selectedWorkspace.name}
-            </h3>
+              {t('workspace.membersTitle', { name: selectedWorkspace.name })}
 
             {inviteFeatureAvailable ? (
               <form onSubmit={handleInviteMember} style={{ marginBottom: '20px' }}>
@@ -633,10 +627,10 @@ export default function Settings() {
                     onChange={(e) => setInviteUsername(e.target.value)}
                     className="form-input"
                     style={{ flex: 1 }}
-                    placeholder="输入用户名邀请..."
+                    placeholder={t('workspace.invitePlaceholder')}
                   />
                   <button type="submit" className="btn-primary" disabled={isInviting}>
-                    {isInviting ? '邀请中...' : '邀请'}
+                    {isInviting ? t('workspace.inviting') : t('workspace.invite')}
                   </button>
                 </div>
                 {inviteError && (
@@ -657,13 +651,12 @@ export default function Settings() {
                   color: '#495057',
                 }}
               >
-                当前版本尚不支持新增用户，邀请成员功能暂未开放。
-              </div>
+                {t('workspace.inviteUnavailable')}
             )}
 
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>当前成员 ({members.length})</div>
+            <div style={{ marginBottom: '8px', fontWeight: 500 }}>{t('workspace.currentMembers')} ({members.length})
             {membersLoading ? (
-              <div className="empty">加载中...</div>
+              <div className="empty">{t('common.loading')}</div>
             ) : (
               <div style={{ maxHeight: '300px', overflow: 'auto' }}>
                 {members.map((m) => (
@@ -681,7 +674,7 @@ export default function Settings() {
                       <span style={{ fontWeight: 500 }}>{m.username}</span>
                       {m.isOwner && (
                         <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>
-                          Owner
+                          {t('workspace.owner')}
                         </span>
                       )}
                     </div>
@@ -692,8 +685,7 @@ export default function Settings() {
                         style={{ fontSize: '12px', padding: '4px 8px', color: '#dc3545' }}
                         onClick={() => handleRemoveMember(m.userId)}
                       >
-                        移除
-                      </button>
+                        {t('workspace.remove')}
                     )}
                   </div>
                 ))}
@@ -706,8 +698,7 @@ export default function Settings() {
                 className="btn-secondary"
                 onClick={() => setShowMembersModal(false)}
               >
-                关闭
-              </button>
+                {t('common.close')}
             </div>
           </div>
         </div>

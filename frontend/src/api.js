@@ -41,7 +41,7 @@ export async function publishFile(fileId, options = {}) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '发布失败');
+    throw new Error(data.error || 'Publish failed');
   }
   return res.json();
 }
@@ -50,7 +50,7 @@ export async function listFiles() {
   const res = await fetchWithAuth('/api/files');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '无法加载文件列表');
+    throw new Error(data.error || 'Failed to load file list');
   }
   return res.json();
 }
@@ -61,7 +61,7 @@ export async function unpublishFile(fileId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '取消发布失败');
+    throw new Error(data.error || 'Unpublish failed');
   }
   return res.json();
 }
@@ -78,7 +78,7 @@ export async function updateTileZoom(fileId, minZoom, maxZoom) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '更新缩放层级失败');
+    throw new Error(data.error || 'Failed to update zoom levels');
   }
   return res.json();
 }
@@ -91,7 +91,7 @@ export async function updateFieldAliases(fileId, fields) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '更新字段别名失败');
+    throw new Error(data.error || 'Failed to update field aliases');
   }
   return res.json();
 }
@@ -107,7 +107,7 @@ export async function updatePublishSettings(fileId, settings) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '更新发布设置失败');
+    throw new Error(data.error || 'Failed to update publish settings');
   }
   return res.json();
 }
@@ -116,7 +116,7 @@ export async function getSettings() {
   const res = await fetchWithAuth('/api/settings');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '获取设置失败');
+    throw new Error(data.error || 'Failed to get settings');
   }
   return res.json();
 }
@@ -129,7 +129,7 @@ export async function updateSettings(maxSizeMb) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '更新设置失败');
+    throw new Error(data.error || 'Failed to update settings');
   }
   return res.json();
 }
@@ -142,7 +142,7 @@ export async function testPostgisConnection(payload) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'PostGIS 连接测试失败');
+    throw new Error(data.error || 'PostGIS connection test failed');
   }
   return res.json();
 }
@@ -155,7 +155,7 @@ export async function registerPostgisSource(payload) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'PostGIS 数据源注册失败');
+    throw new Error(data.error || 'PostGIS source registration failed');
   }
   return res.json();
 }
@@ -164,7 +164,7 @@ export async function listWorkspaces() {
   const res = await fetchWithAuth('/api/workspaces');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '获取工作空间列表失败');
+    throw new Error(data.error || 'Failed to get workspace list');
   }
   return res.json();
 }
@@ -177,7 +177,7 @@ export async function createWorkspace(name) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '创建工作空间失败');
+    throw new Error(data.error || 'Failed to create workspace');
   }
   return res.json();
 }
@@ -190,7 +190,7 @@ export async function updateWorkspace(workspaceId, name) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '更新工作空间失败');
+    throw new Error(data.error || 'Failed to update workspace');
   }
   return res.json();
 }
@@ -201,7 +201,7 @@ export async function deleteWorkspace(workspaceId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '删除工作空间失败');
+    throw new Error(data.error || 'Failed to delete workspace');
   }
   return null;
 }
@@ -219,7 +219,7 @@ export async function restoreWorkspace(workspaceId, newName) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '恢复工作空间失败');
+    throw new Error(data.error || 'Failed to restore workspace');
   }
   return res.json();
 }
@@ -228,7 +228,7 @@ export async function listArchivedWorkspaces() {
   const res = await fetchWithAuth('/api/workspaces/archived');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '获取已归档工作空间失败');
+    throw new Error(data.error || 'Failed to get archived workspaces');
   }
   return res.json();
 }
@@ -241,7 +241,7 @@ export async function switchWorkspace(workspaceId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '切换工作空间失败');
+    throw new Error(data.error || 'Failed to switch workspace');
   }
   return res.json();
 }
@@ -250,7 +250,7 @@ export async function getCurrentWorkspace() {
   const res = await fetchWithAuth('/api/workspaces/current');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '获取当前工作空间失败');
+    throw new Error(data.error || 'Failed to get current workspace');
   }
   return res.json();
 }
@@ -259,7 +259,7 @@ export async function listWorkspaceMembers(workspaceId) {
   const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/members`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '获取成员列表失败');
+    throw new Error(data.error || 'Failed to get member list');
   }
   return res.json();
 }
@@ -272,7 +272,7 @@ export async function inviteWorkspaceMember(workspaceId, username) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '邀请成员失败');
+    throw new Error(data.error || 'Failed to invite member');
   }
   return res.json();
 }
@@ -283,7 +283,7 @@ export async function removeWorkspaceMember(workspaceId, userId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '移除成员失败');
+    throw new Error(data.error || 'Failed to remove member');
   }
   return null;
 }
@@ -294,7 +294,7 @@ export async function leaveWorkspace(workspaceId) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '离开工作空间失败');
+    throw new Error(data.error || 'Failed to leave workspace');
   }
   return null;
 }
