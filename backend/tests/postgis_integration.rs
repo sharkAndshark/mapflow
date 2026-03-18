@@ -205,7 +205,10 @@ async fn send_json_retry_postgis_connectivity(
         let should_retry = result.0 == StatusCode::BAD_REQUEST
             && result.1["error"]
                 .as_str()
-                .map(|msg| msg.contains("error communicating with the server"))
+                .map(|msg| {
+                    msg.contains("error communicating with the server")
+                        || msg.contains("Cannot connect to PostGIS")
+                })
                 .unwrap_or(false)
             && attempt + 1 < MAX_ATTEMPTS;
         if !should_retry {
