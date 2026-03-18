@@ -487,6 +487,7 @@ export default function Settings() {
                     disabled={isSaving || !hasChanges}
                   >
                     {t('common.reset')}
+                  </button>
                 </div>
               </form>
             )}
@@ -544,6 +545,7 @@ export default function Settings() {
                   style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}
                 >
                   {t('workspace.nameLabel')}
+                </label>
                 <input
                   id="new-workspace-name"
                   type="text"
@@ -552,6 +554,7 @@ export default function Settings() {
                   className="form-input"
                   style={{ width: '100%' }}
                   placeholder={t('workspace.namePlaceholder')}
+                />
                 {createError && (
                   <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '8px' }}>
                     {createError}
@@ -565,8 +568,10 @@ export default function Settings() {
                   onClick={() => setShowCreateModal(false)}
                 >
                   {t('common.cancel')}
+                </button>
                 <button type="submit" className="btn-primary" disabled={isCreating}>
                   {isCreating ? t('workspace.creating') : t('workspace.create')}
+                </button>
               </div>
             </form>
           </div>
@@ -617,6 +622,7 @@ export default function Settings() {
           >
             <h3 id="workspace-members-title" style={{ marginBottom: '16px' }}>
               {t('workspace.membersTitle', { name: selectedWorkspace.name })}
+            </h3>
 
             {inviteFeatureAvailable ? (
               <form onSubmit={handleInviteMember} style={{ marginBottom: '20px' }}>
@@ -652,9 +658,12 @@ export default function Settings() {
                 }}
               >
                 {t('workspace.inviteUnavailable')}
+              </div>
             )}
 
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>{t('workspace.currentMembers')} ({members.length})
+            <div style={{ marginBottom: '8px', fontWeight: 500 }}>
+              {t('workspace.currentMembers')} ({members.length})
+            </div>
             {membersLoading ? (
               <div className="empty">{t('common.loading')}</div>
             ) : (
@@ -686,6 +695,7 @@ export default function Settings() {
                         onClick={() => handleRemoveMember(m.userId)}
                       >
                         {t('workspace.remove')}
+                      </button>
                     )}
                   </div>
                 ))}
@@ -699,6 +709,7 @@ export default function Settings() {
                 onClick={() => setShowMembersModal(false)}
               >
                 {t('common.close')}
+              </button>
             </div>
           </div>
         </div>

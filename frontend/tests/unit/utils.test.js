@@ -89,7 +89,7 @@ describe('validateSlug', () => {
     const longSlug = 'a'.repeat(101);
     expect(validateSlug(longSlug)).toEqual({
       valid: false,
-      error: 'URL 标识不能超过 100 个字符',
+      error: 'URL slug cannot exceed 100 characters',
     });
   });
 
@@ -101,19 +101,19 @@ describe('validateSlug', () => {
   it('rejects slug with invalid characters', () => {
     expect(validateSlug('my map')).toEqual({
       valid: false,
-      error: '仅支持字母、数字、连字符和下划线',
+      error: 'Only letters, numbers, hyphens and underscores are supported',
     });
     expect(validateSlug('my.map')).toEqual({
       valid: false,
-      error: '仅支持字母、数字、连字符和下划线',
+      error: 'Only letters, numbers, hyphens and underscores are supported',
     });
     expect(validateSlug('my/map')).toEqual({
       valid: false,
-      error: '仅支持字母、数字、连字符和下划线',
+      error: 'Only letters, numbers, hyphens and underscores are supported',
     });
     expect(validateSlug('my!map')).toEqual({
       valid: false,
-      error: '仅支持字母、数字、连字符和下划线',
+      error: 'Only letters, numbers, hyphens and underscores are supported',
     });
   });
 });
