@@ -1,37 +1,43 @@
 export function formatSize(bytes) {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  );
   const value = bytes / Math.pow(1024, index);
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[index]}`;
 }
 
 export function parseType(fileName) {
   const lower = fileName.toLowerCase();
-  if (lower.endsWith('.zip')) return 'shapefile';
-  if (lower.endsWith('.geojson') || lower.endsWith('.json')) return 'geojson';
-  if (lower.endsWith('.geojsonl') || lower.endsWith('.geojsons')) return 'geojsonl';
-  if (lower.endsWith('.kml')) return 'kml';
-  if (lower.endsWith('.gpx')) return 'gpx';
-  if (lower.endsWith('.topojson')) return 'topojson';
-  if (lower.endsWith('.mbtiles')) return 'mbtiles';
-  if (lower.endsWith('.pmtiles')) return 'pmtiles';
-  return 'unknown';
+  if (lower.endsWith(".zip")) return "shapefile";
+  if (lower.endsWith(".geojson") || lower.endsWith(".json")) return "geojson";
+  if (lower.endsWith(".geojsonl") || lower.endsWith(".geojsons"))
+    return "geojsonl";
+  if (lower.endsWith(".kml")) return "kml";
+  if (lower.endsWith(".gpx")) return "gpx";
+  if (lower.endsWith(".topojson")) return "topojson";
+  if (lower.endsWith(".mbtiles")) return "mbtiles";
+  if (lower.endsWith(".pmtiles")) return "pmtiles";
+  return "unknown";
 }
 
 export function validateSlug(slug, messages = {}) {
-  if (!slug) return { valid: true, error: '' };
+  if (!slug) return { valid: true, error: "" };
   if (slug.length > 100) {
     return {
       valid: false,
-      error: messages.tooLong || 'URL slug cannot exceed 100 characters',
+      error: messages.tooLong || "URL slug cannot exceed 100 characters",
     };
   }
   if (!/^[a-zA-Z0-9_-]+$/.test(slug)) {
     return {
       valid: false,
-      error: messages.invalidChars || 'Only letters, numbers, hyphens and underscores are supported',
+      error:
+        messages.invalidChars ||
+        "Only letters, numbers, hyphens and underscores are supported",
     };
   }
-  return { valid: true, error: '' };
+  return { valid: true, error: "" };
 }
