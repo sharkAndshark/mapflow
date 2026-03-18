@@ -83,6 +83,12 @@ if [[ "${seed_ok}" != "true" ]]; then
   exit 1
 fi
 
+echo "[postgis-integration] warming up PostGIS connection"
+docker compose -f "${COMPOSE_FILE}" exec -T postgis \
+  psql -U "${POSTGIS_TEST_USER}" -d "${POSTGIS_TEST_DB}" \
+  -c "SELECT PostGIS_Version();" >/dev/null
+sleep 2
+
 echo "[postgis-integration] waiting for host port reachability ${POSTGIS_TEST_HOST}:${POSTGIS_TEST_PORT}"
 for _ in $(seq 1 30); do
   if (echo >"/dev/tcp/${POSTGIS_TEST_HOST}/${POSTGIS_TEST_PORT}") >/dev/null 2>&1; then
