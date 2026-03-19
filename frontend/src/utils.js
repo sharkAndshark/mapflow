@@ -19,11 +19,20 @@ export function parseType(fileName) {
   return 'unknown';
 }
 
-export function validateSlug(slug) {
+export function validateSlug(slug, messages = {}) {
   if (!slug) return { valid: true, error: '' };
-  if (slug.length > 100) return { valid: false, error: 'URL 标识不能超过 100 个字符' };
+  if (slug.length > 100) {
+    return {
+      valid: false,
+      error: messages.tooLong || 'URL slug cannot exceed 100 characters',
+    };
+  }
   if (!/^[a-zA-Z0-9_-]+$/.test(slug)) {
-    return { valid: false, error: '仅支持字母、数字、连字符和下划线' };
+    return {
+      valid: false,
+      error:
+        messages.invalidChars || 'Only letters, numbers, hyphens and underscores are supported',
+    };
   }
   return { valid: true, error: '' };
 }

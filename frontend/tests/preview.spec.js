@@ -36,10 +36,12 @@ test('click preview opens new tab with map', async ({ page, workerServer, reques
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonPath);
 
-  // Wait for upload to complete (could be '已就绪' or '等待处理' depending on timing)
-  // We accept either, but ideally we want '已就绪' to ensure processing is done for preview
+  // Wait for upload to complete (could be 'ready' or 'processing' depending on timing)
+  // We accept either, but ideally we want 'ready' to ensure processing is done for preview
   await expect(
-    page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/),
+    page
+      .locator('.row', { hasText: 'sample' })
+      .filter({ has: page.getByTestId(/status-ready|status-processing/) }),
   ).toBeVisible();
 
   // Ensure backend processing completes before opening preview.
@@ -60,11 +62,11 @@ test('click preview opens new tab with map', async ({ page, workerServer, reques
     )
     .toBe('ready');
 
-  // 2. Find and click "查看" link in file row action area
+  // 2. Find and click preview link in file row action area
   const row = page.locator('.row', { hasText: 'sample' });
   await expect(row).toBeVisible();
 
-  const previewLink = row.getByRole('link', { name: '查看' });
+  const previewLink = row.getByTestId('preview-link');
   await expect(previewLink).toBeVisible();
 
   // 3. Click preview link and wait for new page
@@ -105,7 +107,9 @@ test('click feature switches highlight style immediately', async ({ page, reques
   await page.getByTestId('file-input').setInputFiles(geojsonPath);
 
   await expect(
-    page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/),
+    page
+      .locator('.row', { hasText: 'sample' })
+      .filter({ has: page.getByTestId(/status-ready|status-processing/) }),
   ).toBeVisible();
 
   await expect
@@ -121,7 +125,7 @@ test('click feature switches highlight style immediately', async ({ page, reques
     .toBe('ready');
 
   const row = page.locator('.row', { hasText: 'sample' });
-  const previewLink = row.getByRole('link', { name: '查看' });
+  const previewLink = row.getByTestId('preview-link');
   await expect(previewLink).toBeVisible();
 
   const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
@@ -163,7 +167,7 @@ test('click feature switches highlight style immediately', async ({ page, reques
     .not.toBeNull();
 
   await expect(newPage.getByTestId('feature-inspector')).toBeVisible();
-  await expect(newPage.getByText('Feature Properties')).toBeVisible();
+  await expect(newPage.getByTestId('feature-inspector-title')).toBeVisible();
 
   const highlightDebug = await newPage.evaluate(() =>
     window.__MAPFLOW_PREVIEW_TEST__.getHighlightDebug(),
@@ -203,7 +207,9 @@ test('standard CRS preview shows OSM basemap toggle and requests OSM tiles when 
   await page.getByTestId('file-input').setInputFiles(geojsonPath);
 
   await expect(
-    page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/),
+    page
+      .locator('.row', { hasText: 'sample' })
+      .filter({ has: page.getByTestId(/status-ready|status-processing/) }),
   ).toBeVisible();
 
   await expect
@@ -219,7 +225,7 @@ test('standard CRS preview shows OSM basemap toggle and requests OSM tiles when 
     .toBe('ready');
 
   const row = page.locator('.row', { hasText: 'sample' });
-  const previewLink = row.getByRole('link', { name: '查看' });
+  const previewLink = row.getByTestId('preview-link');
   await expect(previewLink).toBeVisible();
 
   let osmRequestCount = 0;
@@ -231,7 +237,7 @@ test('standard CRS preview shows OSM basemap toggle and requests OSM tiles when 
   const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
   await newPage.waitForLoadState('networkidle');
 
-  const osmToggle = newPage.getByLabel('Show OSM Basemap');
+  const osmToggle = newPage.getByTestId('preview-osm-basemap-toggle');
   await expect(osmToggle).toBeVisible();
   await expect(osmToggle).not.toBeChecked();
 

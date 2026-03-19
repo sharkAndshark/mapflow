@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthContext.jsx';
 import { isInitialized } from './auth.js';
+import LanguageSwitcher from './LanguageSwitcher.jsx';
 
 export default function Login() {
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -31,7 +34,7 @@ export default function Login() {
     return (
       <div className="login-page">
         <div className="login-container">
-          <div className="loading">加载中...</div>
+          <div className="loading">{t('common.loading')}</div>
         </div>
       </div>
     );
@@ -54,7 +57,7 @@ export default function Login() {
       await login(username, password);
       navigate('/');
     } catch (err) {
-      setError(err.message || '登录失败');
+      setError(err.message || t('auth.loginFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -62,17 +65,20 @@ export default function Login() {
 
   return (
     <div className="login-page">
+      <div style={{ position: 'fixed', top: '16px', right: '16px', zIndex: 10 }}>
+        <LanguageSwitcher />
+      </div>
       <div className="login-container">
         <div className="login-header">
           <h1>MapFlow</h1>
-          <p>请登录以继续</p>
+          <p>{t('auth.pleaseLogin')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
           {error && <div className="alert">{error}</div>}
 
           <div className="form-group">
-            <label htmlFor="username">用户名</label>
+            <label htmlFor="username">{t('auth.username')}</label>
             <input
               id="username"
               type="text"
@@ -85,7 +91,7 @@ export default function Login() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">密码</label>
+            <label htmlFor="password">{t('auth.password')}</label>
             <input
               id="password"
               type="password"
@@ -98,7 +104,7 @@ export default function Login() {
           </div>
 
           <button type="submit" className="btn-primary" disabled={isLoading}>
-            {isLoading ? '登录中...' : '登录'}
+            {isLoading ? t('auth.logining') : t('auth.login')}
           </button>
         </form>
       </div>

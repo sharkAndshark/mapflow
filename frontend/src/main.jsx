@@ -10,6 +10,7 @@ import Preview from './Preview.jsx';
 import Settings from './Settings.jsx';
 import TileEmbed from './TileEmbed.jsx';
 import TileDocs from './TileDocs.jsx';
+import './i18n';
 import './index.css';
 
 const root = createRoot(document.getElementById('root'));

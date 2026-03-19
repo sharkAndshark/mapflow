@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import 'ol/ol.css';
 import MVT from 'ol/format/MVT';
@@ -67,6 +68,7 @@ function resolvePmtilesViewZoomRange(meta, header) {
 }
 
 export function usePublicTileMeta(slug) {
+  const { t } = useTranslation();
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,7 +76,7 @@ export function usePublicTileMeta(slug) {
   useEffect(() => {
     if (!slug) {
       setMeta(null);
-      setError('Missing tile slug');
+      setError(t('errors.missingTileSlug'));
       setIsLoading(false);
       return;
     }
@@ -88,7 +90,7 @@ export function usePublicTileMeta(slug) {
       try {
         const response = await fetch(`/tiles/${slug}/meta`);
         if (!response.ok) {
-          let message = 'Failed to load tile metadata';
+          let message = t('errors.loadTileMetaFailed');
           try {
             const data = await response.json();
             if (data && typeof data.error === 'string') {
@@ -120,7 +122,7 @@ export function usePublicTileMeta(slug) {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, t]);
 
   return { meta, error, isLoading };
 }
@@ -129,11 +131,12 @@ export function PublicTileMap({
   meta,
   error = null,
   isLoading = false,
-  overlayLabel = 'Live Preview (Public Endpoint)',
+  overlayLabel,
   dataTestId = 'public-tile-map',
   exposeMapGlobally = false,
   style,
 }) {
+  const { t } = useTranslation();
   const mapElement = useRef(null);
   const mapRef = useRef(null);
   const tileLayerRef = useRef(null);
@@ -322,7 +325,7 @@ export function PublicTileMap({
         } catch (loadError) {
           if (!cancelled) {
             setRuntimeMessage(
-              loadError instanceof Error ? loadError.message : 'Failed to load PMTiles archive',
+              loadError instanceof Error ? loadError.message : t('errors.loadPmtilesFailed'),
             );
             setIsArchiveLoading(false);
           }
@@ -420,7 +423,7 @@ export function PublicTileMap({
     return () => {
       cancelled = true;
     };
-  }, [defaultStyle, error, meta]);
+  }, [defaultStyle, error, meta, t]);
 
   const displayError = error || runtimeMessage;
 
@@ -447,7 +450,7 @@ export function PublicTileMap({
           }}
         >
           <div className="spinner"></div>
-          <p>Loading map...</p>
+          <p>{t('preview.loadingMap')}</p>
         </div>
       )}
 
@@ -470,6 +473,7 @@ export function PublicTileMap({
 
       {overlayLabel ? (
         <div
+          data-testid="public-tile-overlay-label"
           style={{
             position: 'absolute',
             top: '12px',

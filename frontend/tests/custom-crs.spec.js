@@ -88,7 +88,9 @@ test.describe('Custom CRS', () => {
     await input.setInputFiles(testFile);
 
     await expect(
-      page.locator('.row', { hasText: 'sf_buildings_no_crs' }).getByText(/已就绪|等待处理/),
+      page
+        .locator('.row', { hasText: 'sf_buildings_no_crs' })
+        .getByTestId(/status-ready|status-processing/),
     ).toBeVisible();
 
     await expect
@@ -139,7 +141,9 @@ test.describe('Custom CRS', () => {
     await input.setInputFiles(testFile);
 
     await expect(
-      page.locator('.row', { hasText: 'sf_buildings_custom_wkt' }).getByText(/已就绪|等待处理/),
+      page
+        .locator('.row', { hasText: 'sf_buildings_custom_wkt' })
+        .getByTestId(/status-ready|status-processing/),
     ).toBeVisible();
 
     await expect
@@ -181,7 +185,9 @@ test.describe('Custom CRS', () => {
     await input.setInputFiles(testFile);
 
     await expect(
-      page.locator('.row', { hasText: 'sf_parks_named_crs' }).getByText(/已就绪|等待处理/),
+      page
+        .locator('.row', { hasText: 'sf_parks_named_crs' })
+        .getByTestId(/status-ready|status-processing/),
     ).toBeVisible();
 
     await expect
@@ -223,7 +229,9 @@ test.describe('Custom CRS', () => {
     await input.setInputFiles(negativeCoordsFile);
 
     await expect(
-      page.locator('.row', { hasText: 'negative_coords_test' }).getByText(/已就绪|等待处理/),
+      page
+        .locator('.row', { hasText: 'negative_coords_test' })
+        .getByTestId(/status-ready|status-processing/),
     ).toBeVisible();
 
     await expect
@@ -266,7 +274,9 @@ test.describe('Custom CRS', () => {
     await page.getByTestId('file-input').setInputFiles(testFile);
 
     await expect(
-      page.locator('.row', { hasText: 'sf_buildings_no_crs' }).getByText(/已就绪|等待处理/),
+      page
+        .locator('.row', { hasText: 'sf_buildings_no_crs' })
+        .getByTestId(/status-ready|status-processing/),
     ).toBeVisible();
 
     await waitForFileReady(request, 'sf_buildings_no_crs');
@@ -281,7 +291,7 @@ test.describe('Custom CRS', () => {
     expect(previewMeta.dataBounds).toHaveLength(4);
 
     const row = page.locator('.row', { hasText: 'sf_buildings_no_crs' });
-    const previewLink = row.getByRole('link', { name: '查看' });
+    const previewLink = row.getByTestId('preview-link');
     await expect(previewLink).toBeVisible();
 
     const [previewPage] = await Promise.all([
@@ -291,7 +301,7 @@ test.describe('Custom CRS', () => {
     await previewPage.waitForLoadState('networkidle');
     await expect(previewPage.getByText('sf_buildings_no_crs')).toBeVisible();
 
-    await previewPage.getByLabel('Show Tile Grid').check();
+    await previewPage.getByTestId('preview-tile-grid-toggle').check();
 
     await expect
       .poll(
@@ -330,12 +340,12 @@ test.describe('Custom CRS', () => {
     await page.getByTestId('file-input').setInputFiles(testFile);
 
     await expect(
-      page.locator('.row', { hasText: 'sample' }).getByText(/已就绪|等待处理/),
+      page.locator('.row', { hasText: 'sample' }).getByTestId(/status-ready|status-processing/),
     ).toBeVisible();
     await waitForFileReady(request, 'sample');
 
     const row = page.locator('.row', { hasText: 'sample' });
-    const previewLink = row.getByRole('link', { name: '查看' });
+    const previewLink = row.getByTestId('preview-link');
     await expect(previewLink).toBeVisible();
 
     const [previewPage] = await Promise.all([
@@ -345,7 +355,7 @@ test.describe('Custom CRS', () => {
     await previewPage.waitForLoadState('networkidle');
     await expect(previewPage.getByText('sample')).toBeVisible();
 
-    await previewPage.getByLabel('Show Tile Grid').check();
+    await previewPage.getByTestId('preview-tile-grid-toggle').check();
     await expect
       .poll(
         async () => {
@@ -381,7 +391,9 @@ test.describe('Custom CRS', () => {
     await input.setInputFiles(filePath);
 
     await expect(
-      page.locator('.row', { hasText: 'epsg4490_urn' }).getByText(/已就绪|等待处理/),
+      page
+        .locator('.row', { hasText: 'epsg4490_urn' })
+        .getByTestId(/status-ready|status-uploaded|status-processing/),
     ).toBeVisible();
 
     await expect
@@ -437,7 +449,7 @@ test.describe('Custom CRS', () => {
     const docsPage = await publicContext.newPage();
     await docsPage.goto(`${workerServer.url}/tiles/epsg4490-urn-docs/docs`);
     await docsPage.waitForLoadState('networkidle');
-    await expect(docsPage.getByText('Live Preview (Public Endpoint)')).toBeVisible();
+    await expect(docsPage.getByTestId('public-tile-overlay-label')).toBeVisible();
 
     await expect
       .poll(
@@ -459,7 +471,7 @@ test.describe('Custom CRS', () => {
     const embedPage = await publicContext.newPage();
     await embedPage.goto(`${workerServer.url}/tiles/epsg4490-urn-docs/embed`);
     await expect(embedPage.getByTestId('tile-embed-page')).toBeVisible();
-    await expect(embedPage.getByText('Back to Files')).toHaveCount(0);
+    await expect(embedPage.locator('.back-link')).toHaveCount(0);
 
     await expect
       .poll(
@@ -495,7 +507,9 @@ test.describe('Custom CRS', () => {
     await page.getByTestId('file-input').setInputFiles(testFile);
 
     await expect(
-      page.locator('.row', { hasText: 'sf_buildings_no_crs' }).getByText(/已就绪|等待处理/),
+      page
+        .locator('.row', { hasText: 'sf_buildings_no_crs' })
+        .getByTestId(/status-ready|status-processing/),
     ).toBeVisible();
 
     await expect
@@ -512,7 +526,7 @@ test.describe('Custom CRS', () => {
       .toBe('ready');
 
     const row = page.locator('.row', { hasText: 'sf_buildings_no_crs' });
-    const previewLink = row.getByRole('link', { name: '查看' });
+    const previewLink = row.getByTestId('preview-link');
 
     let osmRequestCount = 0;
     await page.context().route('https://tile.openstreetmap.org/**', async (route) => {
@@ -523,7 +537,7 @@ test.describe('Custom CRS', () => {
     const [newPage] = await Promise.all([page.context().waitForEvent('page'), previewLink.click()]);
     await newPage.waitForLoadState('networkidle');
 
-    await expect(newPage.getByLabel('Show OSM Basemap')).toHaveCount(0);
+    await expect(newPage.getByTestId('preview-osm-basemap-toggle')).toHaveCount(0);
     await newPage.waitForTimeout(1500);
     expect(osmRequestCount).toBe(0);
   });

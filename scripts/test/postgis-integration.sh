@@ -13,8 +13,31 @@ export POSTGIS_TEST_USER="${POSTGIS_TEST_USER:-mapflow}"
 export POSTGIS_TEST_PASSWORD="${POSTGIS_TEST_PASSWORD:-mapflow}"
 export MAPFLOW_RUN_POSTGIS_TESTS=1
 export APP_SECRET="${APP_SECRET:-postgis-integration-secret}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 
 KEEP_FIXTURE="${KEEP_POSTGIS_FIXTURE:-false}"
+
+print_fixture_diagnostics() {
+  echo "[postgis-integration] fixture status"
+  docker compose -f "${COMPOSE_FILE}" ps || true
+  echo "[postgis-integration] recent postgis logs"
+  docker compose -f "${COMPOSE_FILE}" logs --tail=200 postgis || true
+}
+
+wait_for_postgis() {
+  echo "[postgis-integration] waiting for postgis readiness"
+  for _ in $(seq 1 60); do
+    if docker compose -f "${COMPOSE_FILE}" exec -T postgis \
+      pg_isready -U "${POSTGIS_TEST_USER}" -d "${POSTGIS_TEST_DB}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "[postgis-integration] postgis is not ready"
+  print_fixture_diagnostics
+  return 1
+}
 
 cleanup() {
   if [[ "${KEEP_FIXTURE}" == "true" ]]; then
@@ -26,29 +49,39 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "[postgis-integration] prebuilding postgis integration test binary"
+cargo test --manifest-path "${ROOT_DIR}/backend/Cargo.toml" --test postgis_integration --no-run
+
 echo "[postgis-integration] starting postgis fixture"
 docker compose -f "${COMPOSE_FILE}" up -d postgis >/dev/null
 
-echo "[postgis-integration] waiting for postgis readiness"
-for _ in $(seq 1 60); do
+wait_for_postgis
+
+seed_ok=false
+for attempt in $(seq 1 3); do
+  echo "[postgis-integration] seeding fixture data (attempt ${attempt}/3)"
   if docker compose -f "${COMPOSE_FILE}" exec -T postgis \
-    pg_isready -U "${POSTGIS_TEST_USER}" -d "${POSTGIS_TEST_DB}" >/dev/null 2>&1; then
+    psql -v ON_ERROR_STOP=1 -U "${POSTGIS_TEST_USER}" -d "${POSTGIS_TEST_DB}" \
+    -f "${SEED_FILE_IN_CONTAINER}" >/dev/null; then
+    seed_ok=true
     break
   fi
-  sleep 1
+
+  seed_exit=$?
+  echo "[postgis-integration] seed command failed with exit code ${seed_exit}"
+  print_fixture_diagnostics
+
+  if [[ "${attempt}" -lt 3 ]]; then
+    echo "[postgis-integration] restarting postgis container before retry"
+    docker compose -f "${COMPOSE_FILE}" restart postgis >/dev/null || true
+    wait_for_postgis || true
+  fi
 done
 
-if ! docker compose -f "${COMPOSE_FILE}" exec -T postgis \
-  pg_isready -U "${POSTGIS_TEST_USER}" -d "${POSTGIS_TEST_DB}" >/dev/null 2>&1; then
-  echo "[postgis-integration] postgis is not ready"
-  docker compose -f "${COMPOSE_FILE}" logs postgis || true
+if [[ "${seed_ok}" != "true" ]]; then
+  echo "[postgis-integration] failed to seed fixture data after retries"
   exit 1
 fi
-
-echo "[postgis-integration] seeding fixture data"
-docker compose -f "${COMPOSE_FILE}" exec -T postgis \
-  psql -v ON_ERROR_STOP=1 -U "${POSTGIS_TEST_USER}" -d "${POSTGIS_TEST_DB}" \
-  -f "${SEED_FILE_IN_CONTAINER}" >/dev/null
 
 echo "[postgis-integration] warming up PostGIS connection"
 docker compose -f "${COMPOSE_FILE}" exec -T postgis \
@@ -66,7 +99,7 @@ done
 
 if ! (echo >"/dev/tcp/${POSTGIS_TEST_HOST}/${POSTGIS_TEST_PORT}") >/dev/null 2>&1; then
   echo "[postgis-integration] host port is not reachable"
-  docker compose -f "${COMPOSE_FILE}" logs postgis || true
+  print_fixture_diagnostics
   exit 1
 fi
 

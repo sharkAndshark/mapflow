@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import { formatInspectorValue } from './featureInspectorFormat.js';
 import {
@@ -52,6 +53,7 @@ function createTileDebugSource(projection = 'EPSG:3857', tileGrid = null) {
 
 export default function Preview() {
   const { id } = useParams();
+  const { t } = useTranslation();
   const mapElement = useRef(null);
   const mapRef = useRef(null); // Store the OL map instance
   const vectorLayerRef = useRef(null); // Store the vector tile layer for style updates
@@ -99,7 +101,7 @@ export default function Preview() {
       try {
         const res = await fetch(`/api/files/${id}/features/${fid}`);
         if (!res.ok) {
-          let message = 'Failed to load feature properties';
+          let message = t('errors.loadFeatureFailed');
           try {
             const data = await res.json();
             if (data && typeof data.error === 'string') {
@@ -115,7 +117,7 @@ export default function Preview() {
           return;
         }
         if (!data || !Array.isArray(data.properties)) {
-          throw new Error('Invalid feature properties response');
+          throw new Error(t('errors.invalidFeatureResponse'));
         }
         if (typeof data.fid === 'number') {
           setPopupFid(data.fid);
@@ -125,7 +127,7 @@ export default function Preview() {
         if (seq !== requestSeqRef.current) {
           return;
         }
-        setPopupError(e instanceof Error ? e.message : 'Failed to load feature properties');
+        setPopupError(e instanceof Error ? e.message : t('errors.loadFeatureFailed'));
         setPopupContent(null);
       } finally {
         if (seq === requestSeqRef.current) {
@@ -133,7 +135,7 @@ export default function Preview() {
         }
       }
     },
-    [id],
+    [id, t],
   );
 
   useEffect(() => {
@@ -196,7 +198,7 @@ export default function Preview() {
       try {
         const res = await fetch(`/api/files/${id}/preview`);
         if (!res.ok) {
-          let message = 'Failed to load preview metadata';
+          let message = t('errors.loadPreviewFailed');
           try {
             const data = await res.json();
             if (data && typeof data.error === 'string') {
@@ -215,7 +217,9 @@ export default function Preview() {
       }
     }
     fetchMeta();
-  }, [id]);
+  }, [id, t]);
+
+  const noFeatureFidMessage = t('preview.noFeatureFid');
 
   // Initialize Map
   useEffect(() => {
@@ -264,7 +268,7 @@ export default function Preview() {
             selectedFidRef.current = null;
             setSelectedFid(null);
             vectorLayerRef.current?.changed();
-            setPopupError('Selected feature has no fid');
+            setPopupError(noFeatureFidMessage);
             setPopupContent(null);
             setPopupLoading(false);
             setPopupFid(null);
@@ -307,7 +311,7 @@ export default function Preview() {
         delete window.__mapflowPreviewMap;
       }
     };
-  }, [cancelPopup]);
+  }, [cancelPopup, noFeatureFidMessage]);
 
   // Update VectorTile Layer and View when Meta changes
   useEffect(() => {
@@ -538,7 +542,7 @@ export default function Preview() {
         delete window.__MAPFLOW_PREVIEW_TEST__;
       }
     };
-  }, []);
+  }, [defaultStyle, selectedStyle, styleFunction]);
 
   return (
     <div
@@ -557,14 +561,14 @@ export default function Preview() {
         }}
       >
         <Link to="/" className="back-link">
-          ← Back
+          {t('preview.back')}
         </Link>
         {meta && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
             {meta.crsType === 'custom' ? (
               <span className="badge" style={{ backgroundColor: '#f0ad4e', color: '#fff' }}>
-                {meta.crs || 'Custom CRS'}
+                {meta.crs || t('preview.customCrs')}
               </span>
             ) : meta.crs ? (
               <span className="badge">{meta.crs}</span>
@@ -588,8 +592,9 @@ export default function Preview() {
                 type="checkbox"
                 checked={showOsmBasemap}
                 onChange={(e) => setShowOsmBasemap(e.target.checked)}
+                data-testid="preview-osm-basemap-toggle"
               />
-              Show OSM Basemap
+              {t('preview.showOsmBasemap')}
             </label>
           )}
 
@@ -608,8 +613,9 @@ export default function Preview() {
               type="checkbox"
               checked={showTileGrid}
               onChange={(e) => setShowTileGrid(e.target.checked)}
+              data-testid="preview-tile-grid-toggle"
             />
-            Show Tile Grid
+            {t('preview.showTileGrid')}
           </label>
         </div>
       </header>
@@ -637,7 +643,7 @@ export default function Preview() {
             }}
           >
             <div className="spinner"></div>
-            <p>Loading Map Data...</p>
+            <p>{t('preview.loadingMapData')}</p>
           </div>
         )}
 
@@ -677,8 +683,8 @@ export default function Preview() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <h4 style={{ margin: 0 }}>
-                Feature Properties
+              <h4 style={{ margin: 0 }} data-testid="feature-inspector-title">
+                {t('preview.featureProperties')}
                 {popupFid !== null && (
                   <span style={{ marginLeft: '8px', fontSize: '11px', color: '#777' }}>
                     fid: {popupFid}
@@ -700,7 +706,9 @@ export default function Preview() {
               </div>
             )}
 
-            {popupLoading && <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>Loading…</p>}
+            {popupLoading && (
+              <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>{t('preview.loading')}</p>
+            )}
 
             {Array.isArray(popupContent) && (
               <table style={{ fontSize: '12px', width: '100%', borderCollapse: 'collapse' }}>

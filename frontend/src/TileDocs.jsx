@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { PMTiles, TileType } from 'pmtiles';
 
 import { PublicTileMap, usePublicTileMeta } from './PublicTileViewer.jsx';
@@ -77,9 +78,9 @@ function resolveDocsConfig(meta, pmtilesHeader) {
     }
 
     return {
-      minZoom: meta.minZoom ?? 0,
-      maxZoom: meta.maxZoom ?? 22,
-      tileFormat: meta.tileFormat ?? 'mvt',
+      minZoom: meta.minZoom ?? null,
+      maxZoom: meta.maxZoom ?? null,
+      tileFormat: meta.tileFormat ?? null,
     };
   }
 
@@ -88,6 +89,14 @@ function resolveDocsConfig(meta, pmtilesHeader) {
     maxZoom: meta.maxZoom ?? 22,
     tileFormat: meta.tileFormat ?? 'mvt',
   };
+}
+
+function formatZoomValue(value) {
+  return value == null ? '-' : value;
+}
+
+function formatZoomRange(minZoom, maxZoom) {
+  return `${formatZoomValue(minZoom)} - ${formatZoomValue(maxZoom)}`;
 }
 
 function generateOpenLayersCode(meta, origin) {
@@ -341,7 +350,7 @@ ${generateOpenLayersCode(meta, origin)}
   return md;
 }
 
-function CopyButton({ text, label }) {
+function CopyButton({ text, label, copiedLabel }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -370,17 +379,19 @@ function CopyButton({ text, label }) {
         marginLeft: '8px',
       }}
     >
-      {copied ? 'Copied!' : label}
+      {copied ? copiedLabel : label}
     </button>
   );
 }
 
 export default function TileDocs() {
   const { slug } = useParams();
+  const { t } = useTranslation();
   const [showCode, setShowCode] = useState(true);
   const [mdCopied, setMdCopied] = useState(false);
   const { meta, error, isLoading } = usePublicTileMeta(slug);
   const [pmtilesHeader, setPmtilesHeader] = useState(null);
+  const [pmtilesHeaderError, setPmtilesHeaderError] = useState(null);
 
   const origin = window.location.origin;
   const viewerUrlPath = meta ? resolveViewerUrlPath(slug, meta.viewerUrl) : null;
@@ -388,21 +399,25 @@ export default function TileDocs() {
   useEffect(() => {
     if (!meta || meta.tileSource !== 'pmtiles') {
       setPmtilesHeader(null);
+      setPmtilesHeaderError(null);
       return;
     }
 
     let cancelled = false;
+    setPmtilesHeaderError(null);
     async function loadPmtilesHeader() {
       try {
         const archive = new PMTiles(meta.tileUrl);
         const header = await archive.getHeader();
         if (!cancelled) {
           setPmtilesHeader(header);
+          setPmtilesHeaderError(null);
         }
       } catch (loadError) {
         console.warn('Failed to load PMTiles header for docs display', loadError);
         if (!cancelled) {
           setPmtilesHeader(null);
+          setPmtilesHeaderError(t('errors.loadPmtilesFailed'));
         }
       }
     }
@@ -412,17 +427,24 @@ export default function TileDocs() {
     return () => {
       cancelled = true;
     };
-  }, [meta?.tileSource, meta?.tileUrl]);
+  }, [meta, t]);
 
   const docsConfig = useMemo(() => {
     if (!meta) {
       return null;
     }
 
-    return resolveDocsConfig(meta, pmtilesHeader);
-  }, [meta, pmtilesHeader]);
+    if (meta.tileSource === 'pmtiles' && pmtilesHeader == null && !pmtilesHeaderError) {
+      return null;
+    }
 
-  const openLayersCode = meta ? generateOpenLayersCode(meta, origin) : '';
+    return resolveDocsConfig(meta, pmtilesHeader);
+  }, [meta, pmtilesHeader, pmtilesHeaderError]);
+  const isWaitingForDocsConfig = Boolean(
+    meta && !error && meta.tileSource === 'pmtiles' && !pmtilesHeaderError && pmtilesHeader == null,
+  );
+
+  const openLayersCode = meta && docsConfig ? generateOpenLayersCode(meta, origin) : '';
   const markdownDoc = meta && docsConfig ? generateMarkdownDoc(meta, origin, docsConfig) : '';
 
   return (
@@ -443,24 +465,26 @@ export default function TileDocs() {
         }}
       >
         <Link to="/" className="back-link">
-          Back to Files
+          {t('tileDocs.backToFiles')}
         </Link>
         {meta && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h1 style={{ fontSize: '18px', margin: 0 }}>{meta.name}</h1>
             {meta.crsType === 'custom' ? (
               <span className="badge" style={{ backgroundColor: '#f0ad4e', color: '#fff' }}>
-                {meta.crs || 'Custom CRS'}
+                {meta.crs || t('tileDocs.custom')}
               </span>
             ) : meta.crs ? (
               <span className="badge">{meta.crs}</span>
             ) : null}
-            <span
-              className="badge"
-              style={{ backgroundColor: '#5cb85c', color: '#fff', marginLeft: '4px' }}
-            >
-              {docsConfig?.tileFormat?.toUpperCase() || 'MVT'}
-            </span>
+            {docsConfig?.tileFormat && (
+              <span
+                className="badge"
+                style={{ backgroundColor: '#5cb85c', color: '#fff', marginLeft: '4px' }}
+              >
+                {docsConfig.tileFormat.toUpperCase()}
+              </span>
+            )}
           </div>
         )}
       </header>
@@ -484,14 +508,109 @@ export default function TileDocs() {
             </div>
           )}
 
+          {pmtilesHeaderError && (
+            <div className="alert error-alert" style={{ marginBottom: '16px' }}>
+              {pmtilesHeaderError}
+            </div>
+          )}
+
           {isLoading && !meta && !error && (
             <div style={{ textAlign: 'center', padding: '40px' }}>
               <div className="spinner"></div>
-              <p>Loading documentation...</p>
+              <p>{t('tileDocs.loadingDoc')}</p>
+            </div>
+          )}
+
+          {isWaitingForDocsConfig && (
+            <div style={{ textAlign: 'center', padding: '24px' }}>
+              <div className="spinner"></div>
+              <p>{t('tileDocs.loadingDoc')}</p>
             </div>
           )}
 
           {meta && (
+            <section style={{ marginBottom: '24px' }}>
+              <h2
+                style={{
+                  fontSize: '16px',
+                  marginBottom: '12px',
+                  borderBottom: '1px solid #ddd',
+                  paddingBottom: '8px',
+                }}
+              >
+                {t('tileDocs.serviceUrls')}
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '500', width: '80px' }}>{t('tileDocs.tileUrl')}</span>
+                  <code
+                    style={{
+                      flex: 1,
+                      background: '#e9ecef',
+                      padding: '6px 10px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {origin}
+                    {meta.tileUrl}
+                  </code>
+                  <CopyButton
+                    text={`${origin}${meta.tileUrl}`}
+                    label={t('common.copy')}
+                    copiedLabel={t('common.copied')}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '500', width: '80px' }}>{t('tileDocs.metaApi')}</span>
+                  <code
+                    style={{
+                      flex: 1,
+                      background: '#e9ecef',
+                      padding: '6px 10px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {origin}/tiles/{slug}/meta
+                  </code>
+                  <CopyButton
+                    text={`${origin}/tiles/${slug}/meta`}
+                    label={t('common.copy')}
+                    copiedLabel={t('common.copied')}
+                  />
+                </div>
+                <div
+                  style={{ display: 'flex', alignItems: 'center' }}
+                  data-testid="tile-docs-embed-url"
+                >
+                  <span style={{ fontWeight: '500', width: '80px' }}>{t('tileDocs.embedUrl')}</span>
+                  <code
+                    style={{
+                      flex: 1,
+                      background: '#e9ecef',
+                      padding: '6px 10px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {origin}
+                    {viewerUrlPath}
+                  </code>
+                  <CopyButton
+                    text={`${origin}${viewerUrlPath}`}
+                    label={t('common.copy')}
+                    copiedLabel={t('common.copied')}
+                  />
+                </div>
+              </div>
+            </section>
+          )}
+
+          {meta && docsConfig && (
             <>
               <section style={{ marginBottom: '24px' }}>
                 <h2
@@ -502,85 +621,23 @@ export default function TileDocs() {
                     paddingBottom: '8px',
                   }}
                 >
-                  Service URLs
+                  {t('tileDocs.configuration')}
                 </h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>Tile URL</span>
-                    <code
-                      style={{
-                        flex: 1,
-                        background: '#e9ecef',
-                        padding: '6px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {origin}
-                      {meta.tileUrl}
-                    </code>
-                    <CopyButton text={`${origin}${meta.tileUrl}`} label="Copy" />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>Meta API</span>
-                    <code
-                      style={{
-                        flex: 1,
-                        background: '#e9ecef',
-                        padding: '6px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {origin}/tiles/{slug}/meta
-                    </code>
-                    <CopyButton text={`${origin}/tiles/${slug}/meta`} label="Copy" />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '500', width: '80px' }}>Embed URL</span>
-                    <code
-                      style={{
-                        flex: 1,
-                        background: '#e9ecef',
-                        padding: '6px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {origin}
-                      {viewerUrlPath}
-                    </code>
-                    <CopyButton text={`${origin}${viewerUrlPath}`} label="Copy" />
-                  </div>
-                </div>
-              </section>
-
-              <section style={{ marginBottom: '24px' }}>
-                <h2
-                  style={{
-                    fontSize: '16px',
-                    marginBottom: '12px',
-                    borderBottom: '1px solid #ddd',
-                    paddingBottom: '8px',
-                  }}
+                <table
+                  data-testid="tile-docs-config-table"
+                  style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}
                 >
-                  Configuration
-                </h2>
-                <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
                   <tbody>
-                    <tr>
+                    <tr data-testid="tile-docs-zoom-range-row">
                       <td style={{ padding: '8px 0', fontWeight: '500', width: '120px' }}>
-                        Zoom Range
+                        {t('tileDocs.zoomRange')}
                       </td>
                       <td style={{ padding: '8px 0' }}>
-                        {docsConfig?.minZoom ?? 0} - {docsConfig?.maxZoom ?? 22}
+                        {formatZoomRange(docsConfig.minZoom, docsConfig.maxZoom)}
                       </td>
                     </tr>
-                    <tr>
-                      <td style={{ padding: '8px 0', fontWeight: '500' }}>CRS</td>
+                    <tr data-testid="tile-docs-crs-row">
+                      <td style={{ padding: '8px 0', fontWeight: '500' }}>{t('tileDocs.crs')}</td>
                       <td style={{ padding: '8px 0' }}>
                         {meta.crs || 'EPSG:3857'}
                         {meta.crsType === 'custom' && (
@@ -594,24 +651,30 @@ export default function TileDocs() {
                               borderRadius: '3px',
                             }}
                           >
-                            Custom
+                            {t('tileDocs.custom')}
                           </span>
                         )}
                       </td>
                     </tr>
-                    <tr>
-                      <td style={{ padding: '8px 0', fontWeight: '500' }}>Format</td>
+                    <tr data-testid="tile-docs-format-row">
+                      <td style={{ padding: '8px 0', fontWeight: '500' }}>
+                        {t('tileDocs.format')}
+                      </td>
                       <td style={{ padding: '8px 0' }}>
-                        {docsConfig?.tileFormat?.toUpperCase() || 'MVT'}
+                        {docsConfig.tileFormat?.toUpperCase() ?? '-'}
                       </td>
                     </tr>
                     <tr>
-                      <td style={{ padding: '8px 0', fontWeight: '500' }}>Source</td>
+                      <td style={{ padding: '8px 0', fontWeight: '500' }}>
+                        {t('tileDocs.source')}
+                      </td>
                       <td style={{ padding: '8px 0' }}>{meta.tileSource}</td>
                     </tr>
                     {meta.crsType === 'custom' && meta.dataBounds && (
                       <tr>
-                        <td style={{ padding: '8px 0', fontWeight: '500' }}>Data Bounds</td>
+                        <td style={{ padding: '8px 0', fontWeight: '500' }}>
+                          {t('tileDocs.dataBounds')}
+                        </td>
                         <td style={{ padding: '8px 0', fontFamily: 'monospace', fontSize: '12px' }}>
                           [{meta.dataBounds.map((n) => n.toFixed(2)).join(', ')}]
                         </td>
@@ -619,7 +682,9 @@ export default function TileDocs() {
                     )}
                     {meta.bbox && (
                       <tr>
-                        <td style={{ padding: '8px 0', fontWeight: '500' }}>BBox (WGS84)</td>
+                        <td style={{ padding: '8px 0', fontWeight: '500' }}>
+                          {t('tileDocs.bboxWgs84')}
+                        </td>
                         <td style={{ padding: '8px 0', fontFamily: 'monospace', fontSize: '12px' }}>
                           [{meta.bbox.map((n) => n.toFixed(4)).join(', ')}]
                         </td>
@@ -647,9 +712,13 @@ export default function TileDocs() {
                       flex: 1,
                     }}
                   >
-                    OpenLayers Code
+                    {t('tileDocs.openLayersCode')}
                   </h2>
-                  <CopyButton text={openLayersCode} label="Copy Code" />
+                  <CopyButton
+                    text={openLayersCode}
+                    label={t('tileDocs.copyCode')}
+                    copiedLabel={t('common.copied')}
+                  />
                 </div>
                 <button
                   type="button"
@@ -665,7 +734,7 @@ export default function TileDocs() {
                     fontSize: '13px',
                   }}
                 >
-                  {showCode ? 'Hide Code' : 'Show Code'}
+                  {showCode ? t('tileDocs.hideCode') : t('tileDocs.showCode')}
                 </button>
                 {showCode && (
                   <pre
@@ -709,7 +778,7 @@ export default function TileDocs() {
                     fontWeight: '500',
                   }}
                 >
-                  {mdCopied ? 'Copied!' : 'Copy Full Documentation (Markdown)'}
+                  {mdCopied ? t('common.copied') : t('tileDocs.copyFullDoc')}
                 </button>
               </section>
             </>
@@ -722,7 +791,7 @@ export default function TileDocs() {
             error={error}
             isLoading={isLoading}
             dataTestId="tile-docs-map"
-            overlayLabel="Live Preview (Public Endpoint)"
+            overlayLabel={t('tileDocs.livePreview')}
           />
         </div>
       </div>

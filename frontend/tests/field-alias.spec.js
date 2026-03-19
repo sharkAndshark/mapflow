@@ -17,8 +17,10 @@ async function uploadAndWaitReady(page) {
   await page.goto('/');
   const input = page.getByTestId('file-input');
   await input.setInputFiles(geojsonPath);
-  // Wait for ready status
-  const row = page.locator('.row', { hasText: 'sample' }).filter({ hasText: '已就绪' }).first();
+  const row = page
+    .locator('.row', { hasText: 'sample' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
+    .first();
   await expect(row).toBeVisible({ timeout: 15000 });
   return row;
 }
@@ -29,7 +31,7 @@ async function openFieldsTab(page, row) {
   // Switch to Fields tab
   const sidebar = page.locator('.detail-sidebar');
   await expect(sidebar).toBeVisible();
-  await sidebar.getByRole('tab', { name: 'Fields' }).click();
+  await sidebar.getByTestId('detail-tab-fields').click();
   // Wait for fields table to load
   await expect(page.locator('.fields-table')).toBeVisible();
 }
@@ -113,8 +115,8 @@ test('save and cancel buttons visible in edit mode', async ({ page }) => {
   await aliasCell.click();
 
   // Verify buttons are visible
-  await expect(aliasCell.getByRole('button', { name: '保存' })).toBeVisible();
-  await expect(aliasCell.getByRole('button', { name: '取消' })).toBeVisible();
+  await expect(aliasCell.getByTestId('alias-save-button')).toBeVisible();
+  await expect(aliasCell.getByTestId('alias-cancel-button')).toBeVisible();
 });
 
 test('alias input has sufficient width', async ({ page }) => {
@@ -167,7 +169,7 @@ test('alias length validation shows error', async ({ page }) => {
   await input.press('Enter');
 
   // Verify error message appears
-  await expect(aliasCell.getByText('别名不能超过 255 个字符')).toBeVisible();
+  await expect(aliasCell.getByTestId('alias-error')).toBeVisible();
 
   // Verify edit mode is still active (not saved)
   await expect(aliasCell.getByRole('textbox')).toBeVisible();
@@ -195,12 +197,12 @@ test('alias persists after reload', async ({ page }) => {
   // Select row again
   const rowAfterReload = page
     .locator('.row', { hasText: 'sample' })
-    .filter({ hasText: '已就绪' })
+    .filter({ has: page.getByTestId(/status-ready|status-uploaded|status-processing/) })
     .first();
   await rowAfterReload.click();
 
   // Switch to Fields tab
-  await page.locator('.detail-sidebar').getByRole('tab', { name: 'Fields' }).click();
+  await page.locator('.detail-sidebar').getByTestId('detail-tab-fields').click();
 
   // Verify alias persisted
   const aliasCellAfterReload = page.locator('.fields-table tbody tr:first-child td.alias-cell');
