@@ -1,7 +1,6 @@
 # MapFlow
 
 [![CI](https://github.com/sharkAndshark/mapflow/actions/workflows/ci.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/ci.yml)
-[![Release](https://github.com/sharkAndshark/mapflow/actions/workflows/release.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/release.yml)
 [![Nightly](https://github.com/sharkAndshark/mapflow/actions/workflows/nightly.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/nightly.yml)
 [![Security](https://github.com/sharkAndshark/mapflow/actions/workflows/security.yml/badge.svg)](https://github.com/sharkAndshark/mapflow/actions/workflows/security.yml)
 
