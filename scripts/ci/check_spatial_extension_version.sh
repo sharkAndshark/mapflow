@@ -12,6 +12,7 @@ fi
 
 python3 - "${LOCK_PATH}" "${MANIFEST_PATH}" <<'PY'
 import json
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -37,12 +38,54 @@ if len(versions) != 1:
 
 cargo_duckdb_version = versions[0]
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-manifest_duckdb_version = manifest.get("duckdb_version")
+manifest_crate_version = manifest.get("duckdb_crate_version")
+manifest_core_version = manifest.get("duckdb_core_version")
+legacy_version = manifest.get("duckdb_version")
 
-if manifest_duckdb_version != cargo_duckdb_version:
+if not manifest_crate_version:
+    manifest_crate_version = legacy_version
+if not manifest_core_version:
+    manifest_core_version = legacy_version
+
+if not manifest_crate_version or not manifest_core_version:
     print(
-        "duckdb version mismatch: "
-        f"Cargo.lock={cargo_duckdb_version}, manifest={manifest_duckdb_version}",
+        "manifest must define duckdb_crate_version/duckdb_core_version "
+        "(or legacy duckdb_version)",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if manifest_crate_version != cargo_duckdb_version:
+    print(
+        "duckdb crate version mismatch: "
+        f"Cargo.lock={cargo_duckdb_version}, manifest={manifest_crate_version}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", cargo_duckdb_version)
+if not match:
+    print(
+        f"unsupported duckdb crate version format in Cargo.lock: {cargo_duckdb_version}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+crate_major, crate_minor, crate_patch = map(int, match.groups())
+if crate_major == 1 and crate_minor >= 10000:
+    core_major = crate_minor // 10000
+    core_minor = (crate_minor % 10000) // 100
+    core_patch = crate_minor % 100
+    expected_core_version = f"{core_major}.{core_minor}.{core_patch}"
+else:
+    # Pre-v1.5.0 duckdb-rs versions used direct DuckDB semver.
+    expected_core_version = f"{crate_major}.{crate_minor}.{crate_patch}"
+
+if manifest_core_version != expected_core_version:
+    print(
+        "duckdb core version mismatch: "
+        f"derived={expected_core_version} from crate={cargo_duckdb_version}, "
+        f"manifest={manifest_core_version}",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -52,7 +95,7 @@ if not isinstance(artifacts, list) or not artifacts:
     print("manifest must define at least one artifact", file=sys.stderr)
     sys.exit(1)
 
-version_token = f"/v{cargo_duckdb_version}/"
+version_token = f"/v{manifest_core_version}/"
 for idx, artifact in enumerate(artifacts):
     if not isinstance(artifact, dict):
         print(f"artifact[{idx}] must be an object", file=sys.stderr)
@@ -85,6 +128,6 @@ for idx, artifact in enumerate(artifacts):
 
 print(
     "spatial extension manifest is in sync with Cargo.lock "
-    f"(duckdb {cargo_duckdb_version})"
+    f"(duckdb crate {cargo_duckdb_version}, core {manifest_core_version})"
 )
 PY

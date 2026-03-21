@@ -28,9 +28,12 @@ ARG SPATIAL_EXTENSION_ARCHIVE_URL
 RUN set -eu; \
   archive_url="${SPATIAL_EXTENSION_ARCHIVE_URL:-}"; \
   if [ -z "${archive_url}" ]; then \
-    duckdb_version="$(sed -n 's/.*"duckdb_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' backend/extensions/spatial-extension-manifest.json | head -n 1)"; \
-    if [ -z "${duckdb_version}" ]; then \
-      echo "failed to parse duckdb_version from spatial-extension-manifest.json" >&2; \
+    duckdb_core_version="$(sed -n 's/.*"duckdb_core_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' backend/extensions/spatial-extension-manifest.json | head -n 1)"; \
+    if [ -z "${duckdb_core_version}" ]; then \
+      duckdb_core_version="$(sed -n 's/.*"duckdb_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' backend/extensions/spatial-extension-manifest.json | head -n 1)"; \
+    fi; \
+    if [ -z "${duckdb_core_version}" ]; then \
+      echo "failed to parse duckdb_core_version (or fallback duckdb_version) from spatial-extension-manifest.json" >&2; \
       exit 1; \
     fi; \
     case "${TARGETARCH:-}" in \
@@ -40,7 +43,7 @@ RUN set -eu; \
         echo "unsupported TARGETARCH for spatial extension auto-resolution: ${TARGETARCH:-unknown}" >&2; \
         exit 1 ;; \
     esac; \
-    archive_url="http://extensions.duckdb.org/v${duckdb_version}/${duckdb_platform}/spatial.duckdb_extension.gz"; \
+    archive_url="http://extensions.duckdb.org/v${duckdb_core_version}/${duckdb_platform}/spatial.duckdb_extension.gz"; \
   fi; \
   curl -fsSL "${archive_url}" -o /tmp/spatial.duckdb_extension.gz; \
   gunzip -c /tmp/spatial.duckdb_extension.gz > backend/extensions/spatial.duckdb_extension; \

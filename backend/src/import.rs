@@ -11,6 +11,19 @@ use crate::db::escape_sql_string;
 
 const ST_READ_CREATE_MAX_ATTEMPTS: usize = 3;
 
+fn is_all_null_column(
+    conn: &duckdb::Connection,
+    safe_table_name: &str,
+    column_name: &str,
+) -> Result<bool, String> {
+    let escaped_column = column_name.replace('"', "\"\"");
+    let sql = format!(
+        "SELECT NOT EXISTS (SELECT 1 FROM \"{safe_table_name}\" WHERE \"{escaped_column}\" IS NOT NULL LIMIT 1)"
+    );
+    conn.query_row(&sql, [], |row| row.get(0))
+        .map_err(|e| format!("Failed to inspect column nullability: {}", e))
+}
+
 pub async fn import_spatial_data(
     db: &Arc<Mutex<duckdb::Connection>>,
     source_id: &str,
@@ -183,6 +196,19 @@ pub async fn import_spatial_data(
 
     for (name, data_type, ordinal) in &columns {
         let lower = name.to_ascii_lowercase();
+
+        // GDAL readers may expose source-side feature ids (e.g. OGC_FID).
+        // We already maintain our own stable `fid`, so skip these metadata columns.
+        if lower == "ogc_fid" {
+            continue;
+        }
+
+        // DuckDB/GDAL may expose a synthetic feature-id `id` column for GeoJSON reads.
+        // If that column is entirely NULL, skip it so schema/properties stay stable.
+        if lower == "id" && is_all_null_column(&conn, &safe_table_name, name)? {
+            continue;
+        }
+
         let is_reserved = lower == "fid" || lower == "geom";
 
         // Determine normalized name.

@@ -25,7 +25,7 @@ Windows 桌面集成:
 - 启用嵌入时，启动时解包到本地 cache 目录后加载（支持离线部署）
 - 解包使用原始文件名 `spatial.duckdb_extension`（DuckDB 根据文件名推导入口点），配合 `.checksum` 文件校验缓存
 - cache 内容被清理后，启动时会自动重新解包；可通过 `SPATIAL_EXTENSION_CACHE_DIR` 指定更稳定/更严格权限的目录
-- `backend/extensions/spatial-extension-manifest.json` 与 `Cargo.lock` 版本必须同步（CI 强校验）
+- `backend/extensions/spatial-extension-manifest.json` 与 `Cargo.lock` 强同步（CI 校验 crate/core 映射：如 duckdb crate `1.10500.0` 对应 DuckDB core `1.5.0`）
 - 无网络回退：移除了 `INSTALL spatial` 网络下载逻辑，确保完全离线运行
 
 **PostGIS 数据源（MVP）：**
