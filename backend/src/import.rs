@@ -53,23 +53,29 @@ fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
     let mut suffix: usize = 2;
     loop {
         let mut conflict = false;
-        if let Some(features) = root
-            .get("features")
-            .and_then(|v| v.as_array())
-            .filter(|_| root.get("type").and_then(|v| v.as_str()) == Some("FeatureCollection"))
-        {
-            for feature in features {
-                let Some(obj) = feature.as_object() else {
-                    continue;
-                };
-                let Some(props) = obj.get("properties").and_then(|v| v.as_object()) else {
-                    continue;
-                };
-                if props.keys().any(|k| k.eq_ignore_ascii_case(&candidate)) {
-                    conflict = true;
-                    break;
+        match root.get("type").and_then(|v| v.as_str()) {
+            Some("FeatureCollection") => {
+                if let Some(features) = root.get("features").and_then(|v| v.as_array()) {
+                    for feature in features {
+                        let Some(obj) = feature.as_object() else {
+                            continue;
+                        };
+                        let Some(props) = obj.get("properties").and_then(|v| v.as_object()) else {
+                            continue;
+                        };
+                        if props.keys().any(|k| k.eq_ignore_ascii_case(&candidate)) {
+                            conflict = true;
+                            break;
+                        }
+                    }
                 }
             }
+            Some("Feature") => {
+                if let Some(props) = root.get("properties").and_then(|v| v.as_object()) {
+                    conflict = props.keys().any(|k| k.eq_ignore_ascii_case(&candidate));
+                }
+            }
+            _ => {}
         }
         if !conflict {
             return candidate;
@@ -77,6 +83,29 @@ fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
         candidate = format!("__mapflow_src_ogc_fid_{suffix}");
         suffix += 1;
     }
+}
+
+fn rewrite_feature_ogc_fid_property(
+    props: &mut serde_json::Map<String, Value>,
+    workaround_key: &str,
+    original_name: &mut Option<String>,
+) -> bool {
+    let key_to_replace = props
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("ogc_fid"))
+        .cloned();
+    let Some(key_to_replace) = key_to_replace else {
+        return false;
+    };
+
+    let Some(value) = props.remove(&key_to_replace) else {
+        return false;
+    };
+    if original_name.is_none() {
+        *original_name = Some(key_to_replace);
+    }
+    props.insert(workaround_key.to_string(), value);
+    true
 }
 
 fn rewrite_geojson_ogc_fid_properties(
@@ -88,9 +117,10 @@ fn rewrite_geojson_ogc_fid_properties(
     let mut root: Value = serde_json::from_str(&data)
         .map_err(|e| format!("Failed to parse GeoJSON for OGC_FID workaround: {}", e))?;
 
-    let is_feature_collection =
-        root.get("type").and_then(|v| v.as_str()) == Some("FeatureCollection");
-    if !is_feature_collection {
+    let root_type = root.get("type").and_then(|v| v.as_str());
+    let is_feature_collection = root_type == Some("FeatureCollection");
+    let is_single_feature = root_type == Some("Feature");
+    if !is_feature_collection && !is_single_feature {
         return Ok(None);
     }
 
@@ -98,37 +128,27 @@ fn rewrite_geojson_ogc_fid_properties(
     let mut changed = false;
     let mut original_name: Option<String> = None;
 
-    let Some(features) = root.get_mut("features").and_then(|v| v.as_array_mut()) else {
-        return Ok(None);
-    };
-
-    for feature in features {
-        let Some(feature_obj) = feature.as_object_mut() else {
-            continue;
+    if is_feature_collection {
+        let Some(features) = root.get_mut("features").and_then(|v| v.as_array_mut()) else {
+            return Ok(None);
         };
-        let Some(props) = feature_obj
-            .get_mut("properties")
-            .and_then(|v| v.as_object_mut())
-        else {
-            continue;
-        };
-
-        let key_to_replace = props
-            .keys()
-            .find(|k| k.eq_ignore_ascii_case("ogc_fid"))
-            .cloned();
-        let Some(key_to_replace) = key_to_replace else {
-            continue;
-        };
-
-        let Some(value) = props.remove(&key_to_replace) else {
-            continue;
-        };
-        if original_name.is_none() {
-            original_name = Some(key_to_replace.clone());
+        for feature in features {
+            let Some(feature_obj) = feature.as_object_mut() else {
+                continue;
+            };
+            let Some(props) = feature_obj
+                .get_mut("properties")
+                .and_then(|v| v.as_object_mut())
+            else {
+                continue;
+            };
+            changed |= rewrite_feature_ogc_fid_property(props, &workaround_key, &mut original_name);
         }
-        props.insert(workaround_key.clone(), value);
-        changed = true;
+    } else {
+        let Some(props) = root.get_mut("properties").and_then(|v| v.as_object_mut()) else {
+            return Ok(None);
+        };
+        changed = rewrite_feature_ogc_fid_property(props, &workaround_key, &mut original_name);
     }
 
     if !changed {
@@ -683,6 +703,20 @@ mod tests {
                     "geometry": {"type": "Point", "coordinates": [0.0, 0.0]}
                 }
             ]
+        });
+        let key = choose_geojson_ogc_fid_workaround_key(&root);
+        assert_eq!(key, "__mapflow_src_ogc_fid_2");
+    }
+
+    #[test]
+    fn test_choose_geojson_ogc_fid_workaround_key_for_top_level_feature() {
+        let root: serde_json::Value = serde_json::json!({
+            "type": "Feature",
+            "properties": {
+                "__MAPFLOW_SRC_OGC_FID": 1,
+                "name": "A"
+            },
+            "geometry": {"type": "Point", "coordinates": [0.0, 0.0]}
         });
         let key = choose_geojson_ogc_fid_workaround_key(&root);
         assert_eq!(key, "__mapflow_src_ogc_fid_2");
