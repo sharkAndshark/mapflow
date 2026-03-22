@@ -65,7 +65,7 @@ fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
                 let Some(props) = obj.get("properties").and_then(|v| v.as_object()) else {
                     continue;
                 };
-                if props.contains_key(&candidate) {
+                if props.keys().any(|k| k.eq_ignore_ascii_case(&candidate)) {
                     conflict = true;
                     break;
                 }
@@ -195,6 +195,10 @@ fn source_fields_contains_column(
         "Failed to parse ST_Read_Meta fields JSON; preserving imported column"
     );
     None
+}
+
+fn should_skip_ogc_fid_column(source_has_ogc_fid: Option<bool>) -> bool {
+    !matches!(source_has_ogc_fid, Some(true))
 }
 
 pub async fn import_spatial_data(
@@ -408,6 +412,7 @@ pub async fn import_spatial_data(
     // Use source metadata to distinguish synthetic `id` from real source attributes.
     // If metadata is unavailable, we preserve `id` to avoid silently dropping user columns.
     let source_has_id_column = source_fields_contains_column(&conn, &escaped_path, "id");
+    let source_has_ogc_fid_column = source_fields_contains_column(&conn, &escaped_path, "ogc_fid");
 
     for (name, data_type, ordinal) in &columns {
         let override_original_name = original_name_overrides
@@ -418,8 +423,8 @@ pub async fn import_spatial_data(
         let original_lower = original_name.to_ascii_lowercase();
 
         // GDAL readers may expose source-side feature ids (e.g. OGC_FID).
-        // We already maintain our own stable `fid`, so skip these metadata columns.
-        if lower == "ogc_fid" {
+        // Skip only when source metadata does not list a real ogc_fid attribute.
+        if lower == "ogc_fid" && should_skip_ogc_fid_column(source_has_ogc_fid_column) {
             continue;
         }
 
@@ -626,7 +631,10 @@ fn normalize_column_name(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_retryable_st_read_error, meta_fields_contains_column};
+    use super::{
+        choose_geojson_ogc_fid_workaround_key, is_retryable_st_read_error,
+        meta_fields_contains_column, should_skip_ogc_fid_column,
+    };
 
     #[test]
     fn test_retryable_st_read_error_true_for_missing_file() {
@@ -660,5 +668,30 @@ mod tests {
     fn test_meta_fields_contains_column_handles_invalid_json() {
         assert_eq!(meta_fields_contains_column("{", "id"), None);
         assert_eq!(meta_fields_contains_column(r#"{"name":"id"}"#, "id"), None);
+    }
+
+    #[test]
+    fn test_choose_geojson_ogc_fid_workaround_key_ignores_case() {
+        let root: serde_json::Value = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "__MAPFLOW_SRC_OGC_FID": 1
+                    },
+                    "geometry": {"type": "Point", "coordinates": [0.0, 0.0]}
+                }
+            ]
+        });
+        let key = choose_geojson_ogc_fid_workaround_key(&root);
+        assert_eq!(key, "__mapflow_src_ogc_fid_2");
+    }
+
+    #[test]
+    fn test_should_skip_ogc_fid_column_only_when_source_lacks_it() {
+        assert!(!should_skip_ogc_fid_column(Some(true)));
+        assert!(should_skip_ogc_fid_column(Some(false)));
+        assert!(should_skip_ogc_fid_column(None));
     }
 }

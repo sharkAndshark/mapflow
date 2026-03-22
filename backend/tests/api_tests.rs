@@ -1126,6 +1126,65 @@ async fn test_geojson_with_ogc_fid_property_imports_successfully() {
 }
 
 #[tokio::test]
+async fn test_geojson_ogc_fid_workaround_handles_case_variant_placeholder_key() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "ogc_fid": 123,
+                    "__MAPFLOW_SRC_OGC_FID": "existing",
+                    "name": "A"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryOGCFIDCASE";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ogc-fid-case.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+}
+
+#[tokio::test]
 async fn test_schema_endpoint_returns_fields_and_types() {
     let (app, _temp) = setup_app().await;
 
