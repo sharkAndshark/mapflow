@@ -1005,6 +1005,127 @@ async fn test_all_null_id_property_is_preserved_in_schema_and_feature_properties
 }
 
 #[tokio::test]
+async fn test_geojson_with_ogc_fid_property_imports_successfully() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "ogc_fid": 123,
+                    "name": "A"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryOGCFID";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ogc-fid.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+
+    let mut found_ogc_fid = false;
+    let mut found_name = false;
+    for field in fields {
+        if field["name"] == "ogc_fid" {
+            found_ogc_fid = true;
+        }
+        if field["name"] == "name" {
+            found_name = true;
+        }
+    }
+    assert!(
+        found_ogc_fid,
+        "Expected schema to include real source property `ogc_fid`"
+    );
+    assert!(found_name, "Expected schema to include `name`");
+
+    let feature_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let feature_response = app.oneshot(feature_request).await.unwrap();
+    assert_eq!(feature_response.status(), axum::http::StatusCode::OK);
+    let feature_body = feature_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let feature_json: serde_json::Value = serde_json::from_slice(&feature_body).unwrap();
+    let props = feature_json["properties"]
+        .as_array()
+        .expect("properties should be array");
+
+    let mut saw_ogc_fid = false;
+    let mut saw_name = false;
+    for p in props {
+        let key = p["key"].as_str().unwrap_or("");
+        if key == "ogc_fid" {
+            saw_ogc_fid = true;
+            assert_eq!(p["value"], 123);
+        }
+        if key == "name" {
+            saw_name = true;
+            assert_eq!(p["value"], "A");
+        }
+    }
+    assert!(
+        saw_ogc_fid,
+        "Expected feature properties to include `ogc_fid`"
+    );
+    assert!(saw_name, "Expected feature properties to include `name`");
+}
+
+#[tokio::test]
 async fn test_schema_endpoint_returns_fields_and_types() {
     let (app, _temp) = setup_app().await;
 

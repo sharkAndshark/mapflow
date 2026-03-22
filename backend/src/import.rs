@@ -1,5 +1,5 @@
-use std::collections::HashSet;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,6 +23,139 @@ fn is_all_null_column(
     );
     conn.query_row(&sql, [], |row| row.get(0))
         .map_err(|e| format!("Failed to inspect column nullability: {}", e))
+}
+
+fn is_geojson_like(file_path: &Path) -> bool {
+    file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| {
+            let ext = ext.to_ascii_lowercase();
+            ext == "geojson" || ext == "json"
+        })
+        .unwrap_or(false)
+}
+
+fn is_duplicate_ogc_fid_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("duplicate column name")
+        && lower.contains("ogc_fid")
+        && lower.contains("st_read")
+}
+
+struct GeoJsonOgcFidWorkaround {
+    temp_path: PathBuf,
+    original_name_overrides: HashMap<String, String>,
+}
+
+fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
+    let mut candidate = "__mapflow_src_ogc_fid".to_string();
+    let mut suffix: usize = 2;
+    loop {
+        let mut conflict = false;
+        if let Some(features) = root
+            .get("features")
+            .and_then(|v| v.as_array())
+            .filter(|_| root.get("type").and_then(|v| v.as_str()) == Some("FeatureCollection"))
+        {
+            for feature in features {
+                let Some(obj) = feature.as_object() else {
+                    continue;
+                };
+                let Some(props) = obj.get("properties").and_then(|v| v.as_object()) else {
+                    continue;
+                };
+                if props.contains_key(&candidate) {
+                    conflict = true;
+                    break;
+                }
+            }
+        }
+        if !conflict {
+            return candidate;
+        }
+        candidate = format!("__mapflow_src_ogc_fid_{suffix}");
+        suffix += 1;
+    }
+}
+
+fn rewrite_geojson_ogc_fid_properties(
+    file_path: &Path,
+    source_id: &str,
+) -> Result<Option<GeoJsonOgcFidWorkaround>, String> {
+    let data = std::fs::read_to_string(file_path)
+        .map_err(|e| format!("Failed to read GeoJSON for OGC_FID workaround: {}", e))?;
+    let mut root: Value = serde_json::from_str(&data)
+        .map_err(|e| format!("Failed to parse GeoJSON for OGC_FID workaround: {}", e))?;
+
+    let is_feature_collection =
+        root.get("type").and_then(|v| v.as_str()) == Some("FeatureCollection");
+    if !is_feature_collection {
+        return Ok(None);
+    }
+
+    let workaround_key = choose_geojson_ogc_fid_workaround_key(&root);
+    let mut changed = false;
+    let mut original_name: Option<String> = None;
+
+    let Some(features) = root.get_mut("features").and_then(|v| v.as_array_mut()) else {
+        return Ok(None);
+    };
+
+    for feature in features {
+        let Some(feature_obj) = feature.as_object_mut() else {
+            continue;
+        };
+        let Some(props) = feature_obj
+            .get_mut("properties")
+            .and_then(|v| v.as_object_mut())
+        else {
+            continue;
+        };
+
+        let key_to_replace = props
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case("ogc_fid"))
+            .cloned();
+        let Some(key_to_replace) = key_to_replace else {
+            continue;
+        };
+
+        let Some(value) = props.remove(&key_to_replace) else {
+            continue;
+        };
+        if original_name.is_none() {
+            original_name = Some(key_to_replace.clone());
+        }
+        props.insert(workaround_key.clone(), value);
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(None);
+    }
+
+    let original_name = original_name.unwrap_or_else(|| "ogc_fid".to_string());
+    let temp_name = format!(
+        "mapflow-import-{}-{}.geojson",
+        source_id,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to compute temp file timestamp: {}", e))?
+            .as_nanos()
+    );
+    let temp_path = std::env::temp_dir().join(temp_name);
+    let serialized = serde_json::to_vec(&root)
+        .map_err(|e| format!("Failed to serialize rewritten GeoJSON: {}", e))?;
+    std::fs::write(&temp_path, serialized)
+        .map_err(|e| format!("Failed to write rewritten GeoJSON temp file: {}", e))?;
+
+    let mut overrides = HashMap::new();
+    overrides.insert(workaround_key.to_ascii_lowercase(), original_name);
+    Ok(Some(GeoJsonOgcFidWorkaround {
+        temp_path,
+        original_name_overrides: overrides,
+    }))
 }
 
 fn meta_fields_contains_column(fields_json: &str, target_column: &str) -> Option<bool> {
@@ -80,6 +213,9 @@ pub async fn import_spatial_data(
         abs_path
     };
     let escaped_path = escape_sql_string(&abs_path);
+    let mut import_path_for_st_read = abs_path.clone();
+    let mut original_name_overrides: HashMap<String, String> = HashMap::new();
+    let mut workaround_temp_path: Option<PathBuf> = None;
 
     let conn = db.lock().await;
 
@@ -109,10 +245,45 @@ pub async fn import_spatial_data(
     let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{safe_table_name}\""), []);
 
     let create_sql = format!(
-        "CREATE TABLE \"{safe_table_name}\" AS\n         SELECT row_number() OVER ()::BIGINT AS fid, *\n         FROM ST_Read('{escaped_path}')"
+        "CREATE TABLE \"{safe_table_name}\" AS\n         SELECT row_number() OVER ()::BIGINT AS fid, *\n         FROM ST_Read('{}')",
+        escape_sql_string(&import_path_for_st_read)
     );
 
-    execute_create_with_retry(&conn, &create_sql, source_id)?;
+    if let Err(initial_error) = execute_create_with_retry(&conn, &create_sql, source_id) {
+        if is_duplicate_ogc_fid_error(&initial_error) && is_geojson_like(file_path) {
+            if let Some(workaround) = rewrite_geojson_ogc_fid_properties(file_path, source_id)? {
+                let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{safe_table_name}\""), []);
+                import_path_for_st_read = workaround.temp_path.to_string_lossy().to_string();
+                workaround_temp_path = Some(workaround.temp_path);
+                original_name_overrides = workaround.original_name_overrides;
+
+                let workaround_sql = format!(
+                    "CREATE TABLE \"{safe_table_name}\" AS\n                     SELECT row_number() OVER ()::BIGINT AS fid, *\n                     FROM ST_Read('{}')",
+                    escape_sql_string(&import_path_for_st_read)
+                );
+                if let Err(workaround_error) =
+                    execute_create_with_retry(&conn, &workaround_sql, source_id)
+                {
+                    if let Some(path) = workaround_temp_path.as_ref() {
+                        let _ = std::fs::remove_file(path);
+                    }
+                    return Err(workaround_error);
+                }
+            } else {
+                return Err(initial_error);
+            }
+        } else {
+            return Err(initial_error);
+        }
+    }
+
+    if !original_name_overrides.is_empty() {
+        // When workaround is active, OGC_FID is a synthetic metadata column.
+        let _ = conn.execute(
+            &format!("ALTER TABLE \"{safe_table_name}\" DROP COLUMN IF EXISTS \"OGC_FID\""),
+            [],
+        );
+    }
 
     // Calculate data_bounds (extent of all geometries)
     let bounds_query = format!(
@@ -239,7 +410,12 @@ pub async fn import_spatial_data(
     let source_has_id_column = source_fields_contains_column(&conn, &escaped_path, "id");
 
     for (name, data_type, ordinal) in &columns {
+        let override_original_name = original_name_overrides
+            .get(&name.to_ascii_lowercase())
+            .cloned();
+        let original_name = override_original_name.unwrap_or_else(|| name.clone());
         let lower = name.to_ascii_lowercase();
+        let original_lower = original_name.to_ascii_lowercase();
 
         // GDAL readers may expose source-side feature ids (e.g. OGC_FID).
         // We already maintain our own stable `fid`, so skip these metadata columns.
@@ -256,22 +432,24 @@ pub async fn import_spatial_data(
             continue;
         }
 
-        let is_reserved = lower == "fid" || lower == "geom";
+        let is_reserved = original_lower == "fid" || original_lower == "geom";
 
         // Determine normalized name.
         let mut normalized = if is_reserved {
-            lower.clone()
-        } else if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            && (name
+            original_lower.clone()
+        } else if original_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && (original_name
                 .chars()
                 .next()
                 .map(|c| c.is_ascii_alphabetic() || c == '_')
                 .unwrap_or(false))
         {
             // Keep as-is but lowercase to match DuckDB identifier behavior.
-            lower.clone()
+            original_lower.clone()
         } else {
-            normalize_column_name(name).unwrap_or_else(|| format!("col_{ordinal}"))
+            normalize_column_name(&original_name).unwrap_or_else(|| format!("col_{ordinal}"))
         };
 
         if is_reserved {
@@ -300,9 +478,9 @@ pub async fn import_spatial_data(
 
         // Coerce unsupported property types to VARCHAR so they can be included in MVT.
         // Keep GEOMETRY as-is.
-        let mvt_type = if lower == "geom" {
+        let mvt_type = if original_lower == "geom" {
             "GEOMETRY".to_string()
-        } else if lower == "fid" {
+        } else if original_lower == "fid" {
             "BIGINT".to_string()
         } else {
             match data_type.as_str() {
@@ -337,19 +515,23 @@ pub async fn import_spatial_data(
             }
         };
 
-        if lower != "geom" && lower != "fid" {
+        if original_lower != "geom" && original_lower != "fid" {
             // Record property columns (exclude geom + fid).
             let _ = conn.execute(
                 "INSERT INTO dataset_columns (source_id, normalized_name, original_name, alias, ordinal, mvt_type)\n                 VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
                 duckdb::params![
                     source_id,
                     normalized.as_str(),
-                    name.as_str(),
+                    original_name.as_str(),
                     *ordinal,
                     mvt_type.as_str()
                 ],
             );
         }
+    }
+
+    if let Some(path) = workaround_temp_path.as_ref() {
+        let _ = std::fs::remove_file(path);
     }
 
     Ok(())
