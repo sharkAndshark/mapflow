@@ -56,3 +56,6 @@ flate2 = "1"
 
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = "3.0"
+
+[lints.clippy]
+unwrap_used = "deny"

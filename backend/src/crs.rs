@@ -5,8 +5,10 @@ pub const CRS_TYPE_STANDARD: &str = "standard";
 pub const CRS_TYPE_CUSTOM: &str = "custom";
 
 lazy_static! {
-    static ref EPSG_PATTERN: Regex = Regex::new(r"(?i)^EPSG:(\d+)$").unwrap();
-    static ref EPSG_URN_PATTERN: Regex = Regex::new(r"(?i)^urn:ogc:def:crs:EPSG::(\d+)$").unwrap();
+    static ref EPSG_PATTERN: Regex =
+        Regex::new(r"(?i)^EPSG:(\d+)$").expect("EPSG_PATTERN regex is valid");
+    static ref EPSG_URN_PATTERN: Regex =
+        Regex::new(r"(?i)^urn:ogc:def:crs:EPSG::(\d+)$").expect("EPSG_URN_PATTERN regex is valid");
     static ref WGS84_ALIASES: Vec<&'static str> = vec![
         "WGS84",
         "WGS_1984",
@@ -14,7 +16,8 @@ lazy_static! {
         "urn:ogc:def:crs:OGC:1.3:CRS84"
     ];
     static ref AUTHORITY_EPSG_PATTERN: Regex =
-        Regex::new(r#"AUTHORITY\s*\[\s*"EPSG"\s*,\s*"(\d+)"\s*\]"#).unwrap();
+        Regex::new(r#"AUTHORITY\s*\[\s*"EPSG"\s*,\s*"(\d+)"\s*\]"#)
+            .expect("AUTHORITY_EPSG_PATTERN regex is valid");
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,7 +42,10 @@ pub fn normalize_crs(raw: Option<&str>) -> NormalizedCrs {
             }
 
             if let Some(caps) = EPSG_PATTERN.captures(trimmed) {
-                let code: &str = caps.get(1).unwrap().as_str();
+                let code: &str = caps
+                    .get(1)
+                    .expect("EPSG_PATTERN has capture group 1")
+                    .as_str();
                 return NormalizedCrs {
                     crs: Some(format!("EPSG:{}", code)),
                     crs_type: CRS_TYPE_STANDARD.to_string(),
@@ -47,7 +53,10 @@ pub fn normalize_crs(raw: Option<&str>) -> NormalizedCrs {
             }
 
             if let Some(caps) = EPSG_URN_PATTERN.captures(trimmed) {
-                let code: &str = caps.get(1).unwrap().as_str();
+                let code: &str = caps
+                    .get(1)
+                    .expect("EPSG_URN_PATTERN has capture group 1")
+                    .as_str();
                 return NormalizedCrs {
                     crs: Some(format!("EPSG:{}", code)),
                     crs_type: CRS_TYPE_STANDARD.to_string(),
@@ -101,7 +110,10 @@ pub fn is_wgs84_compatible_crs(crs: Option<&str>) -> bool {
 
 fn parse_wkt(wkt: &str) -> NormalizedCrs {
     if let Some(caps) = AUTHORITY_EPSG_PATTERN.captures(wkt) {
-        let code: &str = caps.get(1).unwrap().as_str();
+        let code: &str = caps
+            .get(1)
+            .expect("AUTHORITY_EPSG_PATTERN has capture group 1")
+            .as_str();
         NormalizedCrs {
             crs: Some(format!("EPSG:{}", code)),
             crs_type: CRS_TYPE_STANDARD.to_string(),

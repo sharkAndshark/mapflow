@@ -94,13 +94,18 @@ pub fn build_mvt_select_sql(
     let mut struct_fields = Vec::new();
 
     if params.crs_type == CRS_TYPE_CUSTOM {
-        let bounds = params.data_bounds.as_ref().unwrap();
+        let bounds = params
+            .data_bounds
+            .as_ref()
+            .expect("data_bounds validated for custom CRS");
         let (minx, miny, maxx, maxy) = calculate_custom_tile_bbox(bounds, z, x, y);
         struct_fields.push(format!(
             "geom := ST_AsMVTGeom(\n                    geom,\n                    ST_MakeBox2D(ST_Point({minx}, {miny}), ST_Point({maxx}, {maxy})),\n                    4096, 256, true\n                )"
         ));
     } else {
-        let source_crs = standard_source_crs.as_ref().unwrap();
+        let source_crs = standard_source_crs
+            .as_ref()
+            .expect("standard_source_crs is Some for standard CRS");
         struct_fields.push(format!(
             "geom := ST_AsMVTGeom(\n                    ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),\n                    ST_Extent(ST_TileEnvelope(?, ?, ?)),\n                    4096, 256, true\n                )"
         ));
@@ -129,7 +134,9 @@ pub fn build_mvt_select_sql(
             "SELECT ST_AsMVT(feature, 'layer', 4096, 'geom', 'fid') FROM (\n                SELECT {struct_expr} as feature\n                FROM \"{table_name}\"\n                WHERE ST_Intersects(\n                    geom,\n                    ST_MakeEnvelope(?, ?, ?, ?)\n                )\n            )"
         ))
     } else {
-        let source_crs = standard_source_crs.as_ref().unwrap();
+        let source_crs = standard_source_crs
+            .as_ref()
+            .expect("standard_source_crs is Some for standard CRS");
         Ok(format!(
             "SELECT ST_AsMVT(feature, 'layer', 4096, 'geom', 'fid') FROM (\n                SELECT {struct_expr} as feature\n                FROM \"{table_name}\"\n                WHERE ST_Intersects(\n                    ST_Transform(geom, '{source_crs}', 'EPSG:3857', always_xy := true),\n                    ST_TileEnvelope(?, ?, ?)\n                )\n            )"
         ))
