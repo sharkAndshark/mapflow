@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use serde_json::Value;
 use tokio::sync::Mutex;
 use tracing::warn;
 
@@ -22,6 +23,45 @@ fn is_all_null_column(
     );
     conn.query_row(&sql, [], |row| row.get(0))
         .map_err(|e| format!("Failed to inspect column nullability: {}", e))
+}
+
+fn meta_fields_contains_column(fields_json: &str, target_column: &str) -> Option<bool> {
+    let value: Value = serde_json::from_str(fields_json).ok()?;
+    let fields = value.as_array()?;
+    Some(fields.iter().any(|field| {
+        field
+            .get("name")
+            .and_then(|name| name.as_str())
+            .map(|name| name.eq_ignore_ascii_case(target_column))
+            .unwrap_or(false)
+    }))
+}
+
+fn source_fields_contains_column(
+    conn: &duckdb::Connection,
+    escaped_path: &str,
+    target_column: &str,
+) -> Option<bool> {
+    let sql = format!("SELECT to_json(layers[1].fields) FROM ST_Read_Meta('{escaped_path}')");
+    let fields_json = match conn.query_row(&sql, [], |row| row.get::<_, String>(0)) {
+        Ok(fields_json) => fields_json,
+        Err(e) => {
+            warn!(
+                target_column = %target_column,
+                error = %e,
+                "Failed to inspect source fields from ST_Read_Meta; preserving imported column"
+            );
+            return None;
+        }
+    };
+    if let Some(contains) = meta_fields_contains_column(&fields_json, target_column) {
+        return Some(contains);
+    }
+    warn!(
+        target_column = %target_column,
+        "Failed to parse ST_Read_Meta fields JSON; preserving imported column"
+    );
+    None
 }
 
 pub async fn import_spatial_data(
@@ -194,6 +234,10 @@ pub async fn import_spatial_data(
         columns.push(col.map_err(|e| format!("Metadata query failed: {}", e))?);
     }
 
+    // Use source metadata to distinguish synthetic `id` from real source attributes.
+    // If metadata is unavailable, we preserve `id` to avoid silently dropping user columns.
+    let source_has_id_column = source_fields_contains_column(&conn, &escaped_path, "id");
+
     for (name, data_type, ordinal) in &columns {
         let lower = name.to_ascii_lowercase();
 
@@ -204,8 +248,11 @@ pub async fn import_spatial_data(
         }
 
         // DuckDB/GDAL may expose a synthetic feature-id `id` column for GeoJSON reads.
-        // If that column is entirely NULL, skip it so schema/properties stay stable.
-        if lower == "id" && is_all_null_column(&conn, &safe_table_name, name)? {
+        // Skip only when source metadata confirms `id` is not a source attribute.
+        if lower == "id"
+            && matches!(source_has_id_column, Some(false))
+            && is_all_null_column(&conn, &safe_table_name, name)?
+        {
             continue;
         }
 
@@ -397,7 +444,7 @@ fn normalize_column_name(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_retryable_st_read_error;
+    use super::{is_retryable_st_read_error, meta_fields_contains_column};
 
     #[test]
     fn test_retryable_st_read_error_true_for_missing_file() {
@@ -409,5 +456,27 @@ mod tests {
     fn test_retryable_st_read_error_false_for_sql_error() {
         let err = "Binder Error: Referenced column \"geomx\" not found in FROM clause";
         assert!(!is_retryable_st_read_error(err));
+    }
+
+    #[test]
+    fn test_meta_fields_contains_column_detects_existing_name() {
+        let fields_json = r#"[{"name":"id","type":"String"},{"name":"name","type":"String"}]"#;
+        assert_eq!(meta_fields_contains_column(fields_json, "id"), Some(true));
+        assert_eq!(meta_fields_contains_column(fields_json, "name"), Some(true));
+        assert_eq!(
+            meta_fields_contains_column(fields_json, "missing"),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn test_meta_fields_contains_column_handles_empty_array() {
+        assert_eq!(meta_fields_contains_column("[]", "id"), Some(false));
+    }
+
+    #[test]
+    fn test_meta_fields_contains_column_handles_invalid_json() {
+        assert_eq!(meta_fields_contains_column("{", "id"), None);
+        assert_eq!(meta_fields_contains_column(r#"{"name":"id"}"#, "id"), None);
     }
 }

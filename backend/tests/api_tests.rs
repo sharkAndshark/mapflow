@@ -873,6 +873,138 @@ async fn test_feature_properties_endpoint_returns_null_for_missing_values() {
 }
 
 #[tokio::test]
+async fn test_all_null_id_property_is_preserved_in_schema_and_feature_properties() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "id": null,
+                    "name": "A"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            },
+            {
+                "type": "Feature",
+                "properties": {
+                    "id": null,
+                    "name": "B"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [1.0, 1.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryIDNULL";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"id-null.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+
+    let mut found_id_field = false;
+    let mut found_name_field = false;
+    for field in fields {
+        if field["name"] == "id" {
+            found_id_field = true;
+        }
+        if field["name"] == "name" {
+            found_name_field = true;
+        }
+    }
+    assert!(
+        found_id_field,
+        "Expected schema to preserve source property field `id` even when all values are NULL"
+    );
+    assert!(found_name_field, "Expected schema to include `name` field");
+
+    let feature_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let feature_response = app.oneshot(feature_request).await.unwrap();
+    assert_eq!(feature_response.status(), axum::http::StatusCode::OK);
+    let feature_body = feature_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let feature_json: serde_json::Value = serde_json::from_slice(&feature_body).unwrap();
+    let props = feature_json["properties"]
+        .as_array()
+        .expect("properties should be array");
+
+    let mut saw_id = false;
+    let mut saw_name = false;
+    for p in props {
+        let key = p["key"].as_str().unwrap_or("");
+        if key == "id" {
+            saw_id = true;
+            assert!(p["value"].is_null(), "Expected id value to be JSON null");
+        }
+        if key == "name" {
+            saw_name = true;
+            assert_eq!(p["value"], "A");
+        }
+    }
+    assert!(saw_id, "Expected feature properties to include key `id`");
+    assert!(
+        saw_name,
+        "Expected feature properties to include key `name`"
+    );
+}
+
+#[tokio::test]
 async fn test_schema_endpoint_returns_fields_and_types() {
     let (app, _temp) = setup_app().await;
 
