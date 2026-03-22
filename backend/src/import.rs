@@ -350,7 +350,7 @@ fn normalize_column_name(name: &str) -> Option<String> {
         return None;
     }
 
-    let first = out.chars().next().unwrap();
+    let first = out.chars().next().expect("out is non-empty at this point");
     let mut out = if first.is_ascii_alphabetic() || first == '_' {
         out
     } else {

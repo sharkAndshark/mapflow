@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 use anyhow::{bail, Result};
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc};

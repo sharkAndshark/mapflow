@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
