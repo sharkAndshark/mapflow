@@ -1834,7 +1834,7 @@ export default function App() {
             aria-controls="main-tabpanel-data"
             data-testid="main-tab-data"
           >
-            {t('app.mainTabData', { defaultValue: '数据' })}
+            {t('app.mainTabData')}
           </button>
           <button
             type="button"
@@ -1845,7 +1845,7 @@ export default function App() {
             aria-controls="main-tabpanel-resources"
             data-testid="main-tab-resources"
           >
-            {t('app.mainTabResources', { defaultValue: '资源' })}
+            {t('app.mainTabResources')}
           </button>
         </div>
 
