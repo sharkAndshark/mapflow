@@ -352,6 +352,45 @@ fn should_skip_ogc_fid_column(source_has_ogc_fid: Option<bool>) -> bool {
     matches!(source_has_ogc_fid, Some(false))
 }
 
+fn drop_synthetic_columns_before_normalization(
+    conn: &duckdb::Connection,
+    safe_table_name: &str,
+    columns: &mut Vec<(String, String, i64)>,
+    source_has_id_column: Option<bool>,
+    source_has_ogc_fid_column: Option<bool>,
+) -> Result<(), String> {
+    let mut dropped_columns: HashSet<String> = HashSet::new();
+    for (name, _data_type, _ordinal) in columns.iter() {
+        let lower = name.to_ascii_lowercase();
+
+        let should_drop_ogc_fid =
+            lower == "ogc_fid" && should_skip_ogc_fid_column(source_has_ogc_fid_column);
+        let should_drop_id = lower == "id"
+            && matches!(source_has_id_column, Some(false))
+            && is_all_null_column(conn, safe_table_name, name)?;
+
+        if should_drop_ogc_fid || should_drop_id {
+            let escaped_column = name.replace('"', "\"\"");
+            let drop_sql = format!(
+                "ALTER TABLE \"{safe_table_name}\" DROP COLUMN IF EXISTS \"{escaped_column}\""
+            );
+            conn.execute(&drop_sql, []).map_err(|e| {
+                format!(
+                    "Failed to drop synthetic column before normalization: {}",
+                    e
+                )
+            })?;
+            dropped_columns.insert(lower);
+        }
+    }
+
+    if !dropped_columns.is_empty() {
+        columns.retain(|(name, _, _)| !dropped_columns.contains(&name.to_ascii_lowercase()));
+    }
+
+    Ok(())
+}
+
 pub async fn import_spatial_data(
     db: &Arc<Mutex<duckdb::Connection>>,
     source_id: &str,
@@ -606,6 +645,17 @@ pub async fn import_spatial_data(
         source_fields_contains_column(&conn, &escaped_path, "ogc_fid")
     };
 
+    // Drop synthetic reader columns before normalization/rename.
+    // Otherwise, later renames (e.g. "ogc fid" -> "ogc_fid") can collide with
+    // skipped synthetic columns that still physically exist in the table.
+    drop_synthetic_columns_before_normalization(
+        &conn,
+        &safe_table_name,
+        &mut columns,
+        source_has_id_column,
+        source_has_ogc_fid_column,
+    )?;
+
     for (name, data_type, ordinal) in &columns {
         let override_original_name = original_name_overrides
             .get(&name.to_ascii_lowercase())
@@ -613,21 +663,6 @@ pub async fn import_spatial_data(
         let original_name = override_original_name.unwrap_or_else(|| name.clone());
         let lower = name.to_ascii_lowercase();
         let original_lower = original_name.to_ascii_lowercase();
-
-        // GDAL readers may expose source-side feature ids (e.g. OGC_FID).
-        // Skip only when source metadata does not list a real ogc_fid attribute.
-        if lower == "ogc_fid" && should_skip_ogc_fid_column(source_has_ogc_fid_column) {
-            continue;
-        }
-
-        // DuckDB/GDAL may expose a synthetic feature-id `id` column for GeoJSON reads.
-        // Skip only when source metadata confirms `id` is not a source attribute.
-        if lower == "id"
-            && matches!(source_has_id_column, Some(false))
-            && is_all_null_column(&conn, &safe_table_name, name)?
-        {
-            continue;
-        }
 
         let is_reserved = original_lower == "fid" || original_lower == "geom";
 
@@ -827,9 +862,9 @@ fn normalize_column_name(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        choose_geojson_ogc_fid_workaround_key, is_retryable_st_read_error,
-        meta_fields_contains_column, rewrite_feature_ogc_fid_properties,
-        should_skip_ogc_fid_column,
+        choose_geojson_ogc_fid_workaround_key, drop_synthetic_columns_before_normalization,
+        is_retryable_st_read_error, meta_fields_contains_column,
+        rewrite_feature_ogc_fid_properties, should_skip_ogc_fid_column,
     };
 
     #[test]
@@ -928,5 +963,72 @@ mod tests {
         assert!(!should_skip_ogc_fid_column(Some(true)));
         assert!(should_skip_ogc_fid_column(Some(false)));
         assert!(!should_skip_ogc_fid_column(None));
+    }
+
+    #[test]
+    fn test_drop_synthetic_ogc_fid_column_allows_conflicting_rename() {
+        let conn = duckdb::Connection::open_in_memory().expect("in-memory duckdb");
+        conn.execute(
+            "CREATE TABLE \"layer_test\" (\"fid\" BIGINT, \"ogc_fid\" INTEGER, \"ogc fid\" INTEGER)",
+            [],
+        )
+        .expect("create table");
+
+        let mut columns = vec![
+            ("fid".to_string(), "BIGINT".to_string(), 1),
+            ("ogc_fid".to_string(), "INTEGER".to_string(), 2),
+            ("ogc fid".to_string(), "INTEGER".to_string(), 3),
+        ];
+
+        drop_synthetic_columns_before_normalization(
+            &conn,
+            "layer_test",
+            &mut columns,
+            Some(true),
+            Some(false),
+        )
+        .expect("drop synthetic columns");
+
+        conn.execute(
+            "ALTER TABLE \"layer_test\" RENAME COLUMN \"ogc fid\" TO \"ogc_fid\"",
+            [],
+        )
+        .expect("rename should succeed after dropping synthetic ogc_fid");
+    }
+
+    #[test]
+    fn test_drop_synthetic_all_null_id_column_allows_conflicting_rename() {
+        let conn = duckdb::Connection::open_in_memory().expect("in-memory duckdb");
+        conn.execute(
+            "CREATE TABLE \"layer_test\" (\"fid\" BIGINT, \"id\" INTEGER, \"id \" INTEGER)",
+            [],
+        )
+        .expect("create table");
+        conn.execute(
+            "INSERT INTO \"layer_test\" (\"fid\", \"id\", \"id \") VALUES (1, NULL, 99)",
+            [],
+        )
+        .expect("insert row");
+
+        let mut columns = vec![
+            ("fid".to_string(), "BIGINT".to_string(), 1),
+            ("id".to_string(), "INTEGER".to_string(), 2),
+            ("id ".to_string(), "INTEGER".to_string(), 3),
+        ];
+
+        drop_synthetic_columns_before_normalization(
+            &conn,
+            "layer_test",
+            &mut columns,
+            Some(false),
+            Some(true),
+        )
+        .expect("drop synthetic columns");
+
+        conn.execute(
+            "ALTER TABLE \"layer_test\" RENAME COLUMN \"id \" TO \"id\"",
+            [],
+        )
+        .expect("rename should succeed after dropping synthetic id");
     }
 }
