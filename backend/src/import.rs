@@ -31,7 +31,18 @@ fn is_geojson_like(file_path: &Path) -> bool {
         .and_then(|e| e.to_str())
         .map(|ext| {
             let ext = ext.to_ascii_lowercase();
-            ext == "geojson" || ext == "json"
+            ext == "geojson" || ext == "json" || ext == "geojsonl" || ext == "geojsons"
+        })
+        .unwrap_or(false)
+}
+
+fn is_geojson_sequence_like(file_path: &Path) -> bool {
+    file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| {
+            let ext = ext.to_ascii_lowercase();
+            ext == "geojsonl" || ext == "geojsons"
         })
         .unwrap_or(false)
 }
@@ -177,6 +188,10 @@ fn rewrite_geojson_ogc_fid_properties(
     file_path: &Path,
     source_id: &str,
 ) -> Result<Option<GeoJsonOgcFidWorkaround>, String> {
+    if is_geojson_sequence_like(file_path) {
+        return rewrite_geojson_sequence_ogc_fid_properties(file_path, source_id);
+    }
+
     let data = std::fs::read_to_string(file_path)
         .map_err(|e| format!("Failed to read GeoJSON for OGC_FID workaround: {}", e))?;
     let mut root: Value = serde_json::from_str(&data)
@@ -233,6 +248,166 @@ fn rewrite_geojson_ogc_fid_properties(
         .map_err(|e| format!("Failed to serialize rewritten GeoJSON: {}", e))?;
     std::fs::write(&temp_path, serialized)
         .map_err(|e| format!("Failed to write rewritten GeoJSON temp file: {}", e))?;
+
+    Ok(Some(GeoJsonOgcFidWorkaround {
+        temp_path,
+        original_name_overrides: overrides,
+    }))
+}
+
+fn choose_geojson_sequence_ogc_fid_workaround_key(features: &[Value]) -> String {
+    let mut candidate = "__mapflow_src_ogc_fid".to_string();
+    let mut suffix: usize = 2;
+    loop {
+        let mut conflict = false;
+        for feature in features {
+            let Some(props) = feature.get("properties").and_then(|v| v.as_object()) else {
+                continue;
+            };
+            if props.keys().any(|k| k.eq_ignore_ascii_case(&candidate)) {
+                conflict = true;
+                break;
+            }
+        }
+        if !conflict {
+            return candidate;
+        }
+        candidate = format!("__mapflow_src_ogc_fid_{suffix}");
+        suffix += 1;
+    }
+}
+
+enum GeoJsonSequenceKind {
+    NewlineDelimited,
+    RecordSeparator,
+}
+
+fn parse_geojson_sequence_records(data: &str) -> Result<(Vec<Value>, GeoJsonSequenceKind), String> {
+    if data.contains('\u{001e}') {
+        let mut records = Vec::new();
+        for (index, chunk) in data.split('\u{001e}').enumerate() {
+            if index == 0 && chunk.trim().is_empty() {
+                continue;
+            }
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let value: Value = serde_json::from_str(trimmed).map_err(|e| {
+                format!(
+                    "Failed to parse GeoJSON sequence record #{index} for OGC_FID workaround: {e}"
+                )
+            })?;
+            records.push(value);
+        }
+        return Ok((records, GeoJsonSequenceKind::RecordSeparator));
+    }
+
+    let mut records = Vec::new();
+    for (line_index, line) in data.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(trimmed).map_err(|e| {
+            format!(
+                "Failed to parse GeoJSONL line #{} for OGC_FID workaround: {}",
+                line_index + 1,
+                e
+            )
+        })?;
+        records.push(value);
+    }
+
+    Ok((records, GeoJsonSequenceKind::NewlineDelimited))
+}
+
+fn serialize_geojson_sequence_records(
+    records: &[Value],
+    kind: GeoJsonSequenceKind,
+) -> Result<Vec<u8>, String> {
+    let mut output = String::new();
+    match kind {
+        GeoJsonSequenceKind::RecordSeparator => {
+            for value in records {
+                let serialized = serde_json::to_string(value)
+                    .map_err(|e| format!("Failed to serialize GeoJSON sequence record: {e}"))?;
+                output.push('\u{001e}');
+                output.push_str(&serialized);
+                output.push('\n');
+            }
+        }
+        GeoJsonSequenceKind::NewlineDelimited => {
+            for value in records {
+                let serialized = serde_json::to_string(value)
+                    .map_err(|e| format!("Failed to serialize GeoJSONL record: {e}"))?;
+                output.push_str(&serialized);
+                output.push('\n');
+            }
+        }
+    }
+    Ok(output.into_bytes())
+}
+
+fn rewrite_geojson_sequence_ogc_fid_properties(
+    file_path: &Path,
+    source_id: &str,
+) -> Result<Option<GeoJsonOgcFidWorkaround>, String> {
+    let data = std::fs::read_to_string(file_path).map_err(|e| {
+        format!(
+            "Failed to read GeoJSON sequence for OGC_FID workaround: {}",
+            e
+        )
+    })?;
+    let (mut records, sequence_kind) = parse_geojson_sequence_records(&data)?;
+    if records.is_empty() {
+        return Ok(None);
+    }
+
+    let workaround_key = choose_geojson_sequence_ogc_fid_workaround_key(&records);
+    let mut changed = false;
+    let mut overrides: HashMap<String, String> = HashMap::new();
+
+    for record in &mut records {
+        let Some(record_obj) = record.as_object_mut() else {
+            continue;
+        };
+        let Some(props) = record_obj
+            .get_mut("properties")
+            .and_then(|v| v.as_object_mut())
+        else {
+            continue;
+        };
+        changed |= rewrite_feature_ogc_fid_properties(props, &workaround_key, &mut overrides);
+    }
+
+    if !changed {
+        return Ok(None);
+    }
+
+    let ext = file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "geojsonl".to_string());
+    let temp_name = format!(
+        "mapflow-import-{}-{}.{}",
+        source_id,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to compute temp file timestamp: {}", e))?
+            .as_nanos(),
+        ext
+    );
+    let temp_path = std::env::temp_dir().join(temp_name);
+    let serialized = serialize_geojson_sequence_records(&records, sequence_kind)?;
+    std::fs::write(&temp_path, serialized).map_err(|e| {
+        format!(
+            "Failed to write rewritten GeoJSON sequence temp file: {}",
+            e
+        )
+    })?;
 
     Ok(Some(GeoJsonOgcFidWorkaround {
         temp_path,
@@ -867,8 +1042,9 @@ fn normalize_column_name(name: &str) -> Option<String> {
 mod tests {
     use super::{
         choose_geojson_ogc_fid_workaround_key, drop_synthetic_columns_before_normalization,
-        is_retryable_st_read_error, meta_fields_contains_column,
-        rewrite_feature_ogc_fid_properties, should_skip_ogc_fid_column, ImportWorkaroundArtifacts,
+        is_geojson_like, is_retryable_st_read_error, meta_fields_contains_column,
+        rewrite_feature_ogc_fid_properties, rewrite_geojson_sequence_ogc_fid_properties,
+        should_skip_ogc_fid_column, ImportWorkaroundArtifacts,
     };
 
     #[test]
@@ -881,6 +1057,15 @@ mod tests {
     fn test_retryable_st_read_error_false_for_sql_error() {
         let err = "Binder Error: Referenced column \"geomx\" not found in FROM clause";
         assert!(!is_retryable_st_read_error(err));
+    }
+
+    #[test]
+    fn test_is_geojson_like_includes_sequence_extensions() {
+        assert!(is_geojson_like(std::path::Path::new("a.geojson")));
+        assert!(is_geojson_like(std::path::Path::new("a.json")));
+        assert!(is_geojson_like(std::path::Path::new("a.geojsonl")));
+        assert!(is_geojson_like(std::path::Path::new("a.geojsons")));
+        assert!(!is_geojson_like(std::path::Path::new("a.kml")));
     }
 
     #[test]
@@ -1016,6 +1201,37 @@ mod tests {
 
         assert!(!temp_file.exists(), "cleanup should remove temp file");
         assert!(!temp_dir.exists(), "cleanup should remove temp dir");
+    }
+
+    #[test]
+    fn test_rewrite_geojson_sequence_ogc_fid_properties_for_geojsonl() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let input_path = temp_dir.path().join("sample.geojsonl");
+        let content = r#"{"type":"Feature","properties":{"ogc_fid":123,"name":"A"},"geometry":{"type":"Point","coordinates":[0.0,0.0]}}"#;
+        std::fs::write(&input_path, format!("{content}\n")).expect("write geojsonl");
+
+        let rewritten = rewrite_geojson_sequence_ogc_fid_properties(&input_path, "sid")
+            .expect("rewrite should succeed")
+            .expect("rewrite should produce temp file");
+        let rewritten_data =
+            std::fs::read_to_string(&rewritten.temp_path).expect("read rewritten geojsonl");
+        assert!(
+            rewritten_data.contains("__mapflow_src_ogc_fid"),
+            "rewritten geojsonl should include workaround key"
+        );
+        assert_eq!(
+            rewritten
+                .original_name_overrides
+                .get("__mapflow_src_ogc_fid")
+                .cloned(),
+            Some("ogc_fid".to_string())
+        );
+        assert_eq!(
+            rewritten.temp_path.extension().and_then(|v| v.to_str()),
+            Some("geojsonl")
+        );
+
+        let _ = std::fs::remove_file(&rewritten.temp_path);
     }
 
     #[test]
