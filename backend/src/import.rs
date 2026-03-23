@@ -424,7 +424,9 @@ fn extract_shapefile_for_ogc_fid_workaround(
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| format!("Failed to read shapefile zip for OGC_FID workaround: {e}"))?;
 
-    let mut names: Vec<String> = Vec::new();
+    let mut candidate_component_exts: HashMap<(String, String), HashSet<String>> = HashMap::new();
+    let mut candidate_order: Vec<(String, String)> = Vec::new();
+    let mut seen_shp_candidates: HashSet<(String, String)> = HashSet::new();
     for index in 0..archive.len() {
         let entry = archive
             .by_index(index)
@@ -432,19 +434,54 @@ fn extract_shapefile_for_ogc_fid_workaround(
         if !entry.is_file() {
             continue;
         }
-        let Some(name) = Path::new(entry.name()).file_name() else {
+        let normalized = entry
+            .name()
+            .replace('\\', "/")
+            .trim_start_matches("./")
+            .trim_start_matches('/')
+            .to_ascii_lowercase();
+        let path = Path::new(&normalized);
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        names.push(name.to_string_lossy().to_ascii_lowercase());
+        let Some(ext) = Path::new(file_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+        else {
+            continue;
+        };
+        if ext != "shp" && ext != "shx" && ext != "dbf" {
+            continue;
+        }
+        let Some(base) = Path::new(file_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase())
+        else {
+            continue;
+        };
+        let dir = path
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("")
+            .trim_matches('/')
+            .to_string();
+        let candidate = (dir, base);
+        candidate_component_exts
+            .entry(candidate.clone())
+            .or_default()
+            .insert(ext.clone());
+        if ext == "shp" && seen_shp_candidates.insert(candidate.clone()) {
+            candidate_order.push(candidate);
+        }
     }
 
-    let shp_bases: Vec<String> = names
-        .iter()
-        .filter_map(|name| name.strip_suffix(".shp").map(|base| base.to_string()))
-        .collect();
-    let Some(base) = shp_bases.into_iter().find(|candidate| {
-        names.iter().any(|name| name == &format!("{candidate}.shx"))
-            && names.iter().any(|name| name == &format!("{candidate}.dbf"))
+    let Some((selected_dir, selected_base)) = candidate_order.into_iter().find(|candidate| {
+        let Some(exts) = candidate_component_exts.get(candidate) else {
+            return false;
+        };
+        exts.contains("shp") && exts.contains("shx") && exts.contains("dbf")
     }) else {
         return Ok(None);
     };
@@ -461,7 +498,6 @@ fn extract_shapefile_for_ogc_fid_workaround(
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create shapefile workaround dir: {e}"))?;
 
-    let prefix = format!("{base}.");
     let mut has_shp = false;
 
     for index in 0..archive.len() {
@@ -471,26 +507,42 @@ fn extract_shapefile_for_ogc_fid_workaround(
         if !entry.is_file() {
             continue;
         }
-        let Some(name) = Path::new(entry.name())
-            .file_name()
-            .and_then(|name| name.to_str())
+        let normalized = entry
+            .name()
+            .replace('\\', "/")
+            .trim_start_matches("./")
+            .trim_start_matches('/')
+            .to_ascii_lowercase();
+        let path = Path::new(&normalized);
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some(base) = Path::new(file_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase())
         else {
             continue;
         };
-        let lower = name.to_ascii_lowercase();
-        if !lower.starts_with(&prefix) {
+        let dir = path
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("")
+            .trim_matches('/')
+            .to_string();
+        if dir != selected_dir || base != selected_base {
             continue;
         }
 
-        let ext = Path::new(&lower)
+        let ext = Path::new(file_name)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
-            .to_string();
+            .to_ascii_lowercase();
         let out_name = if ext.is_empty() {
-            lower.clone()
+            selected_base.clone()
         } else {
-            format!("{base}.{ext}")
+            format!("{selected_base}.{ext}")
         };
         let out_path = temp_dir.join(out_name);
         if out_path.exists() {
@@ -511,7 +563,7 @@ fn extract_shapefile_for_ogc_fid_workaround(
         return Ok(None);
     }
 
-    let shp_path = temp_dir.join(format!("{base}.shp"));
+    let shp_path = temp_dir.join(format!("{selected_base}.shp"));
     Ok(Some(ShapefileOgcFidWorkaround { temp_dir, shp_path }))
 }
 
@@ -1042,9 +1094,10 @@ fn normalize_column_name(name: &str) -> Option<String> {
 mod tests {
     use super::{
         choose_geojson_ogc_fid_workaround_key, drop_synthetic_columns_before_normalization,
-        is_geojson_like, is_retryable_st_read_error, meta_fields_contains_column,
-        rewrite_feature_ogc_fid_properties, rewrite_geojson_sequence_ogc_fid_properties,
-        should_skip_ogc_fid_column, ImportWorkaroundArtifacts,
+        extract_shapefile_for_ogc_fid_workaround, is_geojson_like, is_retryable_st_read_error,
+        meta_fields_contains_column, rewrite_feature_ogc_fid_properties,
+        rewrite_geojson_sequence_ogc_fid_properties, should_skip_ogc_fid_column,
+        ImportWorkaroundArtifacts,
     };
 
     #[test]
@@ -1232,6 +1285,66 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&rewritten.temp_path);
+    }
+
+    #[test]
+    fn test_extract_shapefile_for_ogc_fid_workaround_preserves_directory_context() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let zip_path = temp_dir.path().join("duplicate-roads.zip");
+
+        {
+            let file = std::fs::File::create(&zip_path).expect("create zip");
+            let mut zip = zip::ZipWriter::new(file);
+            let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+
+            zip.start_file("a/roads.shp", options)
+                .expect("start a/roads.shp");
+            std::io::Write::write_all(&mut zip, b"A_SHP").expect("write a/roads.shp");
+
+            zip.start_file("b/roads.dbf", options)
+                .expect("start b/roads.dbf");
+            std::io::Write::write_all(&mut zip, b"B_DBF").expect("write b/roads.dbf");
+
+            zip.start_file("a/roads.shx", options)
+                .expect("start a/roads.shx");
+            std::io::Write::write_all(&mut zip, b"A_SHX").expect("write a/roads.shx");
+
+            zip.start_file("a/roads.dbf", options)
+                .expect("start a/roads.dbf");
+            std::io::Write::write_all(&mut zip, b"A_DBF").expect("write a/roads.dbf");
+
+            zip.start_file("b/roads.shp", options)
+                .expect("start b/roads.shp");
+            std::io::Write::write_all(&mut zip, b"B_SHP").expect("write b/roads.shp");
+
+            zip.start_file("b/roads.shx", options)
+                .expect("start b/roads.shx");
+            std::io::Write::write_all(&mut zip, b"B_SHX").expect("write b/roads.shx");
+
+            zip.finish().expect("finish zip");
+        }
+
+        let extracted = extract_shapefile_for_ogc_fid_workaround(&zip_path, "test-source")
+            .expect("extract should succeed")
+            .expect("workaround should find a candidate");
+
+        let shp_bytes = std::fs::read(extracted.temp_dir.join("roads.shp")).expect("read shp");
+        let shx_bytes = std::fs::read(extracted.temp_dir.join("roads.shx")).expect("read shx");
+        let dbf_bytes = std::fs::read(extracted.temp_dir.join("roads.dbf")).expect("read dbf");
+        assert_eq!(
+            shp_bytes, b"A_SHP",
+            "shp should come from the same directory as selected base"
+        );
+        assert_eq!(
+            shx_bytes, b"A_SHX",
+            "shx should come from the same directory as selected base"
+        );
+        assert_eq!(
+            dbf_bytes, b"A_DBF",
+            "dbf should come from the same directory as selected base"
+        );
+
+        let _ = std::fs::remove_dir_all(&extracted.temp_dir);
     }
 
     #[test]
