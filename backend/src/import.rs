@@ -103,6 +103,11 @@ impl Drop for ImportWorkaroundArtifacts {
     }
 }
 
+struct OgcFidRewritePlan {
+    variant_to_temp: HashMap<String, String>,
+    original_name_overrides: HashMap<String, String>,
+}
+
 fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
     let mut candidate = "__mapflow_src_ogc_fid".to_string();
     let mut suffix: usize = 2;
@@ -140,10 +145,65 @@ fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
     }
 }
 
+fn build_ogc_fid_rewrite_plan<'a, I>(
+    props_iter: I,
+    initial_workaround_key: &str,
+) -> Option<OgcFidRewritePlan>
+where
+    I: IntoIterator<Item = &'a serde_json::Map<String, Value>>,
+{
+    let mut variants_in_order: Vec<String> = Vec::new();
+    let mut seen_variants: HashSet<String> = HashSet::new();
+    let mut used_names: HashSet<String> = HashSet::new();
+
+    for props in props_iter {
+        for key in props.keys() {
+            if key.eq_ignore_ascii_case("ogc_fid") {
+                if seen_variants.insert(key.clone()) {
+                    variants_in_order.push(key.clone());
+                }
+            } else {
+                used_names.insert(key.to_ascii_lowercase());
+            }
+        }
+    }
+
+    if variants_in_order.is_empty() {
+        return None;
+    }
+
+    let mut variant_to_temp: HashMap<String, String> = HashMap::new();
+    let mut original_name_overrides: HashMap<String, String> = HashMap::new();
+    let mut candidate_index = 0usize;
+
+    for variant in variants_in_order {
+        loop {
+            let candidate = if candidate_index == 0 {
+                initial_workaround_key.to_string()
+            } else {
+                format!("{initial_workaround_key}_{}", candidate_index + 1)
+            };
+            candidate_index += 1;
+            let candidate_lower = candidate.to_ascii_lowercase();
+            if used_names.contains(&candidate_lower) {
+                continue;
+            }
+            used_names.insert(candidate_lower.clone());
+            variant_to_temp.insert(variant.clone(), candidate);
+            original_name_overrides.insert(candidate_lower, variant);
+            break;
+        }
+    }
+
+    Some(OgcFidRewritePlan {
+        variant_to_temp,
+        original_name_overrides,
+    })
+}
+
 fn rewrite_feature_ogc_fid_properties(
     props: &mut serde_json::Map<String, Value>,
-    workaround_key: &str,
-    original_name_overrides: &mut HashMap<String, String>,
+    variant_to_temp: &HashMap<String, String>,
 ) -> bool {
     let keys_to_replace: Vec<String> = props
         .keys()
@@ -154,34 +214,17 @@ fn rewrite_feature_ogc_fid_properties(
         return false;
     }
 
-    let mut removed: Vec<(String, Value)> = Vec::new();
+    let mut changed = false;
     for key in keys_to_replace {
-        if let Some(value) = props.remove(&key) {
-            removed.push((key, value));
-        }
-    }
-    if removed.is_empty() {
-        return false;
-    }
-
-    let mut next_suffix = 2usize;
-    for (index, (original_key, value)) in removed.into_iter().enumerate() {
-        let mut candidate = if index == 0 {
-            workaround_key.to_string()
-        } else {
-            let key = format!("{workaround_key}_{next_suffix}");
-            next_suffix += 1;
-            key
+        let Some(candidate) = variant_to_temp.get(&key) else {
+            continue;
         };
-        while props.keys().any(|k| k.eq_ignore_ascii_case(&candidate)) {
-            candidate = format!("{workaround_key}_{next_suffix}");
-            next_suffix += 1;
+        if let Some(value) = props.remove(&key) {
+            props.insert(candidate.clone(), value);
+            changed = true;
         }
-        original_name_overrides.insert(candidate.to_ascii_lowercase(), original_key);
-        props.insert(candidate, value);
     }
-
-    true
+    changed
 }
 
 fn rewrite_geojson_ogc_fid_properties(
@@ -205,8 +248,33 @@ fn rewrite_geojson_ogc_fid_properties(
     }
 
     let workaround_key = choose_geojson_ogc_fid_workaround_key(&root);
+    let plan = if is_feature_collection {
+        let Some(features) = root.get("features").and_then(|v| v.as_array()) else {
+            return Ok(None);
+        };
+        build_ogc_fid_rewrite_plan(
+            features.iter().filter_map(|feature| {
+                feature
+                    .as_object()
+                    .and_then(|obj| obj.get("properties"))
+                    .and_then(|v| v.as_object())
+            }),
+            &workaround_key,
+        )
+    } else {
+        let Some(props) = root.get("properties").and_then(|v| v.as_object()) else {
+            return Ok(None);
+        };
+        build_ogc_fid_rewrite_plan(std::iter::once(props), &workaround_key)
+    };
+    let Some(OgcFidRewritePlan {
+        variant_to_temp,
+        original_name_overrides: overrides,
+    }) = plan
+    else {
+        return Ok(None);
+    };
     let mut changed = false;
-    let mut overrides: HashMap<String, String> = HashMap::new();
 
     if is_feature_collection {
         let Some(features) = root.get_mut("features").and_then(|v| v.as_array_mut()) else {
@@ -222,13 +290,13 @@ fn rewrite_geojson_ogc_fid_properties(
             else {
                 continue;
             };
-            changed |= rewrite_feature_ogc_fid_properties(props, &workaround_key, &mut overrides);
+            changed |= rewrite_feature_ogc_fid_properties(props, &variant_to_temp);
         }
     } else {
         let Some(props) = root.get_mut("properties").and_then(|v| v.as_object_mut()) else {
             return Ok(None);
         };
-        changed = rewrite_feature_ogc_fid_properties(props, &workaround_key, &mut overrides);
+        changed = rewrite_feature_ogc_fid_properties(props, &variant_to_temp);
     }
 
     if !changed {
@@ -365,8 +433,22 @@ fn rewrite_geojson_sequence_ogc_fid_properties(
     }
 
     let workaround_key = choose_geojson_sequence_ogc_fid_workaround_key(&records);
+    let Some(OgcFidRewritePlan {
+        variant_to_temp,
+        original_name_overrides: overrides,
+    }) = build_ogc_fid_rewrite_plan(
+        records.iter().filter_map(|record| {
+            record
+                .as_object()
+                .and_then(|obj| obj.get("properties"))
+                .and_then(|v| v.as_object())
+        }),
+        &workaround_key,
+    )
+    else {
+        return Ok(None);
+    };
     let mut changed = false;
-    let mut overrides: HashMap<String, String> = HashMap::new();
 
     for record in &mut records {
         let Some(record_obj) = record.as_object_mut() else {
@@ -378,7 +460,7 @@ fn rewrite_geojson_sequence_ogc_fid_properties(
         else {
             continue;
         };
-        changed |= rewrite_feature_ogc_fid_properties(props, &workaround_key, &mut overrides);
+        changed |= rewrite_feature_ogc_fid_properties(props, &variant_to_temp);
     }
 
     if !changed {
@@ -1096,8 +1178,8 @@ mod tests {
         choose_geojson_ogc_fid_workaround_key, drop_synthetic_columns_before_normalization,
         extract_shapefile_for_ogc_fid_workaround, is_geojson_like, is_retryable_st_read_error,
         meta_fields_contains_column, rewrite_feature_ogc_fid_properties,
-        rewrite_geojson_sequence_ogc_fid_properties, should_skip_ogc_fid_column,
-        ImportWorkaroundArtifacts,
+        rewrite_geojson_ogc_fid_properties, rewrite_geojson_sequence_ogc_fid_properties,
+        should_skip_ogc_fid_column, ImportWorkaroundArtifacts,
     };
 
     #[test]
@@ -1182,22 +1264,16 @@ mod tests {
         props.insert("OGC_FID".to_string(), serde_json::json!(2));
         props.insert("name".to_string(), serde_json::json!("A"));
 
-        let mut overrides = std::collections::HashMap::new();
-        let changed =
-            rewrite_feature_ogc_fid_properties(&mut props, "__mapflow_src_ogc_fid", &mut overrides);
+        let mut variant_to_temp = std::collections::HashMap::new();
+        variant_to_temp.insert("ogc_fid".to_string(), "__mapflow_src_ogc_fid".to_string());
+        variant_to_temp.insert("OGC_FID".to_string(), "__mapflow_src_ogc_fid_2".to_string());
+        let changed = rewrite_feature_ogc_fid_properties(&mut props, &variant_to_temp);
         assert!(changed);
 
         assert!(props.contains_key("__mapflow_src_ogc_fid"));
         assert!(props.contains_key("__mapflow_src_ogc_fid_2"));
         assert!(!props.contains_key("ogc_fid"));
         assert!(!props.contains_key("OGC_FID"));
-
-        let mut override_values: Vec<String> = overrides.values().cloned().collect();
-        override_values.sort();
-        assert_eq!(
-            override_values,
-            vec!["OGC_FID".to_string(), "ogc_fid".to_string()]
-        );
     }
 
     #[test]
@@ -1283,6 +1359,98 @@ mod tests {
             rewritten.temp_path.extension().and_then(|v| v.to_str()),
             Some("geojsonl")
         );
+
+        let _ = std::fs::remove_file(&rewritten.temp_path);
+    }
+
+    #[test]
+    fn test_rewrite_geojson_ogc_fid_properties_uses_file_wide_variant_mapping() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let input_path = temp_dir.path().join("mixed-case.geojson");
+        let content = r#"{
+            "type":"FeatureCollection",
+            "features":[
+                {"type":"Feature","properties":{"OGC_FID":1},"geometry":{"type":"Point","coordinates":[0.0,0.0]}},
+                {"type":"Feature","properties":{"ogc_fid":2,"OGC_FID":3},"geometry":{"type":"Point","coordinates":[1.0,1.0]}}
+            ]
+        }"#;
+        std::fs::write(&input_path, content).expect("write geojson");
+
+        let rewritten = rewrite_geojson_ogc_fid_properties(&input_path, "sid")
+            .expect("rewrite should succeed")
+            .expect("rewrite should produce temp file");
+        let rewritten_json: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&rewritten.temp_path).expect("read rewritten geojson"),
+        )
+        .expect("parse rewritten geojson");
+
+        let upper_key = rewritten
+            .original_name_overrides
+            .iter()
+            .find_map(|(temp, original)| (original == "OGC_FID").then(|| temp.clone()))
+            .expect("expected mapping for OGC_FID");
+        let lower_key = rewritten
+            .original_name_overrides
+            .iter()
+            .find_map(|(temp, original)| (original == "ogc_fid").then(|| temp.clone()))
+            .expect("expected mapping for ogc_fid");
+
+        let features = rewritten_json["features"]
+            .as_array()
+            .expect("features should be array");
+        let props1 = features[0]["properties"]
+            .as_object()
+            .expect("feature 1 properties");
+        let props2 = features[1]["properties"]
+            .as_object()
+            .expect("feature 2 properties");
+
+        assert!(props1.contains_key(&upper_key));
+        assert!(!props1.contains_key(&lower_key));
+        assert!(props2.contains_key(&upper_key));
+        assert!(props2.contains_key(&lower_key));
+
+        let _ = std::fs::remove_file(&rewritten.temp_path);
+    }
+
+    #[test]
+    fn test_rewrite_geojson_sequence_ogc_fid_properties_uses_file_wide_variant_mapping() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let input_path = temp_dir.path().join("mixed-case.geojsonl");
+        let line1 = r#"{"type":"Feature","properties":{"OGC_FID":1},"geometry":{"type":"Point","coordinates":[0.0,0.0]}}"#;
+        let line2 = r#"{"type":"Feature","properties":{"ogc_fid":2,"OGC_FID":3},"geometry":{"type":"Point","coordinates":[1.0,1.0]}}"#;
+        std::fs::write(&input_path, format!("{line1}\n{line2}\n")).expect("write geojsonl");
+
+        let rewritten = rewrite_geojson_sequence_ogc_fid_properties(&input_path, "sid")
+            .expect("rewrite should succeed")
+            .expect("rewrite should produce temp file");
+        let rewritten_data =
+            std::fs::read_to_string(&rewritten.temp_path).expect("read rewritten geojsonl");
+
+        let upper_key = rewritten
+            .original_name_overrides
+            .iter()
+            .find_map(|(temp, original)| (original == "OGC_FID").then(|| temp.clone()))
+            .expect("expected mapping for OGC_FID");
+        let lower_key = rewritten
+            .original_name_overrides
+            .iter()
+            .find_map(|(temp, original)| (original == "ogc_fid").then(|| temp.clone()))
+            .expect("expected mapping for ogc_fid");
+
+        let mut rows = rewritten_data
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("parse row"));
+        let row1 = rows.next().expect("row1");
+        let row2 = rows.next().expect("row2");
+
+        let props1 = row1["properties"].as_object().expect("row1 properties");
+        let props2 = row2["properties"].as_object().expect("row2 properties");
+        assert!(props1.contains_key(&upper_key));
+        assert!(!props1.contains_key(&lower_key));
+        assert!(props2.contains_key(&upper_key));
+        assert!(props2.contains_key(&lower_key));
 
         let _ = std::fs::remove_file(&rewritten.temp_path);
     }
