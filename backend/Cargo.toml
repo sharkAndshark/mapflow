@@ -43,6 +43,7 @@ aes-gcm = "0.10"
 base64 = "0.22"
 rand = "0.8"
 sha2 = "0.10"
+pbf_font_tools = { version = "3.0", features = ["freetype"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console"] }

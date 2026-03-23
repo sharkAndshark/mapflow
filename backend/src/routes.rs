@@ -12,6 +12,10 @@ use tower_http::{
 use tower_sessions::SessionManagerLayer;
 
 use crate::{
+    font_handlers::{
+        delete_font, get_font, get_public_glyph, list_fonts, publish_font, unpublish_font,
+        upload_font,
+    },
     handlers::{
         check_is_initialized, get_feature_properties, get_file_schema, get_preview_meta,
         get_public_url, get_settings, health_check, list_files, publish_file, unpublish_file,
@@ -79,7 +83,11 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
             "/tiles/{slug}",
             get(get_public_pmtiles).head(head_public_pmtiles),
         )
-        .route("/tiles/{slug}/meta", get(get_public_tile_meta));
+        .route("/tiles/{slug}/meta", get(get_public_tile_meta))
+        .route(
+            "/fonts/{slug}/glyphs/{fontstack}/{*range}",
+            get(get_public_glyph),
+        );
 
     let mut api_router = Router::new()
         .route("/api/files", get(list_files))
@@ -137,7 +145,11 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .route(
             "/api/workspaces/{id}/members/{user_id}",
             delete(remove_member),
-        );
+        )
+        .route("/api/fonts", get(list_fonts).post(upload_font))
+        .route("/api/fonts/{id}", get(get_font).delete(delete_font))
+        .route("/api/fonts/{id}/publish", post(publish_font))
+        .route("/api/fonts/{id}/unpublish", post(unpublish_font));
 
     if with_auth {
         api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));

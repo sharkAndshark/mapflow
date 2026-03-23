@@ -19,6 +19,7 @@ import {
 } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
+import ResourcesPanel from './ResourcesPanel.jsx';
 
 const INITIAL_POSTGIS_FORM = {
   connectionName: '',
@@ -1386,6 +1387,7 @@ export default function App() {
   );
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [mainTab, setMainTab] = useState('data');
 
   useEffect(() => {
     loadFilesFailedMessageRef.current = t('app.loadFilesFailed');
@@ -1821,90 +1823,116 @@ export default function App() {
         </div>
       </header>
 
-      {errorMessage ? <div className="alert">{errorMessage}</div> : null}
-
       <section className="panel">
-        <div className="panel-header">
-          <h2>{t('app.dataSource')}</h2>
-          <span className="panel-meta">{t('app.supportedFormatsHint')}</span>
+        <div className="panel-tabs" role="tablist" style={{ borderBottom: '1px solid #e0e0e0' }}>
+          <button
+            type="button"
+            className={`tab-btn ${mainTab === 'data' ? 'active' : ''}`}
+            onClick={() => setMainTab('data')}
+            role="tab"
+            aria-selected={mainTab === 'data'}
+            aria-controls="main-tabpanel-data"
+            data-testid="main-tab-data"
+          >
+            {t('app.mainTabData', { defaultValue: '数据' })}
+          </button>
+          <button
+            type="button"
+            className={`tab-btn ${mainTab === 'resources' ? 'active' : ''}`}
+            onClick={() => setMainTab('resources')}
+            role="tab"
+            aria-selected={mainTab === 'resources'}
+            aria-controls="main-tabpanel-resources"
+            data-testid="main-tab-resources"
+          >
+            {t('app.mainTabResources', { defaultValue: '资源' })}
+          </button>
         </div>
 
-        <div className="panel-body">
-          <div className="list-area">
-            {isLoading ? (
-              <div className="empty">{t('app.loading')}</div>
-            ) : orderedFiles.length === 0 ? (
-              <div className="empty" data-testid="empty-state">
-                {t('app.noFiles')}
-              </div>
-            ) : (
-              <div className="table">
-                <div className="row head">
-                  <div>{t('fileList.name')}</div>
-                  <div>{t('fileList.type')}</div>
-                  <div>{t('fileList.size')}</div>
-                  <div>{t('fileList.uploadTime')}</div>
-                  <div>{t('fileList.status')}</div>
-                  <div></div>
+        {errorMessage ? <div className="alert">{errorMessage}</div> : null}
+
+        {mainTab === 'data' ? (
+          <div className="panel-body" role="tabpanel" id="main-tabpanel-data">
+            <div className="list-area">
+              {isLoading ? (
+                <div className="empty">{t('app.loading')}</div>
+              ) : orderedFiles.length === 0 ? (
+                <div className="empty" data-testid="empty-state">
+                  {t('app.noFiles')}
                 </div>
-                {orderedFiles.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`row ${selectedId === item.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedId(item.id)}
-                    aria-pressed={selectedId === item.id}
-                    data-testid={`file-row-${item.id}`}
-                    style={{ width: '100%' }}
-                  >
-                    <span>{item.name}</span>
-                    <span>
-                      {item.type}
-                      {item.tileSource === 'postgis' ? ' · PostGIS' : ''}
-                    </span>
-                    <span>{formatSize(item.size || 0)}</span>
-                    <span className="muted">
-                      {item.uploadedAt ? dateTimeFormatter.format(new Date(item.uploadedAt)) : '--'}
-                    </span>
-                    <span
-                      className={`status ${item.status || 'uploaded'}`}
-                      data-testid={`status-${item.status || 'uploaded'}`}
+              ) : (
+                <div className="table">
+                  <div className="row head">
+                    <div>{t('fileList.name')}</div>
+                    <div>{t('fileList.type')}</div>
+                    <div>{t('fileList.size')}</div>
+                    <div>{t('fileList.uploadTime')}</div>
+                    <div>{t('fileList.status')}</div>
+                    <div></div>
+                  </div>
+                  {orderedFiles.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`row ${selectedId === item.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedId(item.id)}
+                      aria-pressed={selectedId === item.id}
+                      data-testid={`file-row-${item.id}`}
+                      style={{ width: '100%' }}
                     >
-                      {getStatusLabel(t, item.status)}
-                    </span>
-                    <span>
-                      {item.status === 'ready' && (
-                        <a
-                          href={`/preview/${item.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn-text"
-                          title={t('fileList.viewInNewWindow')}
-                          data-testid="preview-link"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                          }}
-                        >
-                          {t('fileList.view')}
-                        </a>
-                      )}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+                      <span>{item.name}</span>
+                      <span>
+                        {item.type}
+                        {item.tileSource === 'postgis' ? ' · PostGIS' : ''}
+                      </span>
+                      <span>{formatSize(item.size || 0)}</span>
+                      <span className="muted">
+                        {item.uploadedAt
+                          ? dateTimeFormatter.format(new Date(item.uploadedAt))
+                          : '--'}
+                      </span>
+                      <span
+                        className={`status ${item.status || 'uploaded'}`}
+                        data-testid={`status-${item.status || 'uploaded'}`}
+                      >
+                        {getStatusLabel(t, item.status)}
+                      </span>
+                      <span>
+                        {item.status === 'ready' && (
+                          <a
+                            href={`/preview/${item.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-text"
+                            title={t('fileList.viewInNewWindow')}
+                            data-testid="preview-link"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            }}
+                          >
+                            {t('fileList.view')}
+                          </a>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          <div className="detail-area">
-            <DetailSidebar
-              file={selectedFile}
-              onZoomUpdate={handleZoomUpdate}
-              onPublish={handlePublish}
-              onUnpublish={handleUnpublish}
-              onUseAliasesUpdate={handleUseAliasesUpdate}
-            />
+            <div className="detail-area">
+              <DetailSidebar
+                file={selectedFile}
+                onZoomUpdate={handleZoomUpdate}
+                onPublish={handlePublish}
+                onUnpublish={handleUnpublish}
+                onUseAliasesUpdate={handleUseAliasesUpdate}
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <ResourcesPanel />
+        )}
       </section>
 
       {showPostgisModal && (

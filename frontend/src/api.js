@@ -305,3 +305,74 @@ export async function leaveWorkspace(workspaceId) {
   }
   return null;
 }
+
+export async function listFonts() {
+  const res = await fetchWithAuth('/api/fonts');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function uploadFont(file, onProgress) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetchWithAuth('/api/fonts', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function getFont(fontId) {
+  const res = await fetchWithAuth(`/api/fonts/${fontId}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function deleteFont(fontId) {
+  const res = await fetchWithAuth(`/api/fonts/${fontId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
+
+export async function publishFont(fontId, options = {}) {
+  const body = {};
+  if (options.slug) body.slug = options.slug;
+
+  const res = await fetchWithAuth(`/api/fonts/${fontId}/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function unpublishFont(fontId) {
+  const res = await fetchWithAuth(`/api/fonts/${fontId}/unpublish`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}

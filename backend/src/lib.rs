@@ -8,6 +8,8 @@ mod auth_routes;
 mod config;
 mod crs;
 mod db;
+mod font_handlers;
+mod font_processor;
 mod handlers;
 mod http_errors;
 mod import;

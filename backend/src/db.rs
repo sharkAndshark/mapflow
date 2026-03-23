@@ -531,6 +531,37 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     )
     .expect("Failed to create workspace tables");
 
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS fonts (
+            id VARCHAR PRIMARY KEY,
+            workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+            name VARCHAR NOT NULL,
+            fontstack VARCHAR NOT NULL,
+            family VARCHAR,
+            style VARCHAR,
+            original_path VARCHAR NOT NULL,
+            glyphs_path VARCHAR NOT NULL,
+            glyph_count INTEGER,
+            start_cp INTEGER,
+            end_cp INTEGER,
+            status VARCHAR NOT NULL DEFAULT 'processing',
+            error VARCHAR,
+            is_public BOOLEAN DEFAULT FALSE,
+            slug VARCHAR UNIQUE,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            published_at TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fonts_workspace
+            ON fonts(workspace_id);
+
+        CREATE INDEX IF NOT EXISTS idx_fonts_slug
+            ON fonts(slug);
+        ",
+    )
+    .expect("Failed to create fonts table");
+
     ensure_workspace_schema_and_backfill(&conn);
 
     conn
