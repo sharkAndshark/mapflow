@@ -61,6 +61,37 @@ struct ShapefileOgcFidWorkaround {
     shp_path: PathBuf,
 }
 
+#[derive(Default)]
+struct ImportWorkaroundArtifacts {
+    rewritten_geojson_path: Option<PathBuf>,
+    extracted_shapefile_dir: Option<PathBuf>,
+}
+
+impl ImportWorkaroundArtifacts {
+    fn set_rewritten_geojson_path(&mut self, path: PathBuf) {
+        self.rewritten_geojson_path = Some(path);
+    }
+
+    fn set_extracted_shapefile_dir(&mut self, path: PathBuf) {
+        self.extracted_shapefile_dir = Some(path);
+    }
+
+    fn cleanup(&mut self) {
+        if let Some(path) = self.rewritten_geojson_path.take() {
+            let _ = std::fs::remove_file(path);
+        }
+        if let Some(path) = self.extracted_shapefile_dir.take() {
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
+}
+
+impl Drop for ImportWorkaroundArtifacts {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
+}
+
 fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
     let mut candidate = "__mapflow_src_ogc_fid".to_string();
     let mut suffix: usize = 2;
@@ -409,8 +440,7 @@ pub async fn import_spatial_data(
     let escaped_path = escape_sql_string(&abs_path);
     let mut import_path_for_st_read = abs_path.clone();
     let mut original_name_overrides: HashMap<String, String> = HashMap::new();
-    let mut workaround_temp_path: Option<PathBuf> = None;
-    let mut workaround_temp_dir: Option<PathBuf> = None;
+    let mut workaround_artifacts = ImportWorkaroundArtifacts::default();
     let mut preserve_ogc_fid_from_workaround = false;
 
     let conn = db.lock().await;
@@ -453,8 +483,9 @@ pub async fn import_spatial_data(
         if is_geojson_like(file_path) {
             if let Some(workaround) = rewrite_geojson_ogc_fid_properties(file_path, source_id)? {
                 let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{safe_table_name}\""), []);
-                import_path_for_st_read = workaround.temp_path.to_string_lossy().to_string();
-                workaround_temp_path = Some(workaround.temp_path);
+                let temp_path = workaround.temp_path;
+                import_path_for_st_read = temp_path.to_string_lossy().to_string();
+                workaround_artifacts.set_rewritten_geojson_path(temp_path);
                 original_name_overrides = workaround.original_name_overrides;
                 preserve_ogc_fid_from_workaround = true;
 
@@ -462,17 +493,7 @@ pub async fn import_spatial_data(
                     "CREATE TABLE \"{safe_table_name}\" AS\n                     SELECT row_number() OVER ()::BIGINT AS fid, *\n                     FROM ST_Read('{}')",
                     escape_sql_string(&import_path_for_st_read)
                 );
-                if let Err(workaround_error) =
-                    execute_create_with_retry(&conn, &workaround_sql, source_id)
-                {
-                    if let Some(path) = workaround_temp_path.as_ref() {
-                        let _ = std::fs::remove_file(path);
-                    }
-                    if let Some(dir) = workaround_temp_dir.as_ref() {
-                        let _ = std::fs::remove_dir_all(dir);
-                    }
-                    return Err(workaround_error);
-                }
+                execute_create_with_retry(&conn, &workaround_sql, source_id)?;
             } else {
                 return Err(initial_error);
             }
@@ -482,24 +503,14 @@ pub async fn import_spatial_data(
             {
                 let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{safe_table_name}\""), []);
                 import_path_for_st_read = workaround.shp_path.to_string_lossy().to_string();
-                workaround_temp_dir = Some(workaround.temp_dir);
+                workaround_artifacts.set_extracted_shapefile_dir(workaround.temp_dir);
                 preserve_ogc_fid_from_workaround = true;
 
                 let workaround_sql = format!(
                     "CREATE TABLE \"{safe_table_name}\" AS\n                     SELECT row_number() OVER ()::BIGINT AS fid, *\n                     FROM ST_ReadSHP('{}')",
                     escape_sql_string(&import_path_for_st_read)
                 );
-                if let Err(workaround_error) =
-                    execute_create_with_retry(&conn, &workaround_sql, source_id)
-                {
-                    if let Some(path) = workaround_temp_path.as_ref() {
-                        let _ = std::fs::remove_file(path);
-                    }
-                    if let Some(dir) = workaround_temp_dir.as_ref() {
-                        let _ = std::fs::remove_dir_all(dir);
-                    }
-                    return Err(workaround_error);
-                }
+                execute_create_with_retry(&conn, &workaround_sql, source_id)?;
             } else {
                 return Err(initial_error);
             }
@@ -762,13 +773,6 @@ pub async fn import_spatial_data(
         }
     }
 
-    if let Some(path) = workaround_temp_path.as_ref() {
-        let _ = std::fs::remove_file(path);
-    }
-    if let Some(dir) = workaround_temp_dir.as_ref() {
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
     Ok(())
 }
 
@@ -864,7 +868,7 @@ mod tests {
     use super::{
         choose_geojson_ogc_fid_workaround_key, drop_synthetic_columns_before_normalization,
         is_retryable_st_read_error, meta_fields_contains_column,
-        rewrite_feature_ogc_fid_properties, should_skip_ogc_fid_column,
+        rewrite_feature_ogc_fid_properties, should_skip_ogc_fid_column, ImportWorkaroundArtifacts,
     };
 
     #[test]
@@ -963,6 +967,55 @@ mod tests {
         assert!(!should_skip_ogc_fid_column(Some(true)));
         assert!(should_skip_ogc_fid_column(Some(false)));
         assert!(!should_skip_ogc_fid_column(None));
+    }
+
+    fn make_unique_temp_path(prefix: &str) -> std::path::PathBuf {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}-{}-{ts}", std::process::id()))
+    }
+
+    #[test]
+    fn test_import_workaround_artifacts_drop_cleans_temp_paths() {
+        let temp_file = make_unique_temp_path("mapflow-import-temp-file");
+        std::fs::write(&temp_file, b"tmp").expect("create temp file");
+        let temp_dir = make_unique_temp_path("mapflow-import-temp-dir");
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        std::fs::write(temp_dir.join("data.txt"), b"tmp").expect("write temp dir file");
+
+        {
+            let mut artifacts = ImportWorkaroundArtifacts::default();
+            artifacts.set_rewritten_geojson_path(temp_file.clone());
+            artifacts.set_extracted_shapefile_dir(temp_dir.clone());
+        }
+
+        assert!(
+            !temp_file.exists(),
+            "rewritten GeoJSON temp file should be removed on drop"
+        );
+        assert!(
+            !temp_dir.exists(),
+            "extracted shapefile temp dir should be removed on drop"
+        );
+    }
+
+    #[test]
+    fn test_import_workaround_artifacts_cleanup_is_idempotent() {
+        let temp_file = make_unique_temp_path("mapflow-import-temp-file-idempotent");
+        std::fs::write(&temp_file, b"tmp").expect("create temp file");
+        let temp_dir = make_unique_temp_path("mapflow-import-temp-dir-idempotent");
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let mut artifacts = ImportWorkaroundArtifacts::default();
+        artifacts.set_rewritten_geojson_path(temp_file.clone());
+        artifacts.set_extracted_shapefile_dir(temp_dir.clone());
+        artifacts.cleanup();
+        artifacts.cleanup();
+
+        assert!(!temp_file.exists(), "cleanup should remove temp file");
+        assert!(!temp_dir.exists(), "cleanup should remove temp dir");
     }
 
     #[test]
