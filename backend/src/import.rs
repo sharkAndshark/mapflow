@@ -36,6 +36,14 @@ fn is_geojson_like(file_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_zip_like(file_path: &Path) -> bool {
+    file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("zip"))
+        .unwrap_or(false)
+}
+
 fn is_duplicate_ogc_fid_error(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("duplicate column name")
@@ -46,6 +54,11 @@ fn is_duplicate_ogc_fid_error(message: &str) -> bool {
 struct GeoJsonOgcFidWorkaround {
     temp_path: PathBuf,
     original_name_overrides: HashMap<String, String>,
+}
+
+struct ShapefileOgcFidWorkaround {
+    temp_dir: PathBuf,
+    shp_path: PathBuf,
 }
 
 fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
@@ -85,26 +98,47 @@ fn choose_geojson_ogc_fid_workaround_key(root: &Value) -> String {
     }
 }
 
-fn rewrite_feature_ogc_fid_property(
+fn rewrite_feature_ogc_fid_properties(
     props: &mut serde_json::Map<String, Value>,
     workaround_key: &str,
-    original_name: &mut Option<String>,
+    original_name_overrides: &mut HashMap<String, String>,
 ) -> bool {
-    let key_to_replace = props
+    let keys_to_replace: Vec<String> = props
         .keys()
-        .find(|k| k.eq_ignore_ascii_case("ogc_fid"))
-        .cloned();
-    let Some(key_to_replace) = key_to_replace else {
+        .filter(|k| k.eq_ignore_ascii_case("ogc_fid"))
+        .cloned()
+        .collect();
+    if keys_to_replace.is_empty() {
         return false;
-    };
-
-    let Some(value) = props.remove(&key_to_replace) else {
-        return false;
-    };
-    if original_name.is_none() {
-        *original_name = Some(key_to_replace);
     }
-    props.insert(workaround_key.to_string(), value);
+
+    let mut removed: Vec<(String, Value)> = Vec::new();
+    for key in keys_to_replace {
+        if let Some(value) = props.remove(&key) {
+            removed.push((key, value));
+        }
+    }
+    if removed.is_empty() {
+        return false;
+    }
+
+    let mut next_suffix = 2usize;
+    for (index, (original_key, value)) in removed.into_iter().enumerate() {
+        let mut candidate = if index == 0 {
+            workaround_key.to_string()
+        } else {
+            let key = format!("{workaround_key}_{next_suffix}");
+            next_suffix += 1;
+            key
+        };
+        while props.keys().any(|k| k.eq_ignore_ascii_case(&candidate)) {
+            candidate = format!("{workaround_key}_{next_suffix}");
+            next_suffix += 1;
+        }
+        original_name_overrides.insert(candidate.to_ascii_lowercase(), original_key);
+        props.insert(candidate, value);
+    }
+
     true
 }
 
@@ -126,7 +160,7 @@ fn rewrite_geojson_ogc_fid_properties(
 
     let workaround_key = choose_geojson_ogc_fid_workaround_key(&root);
     let mut changed = false;
-    let mut original_name: Option<String> = None;
+    let mut overrides: HashMap<String, String> = HashMap::new();
 
     if is_feature_collection {
         let Some(features) = root.get_mut("features").and_then(|v| v.as_array_mut()) else {
@@ -142,20 +176,19 @@ fn rewrite_geojson_ogc_fid_properties(
             else {
                 continue;
             };
-            changed |= rewrite_feature_ogc_fid_property(props, &workaround_key, &mut original_name);
+            changed |= rewrite_feature_ogc_fid_properties(props, &workaround_key, &mut overrides);
         }
     } else {
         let Some(props) = root.get_mut("properties").and_then(|v| v.as_object_mut()) else {
             return Ok(None);
         };
-        changed = rewrite_feature_ogc_fid_property(props, &workaround_key, &mut original_name);
+        changed = rewrite_feature_ogc_fid_properties(props, &workaround_key, &mut overrides);
     }
 
     if !changed {
         return Ok(None);
     }
 
-    let original_name = original_name.unwrap_or_else(|| "ogc_fid".to_string());
     let temp_name = format!(
         "mapflow-import-{}-{}.geojson",
         source_id,
@@ -170,12 +203,110 @@ fn rewrite_geojson_ogc_fid_properties(
     std::fs::write(&temp_path, serialized)
         .map_err(|e| format!("Failed to write rewritten GeoJSON temp file: {}", e))?;
 
-    let mut overrides = HashMap::new();
-    overrides.insert(workaround_key.to_ascii_lowercase(), original_name);
     Ok(Some(GeoJsonOgcFidWorkaround {
         temp_path,
         original_name_overrides: overrides,
     }))
+}
+
+fn extract_shapefile_for_ogc_fid_workaround(
+    file_path: &Path,
+    source_id: &str,
+) -> Result<Option<ShapefileOgcFidWorkaround>, String> {
+    let file = std::fs::File::open(file_path)
+        .map_err(|e| format!("Failed to open shapefile zip for OGC_FID workaround: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Failed to read shapefile zip for OGC_FID workaround: {e}"))?;
+
+    let mut names: Vec<String> = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|e| format!("Failed to inspect shapefile zip entry: {e}"))?;
+        if !entry.is_file() {
+            continue;
+        }
+        let Some(name) = Path::new(entry.name()).file_name() else {
+            continue;
+        };
+        names.push(name.to_string_lossy().to_ascii_lowercase());
+    }
+
+    let shp_bases: Vec<String> = names
+        .iter()
+        .filter_map(|name| name.strip_suffix(".shp").map(|base| base.to_string()))
+        .collect();
+    let Some(base) = shp_bases.into_iter().find(|candidate| {
+        names.iter().any(|name| name == &format!("{candidate}.shx"))
+            && names.iter().any(|name| name == &format!("{candidate}.dbf"))
+    }) else {
+        return Ok(None);
+    };
+
+    let temp_dir_name = format!(
+        "mapflow-import-{}-{}",
+        source_id,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to compute temp dir timestamp: {e}"))?
+            .as_nanos()
+    );
+    let temp_dir = std::env::temp_dir().join(temp_dir_name);
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create shapefile workaround dir: {e}"))?;
+
+    let prefix = format!("{base}.");
+    let mut has_shp = false;
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|e| format!("Failed to read shapefile zip entry: {e}"))?;
+        if !entry.is_file() {
+            continue;
+        }
+        let Some(name) = Path::new(entry.name())
+            .file_name()
+            .and_then(|name| name.to_str())
+        else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        if !lower.starts_with(&prefix) {
+            continue;
+        }
+
+        let ext = Path::new(&lower)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_string();
+        let out_name = if ext.is_empty() {
+            lower.clone()
+        } else {
+            format!("{base}.{ext}")
+        };
+        let out_path = temp_dir.join(out_name);
+        if out_path.exists() {
+            continue;
+        }
+
+        let mut out_file = std::fs::File::create(&out_path)
+            .map_err(|e| format!("Failed to create shapefile workaround entry: {e}"))?;
+        std::io::copy(&mut entry, &mut out_file)
+            .map_err(|e| format!("Failed to extract shapefile workaround entry: {e}"))?;
+        if ext.eq_ignore_ascii_case("shp") {
+            has_shp = true;
+        }
+    }
+
+    if !has_shp {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Ok(None);
+    }
+
+    let shp_path = temp_dir.join(format!("{base}.shp"));
+    Ok(Some(ShapefileOgcFidWorkaround { temp_dir, shp_path }))
 }
 
 fn meta_fields_contains_column(fields_json: &str, target_column: &str) -> Option<bool> {
@@ -240,6 +371,8 @@ pub async fn import_spatial_data(
     let mut import_path_for_st_read = abs_path.clone();
     let mut original_name_overrides: HashMap<String, String> = HashMap::new();
     let mut workaround_temp_path: Option<PathBuf> = None;
+    let mut workaround_temp_dir: Option<PathBuf> = None;
+    let mut preserve_ogc_fid_from_workaround = false;
 
     let conn = db.lock().await;
 
@@ -274,12 +407,17 @@ pub async fn import_spatial_data(
     );
 
     if let Err(initial_error) = execute_create_with_retry(&conn, &create_sql, source_id) {
-        if is_duplicate_ogc_fid_error(&initial_error) && is_geojson_like(file_path) {
+        if !is_duplicate_ogc_fid_error(&initial_error) {
+            return Err(initial_error);
+        }
+
+        if is_geojson_like(file_path) {
             if let Some(workaround) = rewrite_geojson_ogc_fid_properties(file_path, source_id)? {
                 let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{safe_table_name}\""), []);
                 import_path_for_st_read = workaround.temp_path.to_string_lossy().to_string();
                 workaround_temp_path = Some(workaround.temp_path);
                 original_name_overrides = workaround.original_name_overrides;
+                preserve_ogc_fid_from_workaround = true;
 
                 let workaround_sql = format!(
                     "CREATE TABLE \"{safe_table_name}\" AS\n                     SELECT row_number() OVER ()::BIGINT AS fid, *\n                     FROM ST_Read('{}')",
@@ -290,6 +428,36 @@ pub async fn import_spatial_data(
                 {
                     if let Some(path) = workaround_temp_path.as_ref() {
                         let _ = std::fs::remove_file(path);
+                    }
+                    if let Some(dir) = workaround_temp_dir.as_ref() {
+                        let _ = std::fs::remove_dir_all(dir);
+                    }
+                    return Err(workaround_error);
+                }
+            } else {
+                return Err(initial_error);
+            }
+        } else if is_zip_like(file_path) {
+            if let Some(workaround) =
+                extract_shapefile_for_ogc_fid_workaround(file_path, source_id)?
+            {
+                let _ = conn.execute(&format!("DROP TABLE IF EXISTS \"{safe_table_name}\""), []);
+                import_path_for_st_read = workaround.shp_path.to_string_lossy().to_string();
+                workaround_temp_dir = Some(workaround.temp_dir);
+                preserve_ogc_fid_from_workaround = true;
+
+                let workaround_sql = format!(
+                    "CREATE TABLE \"{safe_table_name}\" AS\n                     SELECT row_number() OVER ()::BIGINT AS fid, *\n                     FROM ST_ReadSHP('{}')",
+                    escape_sql_string(&import_path_for_st_read)
+                );
+                if let Err(workaround_error) =
+                    execute_create_with_retry(&conn, &workaround_sql, source_id)
+                {
+                    if let Some(path) = workaround_temp_path.as_ref() {
+                        let _ = std::fs::remove_file(path);
+                    }
+                    if let Some(dir) = workaround_temp_dir.as_ref() {
+                        let _ = std::fs::remove_dir_all(dir);
                     }
                     return Err(workaround_error);
                 }
@@ -432,7 +600,11 @@ pub async fn import_spatial_data(
     // Use source metadata to distinguish synthetic `id` from real source attributes.
     // If metadata is unavailable, we preserve `id` to avoid silently dropping user columns.
     let source_has_id_column = source_fields_contains_column(&conn, &escaped_path, "id");
-    let source_has_ogc_fid_column = source_fields_contains_column(&conn, &escaped_path, "ogc_fid");
+    let source_has_ogc_fid_column = if preserve_ogc_fid_from_workaround {
+        Some(true)
+    } else {
+        source_fields_contains_column(&conn, &escaped_path, "ogc_fid")
+    };
 
     for (name, data_type, ordinal) in &columns {
         let override_original_name = original_name_overrides
@@ -558,6 +730,9 @@ pub async fn import_spatial_data(
     if let Some(path) = workaround_temp_path.as_ref() {
         let _ = std::fs::remove_file(path);
     }
+    if let Some(dir) = workaround_temp_dir.as_ref() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     Ok(())
 }
@@ -653,7 +828,8 @@ fn normalize_column_name(name: &str) -> Option<String> {
 mod tests {
     use super::{
         choose_geojson_ogc_fid_workaround_key, is_retryable_st_read_error,
-        meta_fields_contains_column, should_skip_ogc_fid_column,
+        meta_fields_contains_column, rewrite_feature_ogc_fid_properties,
+        should_skip_ogc_fid_column,
     };
 
     #[test]
@@ -720,6 +896,31 @@ mod tests {
         });
         let key = choose_geojson_ogc_fid_workaround_key(&root);
         assert_eq!(key, "__mapflow_src_ogc_fid_2");
+    }
+
+    #[test]
+    fn test_rewrite_feature_ogc_fid_properties_rewrites_all_case_variants() {
+        let mut props = serde_json::Map::new();
+        props.insert("ogc_fid".to_string(), serde_json::json!(1));
+        props.insert("OGC_FID".to_string(), serde_json::json!(2));
+        props.insert("name".to_string(), serde_json::json!("A"));
+
+        let mut overrides = std::collections::HashMap::new();
+        let changed =
+            rewrite_feature_ogc_fid_properties(&mut props, "__mapflow_src_ogc_fid", &mut overrides);
+        assert!(changed);
+
+        assert!(props.contains_key("__mapflow_src_ogc_fid"));
+        assert!(props.contains_key("__mapflow_src_ogc_fid_2"));
+        assert!(!props.contains_key("ogc_fid"));
+        assert!(!props.contains_key("OGC_FID"));
+
+        let mut override_values: Vec<String> = overrides.values().cloned().collect();
+        override_values.sort();
+        assert_eq!(
+            override_values,
+            vec!["OGC_FID".to_string(), "ogc_fid".to_string()]
+        );
     }
 
     #[test]
