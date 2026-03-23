@@ -958,6 +958,835 @@ async fn test_feature_properties_endpoint_returns_null_for_missing_values() {
 }
 
 #[tokio::test]
+async fn test_all_null_id_property_is_preserved_in_schema_and_feature_properties() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "id": null,
+                    "name": "A"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            },
+            {
+                "type": "Feature",
+                "properties": {
+                    "id": null,
+                    "name": "B"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [1.0, 1.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryIDNULL";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"id-null.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+
+    let mut found_id_field = false;
+    let mut found_name_field = false;
+    for field in fields {
+        if field["name"] == "id" {
+            found_id_field = true;
+        }
+        if field["name"] == "name" {
+            found_name_field = true;
+        }
+    }
+    assert!(
+        found_id_field,
+        "Expected schema to preserve source property field `id` even when all values are NULL"
+    );
+    assert!(found_name_field, "Expected schema to include `name` field");
+
+    let feature_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let feature_response = app.oneshot(feature_request).await.unwrap();
+    assert_eq!(feature_response.status(), axum::http::StatusCode::OK);
+    let feature_body = feature_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let feature_json: serde_json::Value = serde_json::from_slice(&feature_body).unwrap();
+    let props = feature_json["properties"]
+        .as_array()
+        .expect("properties should be array");
+
+    let mut saw_id = false;
+    let mut saw_name = false;
+    for p in props {
+        let key = p["key"].as_str().unwrap_or("");
+        if key == "id" {
+            saw_id = true;
+            assert!(p["value"].is_null(), "Expected id value to be JSON null");
+        }
+        if key == "name" {
+            saw_name = true;
+            assert_eq!(p["value"], "A");
+        }
+    }
+    assert!(saw_id, "Expected feature properties to include key `id`");
+    assert!(
+        saw_name,
+        "Expected feature properties to include key `name`"
+    );
+}
+
+#[tokio::test]
+async fn test_geojson_with_ogc_fid_property_imports_successfully() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "ogc_fid": 123,
+                    "name": "A"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryOGCFID";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ogc-fid.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+
+    let mut found_ogc_fid = false;
+    let mut found_name = false;
+    for field in fields {
+        if field["name"] == "ogc_fid" {
+            found_ogc_fid = true;
+        }
+        if field["name"] == "name" {
+            found_name = true;
+        }
+    }
+    assert!(
+        found_ogc_fid,
+        "Expected schema to include real source property `ogc_fid`"
+    );
+    assert!(found_name, "Expected schema to include `name`");
+
+    let feature_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let feature_response = app.oneshot(feature_request).await.unwrap();
+    assert_eq!(feature_response.status(), axum::http::StatusCode::OK);
+    let feature_body = feature_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let feature_json: serde_json::Value = serde_json::from_slice(&feature_body).unwrap();
+    let props = feature_json["properties"]
+        .as_array()
+        .expect("properties should be array");
+
+    let mut saw_ogc_fid = false;
+    let mut saw_name = false;
+    for p in props {
+        let key = p["key"].as_str().unwrap_or("");
+        if key == "ogc_fid" {
+            saw_ogc_fid = true;
+            assert_eq!(p["value"], 123);
+        }
+        if key == "name" {
+            saw_name = true;
+            assert_eq!(p["value"], "A");
+        }
+    }
+    assert!(
+        saw_ogc_fid,
+        "Expected feature properties to include `ogc_fid`"
+    );
+    assert!(saw_name, "Expected feature properties to include `name`");
+}
+
+#[tokio::test]
+async fn test_geojson_ogc_fid_workaround_handles_case_variant_placeholder_key() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "ogc_fid": 123,
+                    "__MAPFLOW_SRC_OGC_FID": "existing",
+                    "name": "A"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryOGCFIDCASE";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ogc-fid-case.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_top_level_geojson_feature_with_ogc_fid_imports_successfully() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "Feature",
+        "properties": {
+            "ogc_fid": 456,
+            "name": "Single"
+        },
+        "geometry": {
+            "type": "Point",
+            "coordinates": [1.0, 2.0]
+        }
+    }"#;
+
+    let boundary = "------------------------boundaryTopLevelFeatureOGCFID";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"single-feature-ogc-fid.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+
+    let mut found_ogc_fid = false;
+    let mut found_name = false;
+    for field in fields {
+        if field["name"] == "ogc_fid" {
+            found_ogc_fid = true;
+        }
+        if field["name"] == "name" {
+            found_name = true;
+        }
+    }
+    assert!(
+        found_ogc_fid,
+        "Expected schema to include real source property `ogc_fid` for top-level Feature"
+    );
+    assert!(found_name, "Expected schema to include `name`");
+
+    let feature_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let feature_response = app.oneshot(feature_request).await.unwrap();
+    assert_eq!(feature_response.status(), axum::http::StatusCode::OK);
+    let feature_body = feature_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let feature_json: serde_json::Value = serde_json::from_slice(&feature_body).unwrap();
+    let props = feature_json["properties"]
+        .as_array()
+        .expect("properties should be array");
+
+    let mut saw_ogc_fid = false;
+    let mut saw_name = false;
+    for p in props {
+        let key = p["key"].as_str().unwrap_or("");
+        if key == "ogc_fid" {
+            saw_ogc_fid = true;
+            assert_eq!(p["value"], 456);
+        }
+        if key == "name" {
+            saw_name = true;
+            assert_eq!(p["value"], "Single");
+        }
+    }
+    assert!(
+        saw_ogc_fid,
+        "Expected feature properties to include `ogc_fid` for top-level Feature"
+    );
+    assert!(saw_name, "Expected feature properties to include `name`");
+}
+
+#[tokio::test]
+async fn test_geojsonl_with_ogc_fid_property_imports_successfully() {
+    let (app, _temp) = setup_app().await;
+
+    let geojsonl_content = r#"{"type":"Feature","properties":{"ogc_fid":321,"name":"LineOne"},"geometry":{"type":"Point","coordinates":[10.0,20.0]}}"#;
+    let boundary = "------------------------boundaryOGCFIDGeoJSONL";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ogc-fid.geojsonl\"\r\n\r\n{geojsonl_content}\n\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+
+    let mut found_ogc_fid = false;
+    let mut found_name = false;
+    for field in fields {
+        if field["name"] == "ogc_fid" {
+            found_ogc_fid = true;
+        }
+        if field["name"] == "name" {
+            found_name = true;
+        }
+    }
+    assert!(
+        found_ogc_fid,
+        "Expected schema to include source property `ogc_fid` for GeoJSONL"
+    );
+    assert!(found_name, "Expected schema to include `name`");
+
+    let feature_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let feature_response = app.oneshot(feature_request).await.unwrap();
+    assert_eq!(feature_response.status(), axum::http::StatusCode::OK);
+    let feature_body = feature_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let feature_json: serde_json::Value = serde_json::from_slice(&feature_body).unwrap();
+    let props = feature_json["properties"]
+        .as_array()
+        .expect("properties should be array");
+
+    let mut saw_ogc_fid = false;
+    let mut saw_name = false;
+    for p in props {
+        let key = p["key"].as_str().unwrap_or("");
+        if key == "ogc_fid" {
+            saw_ogc_fid = true;
+            assert_eq!(p["value"], 321);
+        }
+        if key == "name" {
+            saw_name = true;
+            assert_eq!(p["value"], "LineOne");
+        }
+    }
+    assert!(
+        saw_ogc_fid,
+        "Expected feature properties to include `ogc_fid` for GeoJSONL"
+    );
+    assert!(saw_name, "Expected feature properties to include `name`");
+}
+
+#[tokio::test]
+async fn test_geojson_with_multiple_ogc_fid_case_variants_imports_successfully() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "ogc_fid": 123,
+                    "OGC_FID": 456,
+                    "name": "A"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryOGCFIDMULTI";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ogc-fid-multi.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+
+    let ogc_like_count = fields
+        .iter()
+        .filter_map(|field| field["name"].as_str())
+        .filter(|name| name.starts_with("ogc_fid"))
+        .count();
+    assert!(
+        ogc_like_count >= 1,
+        "Expected schema to include at least one ogc_fid* field after variant rewrite"
+    );
+}
+
+#[tokio::test]
+async fn test_geojson_with_ogc_fid_like_property_name_imports_without_collision() {
+    let (app, _temp) = setup_app().await;
+
+    let geojson_content = r#"{
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "ogc fid": 789,
+                    "name": "SpaceKey"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [3.0, 4.0]
+                }
+            }
+        ]
+    }"#;
+
+    let boundary = "------------------------boundaryOGCFIDLikeName";
+    let body_data = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ogc-fid-like-name.geojson\"\r\n\r\n{geojson_content}\r\n--{boundary}--\r\n"
+    );
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_data))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    assert_eq!(upload_response.status(), axum::http::StatusCode::CREATED);
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&upload_body).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+    let field_names: Vec<String> = fields
+        .iter()
+        .filter_map(|field| field["name"].as_str().map(|s| s.to_string()))
+        .collect();
+
+    let mut found_ogc_fid_source_name = false;
+    let mut found_name = false;
+    for field in fields {
+        if field["name"] == "ogc fid" {
+            found_ogc_fid_source_name = true;
+        }
+        if field["name"] == "name" {
+            found_name = true;
+        }
+    }
+    assert!(
+        found_ogc_fid_source_name,
+        "Expected schema to preserve source key `ogc fid`, got fields={field_names:?}"
+    );
+    assert!(found_name, "Expected schema to include `name`");
+
+    let feature_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let feature_response = app.oneshot(feature_request).await.unwrap();
+    assert_eq!(feature_response.status(), axum::http::StatusCode::OK);
+    let feature_body = feature_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let feature_json: serde_json::Value = serde_json::from_slice(&feature_body).unwrap();
+    let props = feature_json["properties"]
+        .as_array()
+        .expect("properties should be array");
+
+    let mut saw_ogc_fid_source_name = false;
+    let mut saw_name = false;
+    for p in props {
+        let key = p["key"].as_str().unwrap_or("");
+        if key == "ogc fid" {
+            saw_ogc_fid_source_name = true;
+            assert_eq!(p["value"], 789);
+        }
+        if key == "name" {
+            saw_name = true;
+            assert_eq!(p["value"], "SpaceKey");
+        }
+    }
+    assert!(
+        saw_ogc_fid_source_name,
+        "Expected feature properties to include source key `ogc fid`"
+    );
+    assert!(saw_name, "Expected feature properties to include `name`");
+}
+
+#[tokio::test]
+async fn test_shapefile_zip_with_ogc_fid_field_imports_successfully() {
+    let (app, _temp) = setup_app().await;
+    let zip_bytes = read_fixture_bytes("frontend/tests/fixtures/ogcfid_collision.zip");
+    assert!(
+        !zip_bytes.is_empty(),
+        "ogcfid_collision.zip should not be empty"
+    );
+
+    let boundary = "------------------------boundaryShpOgcFid";
+    let body = multipart_body(boundary, "ogcfid_collision.zip", &zip_bytes);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/uploads")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let file_item: FileItem = serde_json::from_slice(&body_bytes).unwrap();
+    let file_id = file_item.id;
+
+    let _ready_item = wait_until_ready(&app, &file_id).await;
+
+    let schema_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/schema", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let schema_response = app.clone().oneshot(schema_request).await.unwrap();
+    assert_eq!(schema_response.status(), axum::http::StatusCode::OK);
+    let schema_body = schema_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema_body).unwrap();
+    let fields = schema_json["layers"][0]["fields"]
+        .as_array()
+        .expect("fields should be array");
+    let field_names: Vec<String> = fields
+        .iter()
+        .filter_map(|field| field["name"].as_str().map(|s| s.to_string()))
+        .collect();
+    let has_ogc_fid = field_names
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case("ogc_fid"));
+    assert!(
+        has_ogc_fid,
+        "Expected schema to preserve shapefile source field `ogc_fid`, got fields={field_names:?}"
+    );
+
+    let feature_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/files/{}/features/1", file_id))
+        .body(Body::empty())
+        .unwrap();
+    let feature_response = app.oneshot(feature_request).await.unwrap();
+    assert_eq!(feature_response.status(), axum::http::StatusCode::OK);
+    let feature_body = feature_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let feature_json: serde_json::Value = serde_json::from_slice(&feature_body).unwrap();
+    let props = feature_json["properties"]
+        .as_array()
+        .expect("properties should be array");
+
+    let mut saw_ogc_fid = false;
+    for p in props {
+        let key = p["key"].as_str().unwrap_or_default();
+        if key.eq_ignore_ascii_case("ogc_fid") {
+            saw_ogc_fid = true;
+            assert_eq!(p["value"], 123);
+        }
+    }
+    assert!(
+        saw_ogc_fid,
+        "Expected feature properties to include `ogc_fid` for shapefile fallback"
+    );
+}
+
+#[tokio::test]
 async fn test_schema_endpoint_returns_fields_and_types() {
     let (app, _temp) = setup_app().await;
 

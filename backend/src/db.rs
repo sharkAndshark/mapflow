@@ -20,6 +20,7 @@ const SPATIAL_EXTENSION_FILENAME: &str = "spatial.duckdb_extension";
 const DEFAULT_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "extensions/spatial.duckdb_extension";
 const DEV_SPATIAL_EXTENSION_RELATIVE_PATH: &str = "backend/extensions/spatial.duckdb_extension";
 const WAL_RECOVERY_STRICT_ENV: &str = "WAL_RECOVERY_STRICT";
+const STORAGE_COMPATIBILITY_VERSION: &str = "v1.5.0";
 
 #[cfg(feature = "embed-spatial-extension")]
 const SPATIAL_EXTENSION_CACHE_DIR_ENV: &str = "SPATIAL_EXTENSION_CACHE_DIR";
@@ -30,8 +31,16 @@ static EMBEDDED_SPATIAL_EXTENSION: &[u8] = include_bytes!(concat!(
     "/extensions/spatial.duckdb_extension"
 ));
 
+fn open_with_storage_compatibility(db_path: &Path) -> Result<duckdb::Connection, duckdb::Error> {
+    let config = duckdb::Config::default().with(
+        "storage_compatibility_version",
+        STORAGE_COMPATIBILITY_VERSION,
+    )?;
+    duckdb::Connection::open_with_flags(db_path, config)
+}
+
 fn open_with_wal_recovery(db_path: &Path) -> Result<duckdb::Connection, String> {
-    match duckdb::Connection::open(db_path) {
+    match open_with_storage_compatibility(db_path) {
         Ok(conn) => Ok(conn),
         Err(e) => {
             let err_str = e.to_string();
@@ -613,7 +622,7 @@ fn recover_after_wal_open_error(
         "Isolated WAL file; retrying database open"
     );
 
-    duckdb::Connection::open(db_path).map_err(|retry_err| {
+    open_with_storage_compatibility(db_path).map_err(|retry_err| {
         format!(
             "Database open still failed after WAL isolation. db_path={}, wal_path={}, \
              wal_backup_path={}, original_error={}, retry_error={}",
