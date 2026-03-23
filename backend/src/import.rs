@@ -349,7 +349,7 @@ fn source_fields_contains_column(
 }
 
 fn should_skip_ogc_fid_column(source_has_ogc_fid: Option<bool>) -> bool {
-    !matches!(source_has_ogc_fid, Some(true))
+    matches!(source_has_ogc_fid, Some(false))
 }
 
 pub async fn import_spatial_data(
@@ -927,6 +927,6 @@ mod tests {
     fn test_should_skip_ogc_fid_column_only_when_source_lacks_it() {
         assert!(!should_skip_ogc_fid_column(Some(true)));
         assert!(should_skip_ogc_fid_column(Some(false)));
-        assert!(should_skip_ogc_fid_column(None));
+        assert!(!should_skip_ogc_fid_column(None));
     }
 }
