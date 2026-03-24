@@ -44,7 +44,11 @@ fn multipart_body(boundary: &str, filename: &str, bytes: &[u8]) -> Vec<u8> {
     body
 }
 
-async fn setup_app() -> (axum::Router, TempDir) {
+async fn setup_app() -> (
+    axum::Router,
+    TempDir,
+    Arc<tokio::sync::Mutex<duckdb::Connection>>,
+) {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");
     let upload_dir = temp_dir.path().join("uploads");
@@ -68,7 +72,52 @@ async fn setup_app() -> (axum::Router, TempDir) {
     };
 
     let router = build_test_router(state);
-    (router, temp_dir)
+    (router, temp_dir, db)
+}
+
+async fn upload_fixture_font(app: &axum::Router) -> String {
+    let font_bytes = read_fixture_bytes("backend/tests/fixtures/fonts/PressStart2P-Regular.ttf");
+    let boundary = "------------------------boundaryFONT";
+    let body = multipart_body(boundary, "PressStart2P-Regular.ttf", &font_bytes);
+
+    let upload_request = Request::builder()
+        .method("POST")
+        .uri("/api/fonts")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
+    let upload_status = upload_response.status();
+    if upload_status != axum::http::StatusCode::OK {
+        let upload_body = upload_response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        panic!(
+            "expected upload 200 but got {} with body {}",
+            upload_status,
+            String::from_utf8_lossy(&upload_body)
+        );
+    }
+
+    let upload_body = upload_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let uploaded: Value = serde_json::from_slice(&upload_body).unwrap();
+    uploaded
+        .get("id")
+        .and_then(Value::as_str)
+        .expect("font id")
+        .to_string()
 }
 
 async fn wait_until_font_ready(app: &axum::Router, font_id: &str) -> Value {
@@ -118,50 +167,9 @@ async fn wait_until_font_ready(app: &axum::Router, font_id: &str) -> Value {
 
 #[tokio::test]
 async fn test_font_upload_publish_and_public_glyph_lifecycle() {
-    let (app, _temp_dir) = setup_app().await;
+    let (app, _temp_dir, _db) = setup_app().await;
 
-    let font_bytes = read_fixture_bytes("backend/tests/fixtures/fonts/PressStart2P-Regular.ttf");
-    let boundary = "------------------------boundaryFONT";
-    let body = multipart_body(boundary, "PressStart2P-Regular.ttf", &font_bytes);
-
-    let upload_request = Request::builder()
-        .method("POST")
-        .uri("/api/fonts")
-        .header(
-            "content-type",
-            format!("multipart/form-data; boundary={boundary}"),
-        )
-        .body(Body::from(body))
-        .unwrap();
-
-    let upload_response = app.clone().oneshot(upload_request).await.unwrap();
-    let upload_status = upload_response.status();
-    if upload_status != axum::http::StatusCode::OK {
-        let upload_body = upload_response
-            .into_body()
-            .collect()
-            .await
-            .unwrap()
-            .to_bytes();
-        panic!(
-            "expected upload 200 but got {} with body {}",
-            upload_status,
-            String::from_utf8_lossy(&upload_body)
-        );
-    }
-
-    let upload_body = upload_response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes();
-    let uploaded: Value = serde_json::from_slice(&upload_body).unwrap();
-    let font_id = uploaded
-        .get("id")
-        .and_then(Value::as_str)
-        .expect("font id")
-        .to_string();
+    let font_id = upload_fixture_font(&app).await;
 
     let ready_font = wait_until_font_ready(&app, &font_id).await;
     let glyph_count = ready_font
@@ -230,4 +238,201 @@ async fn test_font_upload_publish_and_public_glyph_lifecycle() {
         public_after_unpublish_response.status(),
         axum::http::StatusCode::NOT_FOUND
     );
+}
+
+#[tokio::test]
+async fn test_publish_font_rejects_invalid_slug() {
+    let (app, _temp_dir, _db) = setup_app().await;
+    let font_id = upload_fixture_font(&app).await;
+    let _ = wait_until_font_ready(&app, &font_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/fonts/{}/publish", font_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"bad slug!*"}"#))
+        .unwrap();
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_publish_font_rejects_slug_conflict() {
+    let (app, _temp_dir, _db) = setup_app().await;
+    let font_id_1 = upload_fixture_font(&app).await;
+    let font_id_2 = upload_fixture_font(&app).await;
+    let _ = wait_until_font_ready(&app, &font_id_1).await;
+    let _ = wait_until_font_ready(&app, &font_id_2).await;
+
+    let publish_1 = Request::builder()
+        .method("POST")
+        .uri(format!("/api/fonts/{}/publish", font_id_1))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"duplicate-font-slug"}"#))
+        .unwrap();
+    let response_1 = app.clone().oneshot(publish_1).await.unwrap();
+    assert_eq!(response_1.status(), axum::http::StatusCode::OK);
+
+    let publish_2 = Request::builder()
+        .method("POST")
+        .uri(format!("/api/fonts/{}/publish", font_id_2))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"duplicate-font-slug"}"#))
+        .unwrap();
+    let response_2 = app.clone().oneshot(publish_2).await.unwrap();
+    assert_eq!(response_2.status(), axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_publish_font_rejects_non_ready_status() {
+    let (app, _temp_dir, db) = setup_app().await;
+    let font_id = "font-not-ready-1";
+
+    let seed_request = Request::builder()
+        .method("GET")
+        .uri("/api/fonts")
+        .body(Body::empty())
+        .unwrap();
+    let seed_response = app.clone().oneshot(seed_request).await.unwrap();
+    assert_eq!(seed_response.status(), axum::http::StatusCode::OK);
+
+    let workspace_id = {
+        let conn = db.lock().await;
+        conn.query_row(
+            "SELECT id FROM workspaces WHERE is_personal = TRUE AND deleted_at IS NULL LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap()
+    };
+
+    {
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO fonts (id, workspace_id, name, fontstack, original_path, glyphs_path, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'processing', CURRENT_TIMESTAMP)",
+            duckdb::params![
+                font_id,
+                &workspace_id,
+                "Not Ready Font",
+                "Not Ready Font",
+                "./uploads/fonts/font-not-ready-1/original",
+                "./uploads/fonts/font-not-ready-1/glyphs",
+            ],
+        )
+        .unwrap();
+    }
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/fonts/{}/publish", font_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"not-ready-font"}"#))
+        .unwrap();
+    let response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn test_delete_font_removes_public_access() {
+    let (app, temp_dir, _db) = setup_app().await;
+    let font_id = upload_fixture_font(&app).await;
+    let _ = wait_until_font_ready(&app, &font_id).await;
+
+    let publish_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/fonts/{}/publish", font_id))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"deletable-font"}"#))
+        .unwrap();
+    let publish_response = app.clone().oneshot(publish_request).await.unwrap();
+    assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
+
+    let delete_request = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/fonts/{}", font_id))
+        .body(Body::empty())
+        .unwrap();
+    let delete_response = app.clone().oneshot(delete_request).await.unwrap();
+    assert_eq!(delete_response.status(), axum::http::StatusCode::NO_CONTENT);
+
+    let public_glyph_request = Request::builder()
+        .method("GET")
+        .uri("/fonts/deletable-font/glyphs/Press%20Start%202P%20Regular/0-255.pbf")
+        .body(Body::empty())
+        .unwrap();
+    let public_glyph_response = app.clone().oneshot(public_glyph_request).await.unwrap();
+    assert_eq!(
+        public_glyph_response.status(),
+        axum::http::StatusCode::NOT_FOUND
+    );
+
+    let font_dir = temp_dir.path().join("uploads").join("fonts").join(font_id);
+    assert!(!font_dir.exists());
+}
+
+#[tokio::test]
+async fn test_list_and_get_font_use_camel_case_contract() {
+    let (app, _temp_dir, _db) = setup_app().await;
+    let font_id = upload_fixture_font(&app).await;
+    let _ = wait_until_font_ready(&app, &font_id).await;
+
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/fonts")
+        .body(Body::empty())
+        .unwrap();
+    let list_response = app.clone().oneshot(list_request).await.unwrap();
+    assert_eq!(list_response.status(), axum::http::StatusCode::OK);
+    let list_body = list_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let items: Vec<Value> = serde_json::from_slice(&list_body).unwrap();
+    let item = items
+        .into_iter()
+        .find(|it| it.get("id").and_then(Value::as_str) == Some(font_id.as_str()))
+        .expect("uploaded font in list");
+
+    assert!(item.get("glyphCount").is_some());
+    assert!(item.get("startCp").is_some());
+    assert!(item.get("endCp").is_some());
+    assert!(item.get("isPublic").is_some());
+    assert!(item.get("createdAt").is_some());
+    assert!(item.get("glyph_count").is_none());
+    assert!(item.get("is_public").is_none());
+
+    let get_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/fonts/{}", font_id))
+        .body(Body::empty())
+        .unwrap();
+    let get_response = app.clone().oneshot(get_request).await.unwrap();
+    assert_eq!(get_response.status(), axum::http::StatusCode::OK);
+    let get_body = get_response.into_body().collect().await.unwrap().to_bytes();
+    let got: Value = serde_json::from_slice(&get_body).unwrap();
+    assert!(got.get("glyphCount").is_some());
+    assert!(got.get("isPublic").is_some());
+    assert!(got.get("glyph_count").is_none());
+    assert!(got.get("is_public").is_none());
+}
+
+#[tokio::test]
+async fn test_upload_font_rejects_unsupported_extension() {
+    let (app, _temp_dir, _db) = setup_app().await;
+    let body = multipart_body("----boundaryTXT", "not-a-font.txt", b"hello");
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/fonts")
+        .header(
+            "content-type",
+            "multipart/form-data; boundary=----boundaryTXT",
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
 }
