@@ -67,6 +67,16 @@ pub async fn reconcile_processing_files(
     )
 }
 
+pub async fn reconcile_processing_fonts(
+    db: &Arc<Mutex<duckdb::Connection>>,
+) -> Result<usize, duckdb::Error> {
+    let conn = db.lock().await;
+    conn.execute(
+        "UPDATE fonts SET status = 'failed', error = ? WHERE status = 'processing'",
+        duckdb::params![PROCESSING_RECONCILIATION_ERROR],
+    )
+}
+
 fn ensure_workspace_schema_and_backfill(conn: &duckdb::Connection) {
     let _ = conn.execute(
         "ALTER TABLE users ADD COLUMN current_workspace_id VARCHAR",

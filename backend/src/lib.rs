@@ -37,8 +37,8 @@ pub use config::{
     read_preview_zoom_config,
 };
 pub use db::{
-    ensure_app_secret, init_database, is_initialized, reconcile_processing_files, set_initialized,
-    DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
+    ensure_app_secret, init_database, is_initialized, reconcile_processing_files,
+    reconcile_processing_fonts, set_initialized, DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
 };
 pub use handlers::validate_slug;
 pub use models::{
