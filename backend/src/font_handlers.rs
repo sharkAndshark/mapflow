@@ -82,6 +82,7 @@ async fn get_workspace_id(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FontItem {
     pub id: String,
     pub name: String,
@@ -111,6 +112,7 @@ pub struct PublishFontRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PublishFontResponse {
     pub url: String,
     pub slug: String,
@@ -452,6 +454,25 @@ fn validate_slug(slug: &str) -> Result<String, String> {
     Ok(slug)
 }
 
+fn parse_glyph_range(range: &str) -> Option<(u32, u32)> {
+    let normalized = range.strip_suffix(".pbf").unwrap_or(range);
+    if normalized.contains('/') || normalized.contains('\\') {
+        return None;
+    }
+
+    let mut parts = normalized.split('-');
+    let start = parts.next()?.parse::<u32>().ok()?;
+    let end = parts.next()?.parse::<u32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    if end < start || end - start > 255 {
+        return None;
+    }
+
+    Some((start, end))
+}
+
 pub async fn publish_font(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
@@ -564,6 +585,9 @@ pub async fn get_public_glyph(
     State(state): State<AppState>,
     AxumPath((slug, _fontstack, range)): AxumPath<(String, String, String)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let (start, end) = parse_glyph_range(&range)
+        .ok_or_else(|| bad_request("Invalid glyph range format, expected <start>-<end>.pbf"))?;
+
     let conn = state.db.lock().await;
 
     let glyphs_path: Option<String> = conn
@@ -587,13 +611,33 @@ pub async fn get_public_glyph(
     };
 
     let glyphs_path = glyphs_path.trim_start_matches("./uploads/");
-    let normalized_range = range.strip_suffix(".pbf").unwrap_or(range.as_str());
     let pbf_path = state
         .upload_dir
         .join(glyphs_path)
-        .join(format!("{}.pbf", normalized_range));
+        .join(format!("{}-{}.pbf", start, end));
 
-    match fs::read(&pbf_path).await {
+    let canonical_path = match fs::canonicalize(&pbf_path).await {
+        Ok(path) => path,
+        Err(_) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Glyph range not found".to_string(),
+                }),
+            ))
+        }
+    };
+
+    if !canonical_path.starts_with(&state.upload_dir_canonical) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Access denied".to_string(),
+            }),
+        ));
+    }
+
+    match fs::read(&canonical_path).await {
         Ok(data) => Ok((
             StatusCode::OK,
             [(header::CONTENT_TYPE, "application/x-protobuf")],
@@ -605,5 +649,60 @@ pub async fn get_public_glyph(
                 error: "Glyph range not found".to_string(),
             }),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_glyph_range, FontItem};
+
+    #[test]
+    fn parse_glyph_range_accepts_valid_patterns() {
+        assert_eq!(parse_glyph_range("0-255"), Some((0, 255)));
+        assert_eq!(parse_glyph_range("256-511.pbf"), Some((256, 511)));
+    }
+
+    #[test]
+    fn parse_glyph_range_rejects_invalid_patterns() {
+        assert_eq!(parse_glyph_range("abc-def"), None);
+        assert_eq!(parse_glyph_range("10-300"), None);
+        assert_eq!(parse_glyph_range("300-10"), None);
+        assert_eq!(parse_glyph_range("../0-255"), None);
+        assert_eq!(parse_glyph_range("0-255/extra"), None);
+    }
+
+    #[test]
+    fn font_item_serializes_as_camel_case() {
+        let item = FontItem {
+            id: "id-1".to_string(),
+            name: "Noto Sans".to_string(),
+            fontstack: "Noto Sans Regular".to_string(),
+            family: Some("Noto Sans".to_string()),
+            style: Some("Regular".to_string()),
+            glyph_count: Some(1024),
+            start_cp: Some(0),
+            end_cp: Some(1023),
+            status: "ready".to_string(),
+            error: None,
+            is_public: true,
+            slug: Some("noto-sans".to_string()),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            published_at: Some("2024-01-01T00:01:00Z".to_string()),
+        };
+
+        let value = serde_json::to_value(item).expect("serialize FontItem");
+        let obj = value.as_object().expect("json object");
+
+        assert!(obj.contains_key("glyphCount"));
+        assert!(obj.contains_key("startCp"));
+        assert!(obj.contains_key("endCp"));
+        assert!(obj.contains_key("isPublic"));
+        assert!(obj.contains_key("createdAt"));
+        assert!(obj.contains_key("publishedAt"));
+
+        assert!(!obj.contains_key("glyph_count"));
+        assert!(!obj.contains_key("start_cp"));
+        assert!(!obj.contains_key("is_public"));
+        assert!(!obj.contains_key("created_at"));
     }
 }
