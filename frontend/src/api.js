@@ -315,7 +315,7 @@ export async function listFonts() {
   return res.json();
 }
 
-export async function uploadFont(file, onProgress) {
+export async function uploadFont(file) {
   const formData = new FormData();
   formData.append('file', file);
 

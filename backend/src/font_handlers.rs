@@ -543,16 +543,15 @@ pub async fn publish_font(
 
     let conn = state.db.lock().await;
 
-    let status: Option<String> = conn
+    let font_exists: bool = conn
         .query_row(
-            "SELECT status FROM fonts WHERE id = ? AND workspace_id = ?",
+            "SELECT EXISTS(SELECT 1 FROM fonts WHERE id = ? AND workspace_id = ?)",
             duckdb::params![&id, &workspace_id],
             |row| row.get(0),
         )
-        .optional()
         .map_err(internal_error)?;
 
-    let Some(status) = status else {
+    if !font_exists {
         drop(conn);
         return Err((
             StatusCode::NOT_FOUND,
@@ -560,27 +559,25 @@ pub async fn publish_font(
                 error: "Font not found".to_string(),
             }),
         ));
-    };
-
-    if status != "ready" {
-        drop(conn);
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: format!("Font is not ready for publishing (status: {})", status),
-            }),
-        ));
     }
 
     let published_at = Utc::now().naive_utc();
     let result = conn.execute(
-        "UPDATE fonts SET is_public = TRUE, slug = ?, published_at = ? WHERE id = ? AND workspace_id = ?",
+        "UPDATE fonts SET is_public = TRUE, slug = ?, published_at = ? WHERE id = ? AND workspace_id = ? AND status = 'ready'",
         duckdb::params![&slug, published_at, &id, &workspace_id],
     );
 
     match result {
-        Ok(_) => {
+        Ok(rows_affected) => {
             drop(conn);
+            if rows_affected == 0 {
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "Font is not ready for publishing".to_string(),
+                    }),
+                ));
+            }
             info!(font_id = %id, slug = %slug, "Font published");
             let url = format!("/fonts/{}/glyphs/{{fontstack}}/{{range}}.pbf", slug);
             Ok(Json(PublishFontResponse {
