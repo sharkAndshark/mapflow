@@ -16,6 +16,7 @@ import {
   removeWorkspaceMember,
   leaveWorkspace,
 } from './api.js';
+import { validateWorkspaceSlug } from './utils.js';
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -34,8 +35,13 @@ export default function Settings() {
   const [workspacesLoading, setWorkspacesLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [newWorkspaceSlug, setNewWorkspaceSlug] = useState('');
   const [createError, setCreateError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [editingSlugWorkspaceId, setEditingSlugWorkspaceId] = useState(null);
+  const [editingSlugValue, setEditingSlugValue] = useState('');
+  const [slugActionError, setSlugActionError] = useState('');
+  const [isSavingSlug, setIsSavingSlug] = useState(false);
 
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState(null);
@@ -50,6 +56,15 @@ export default function Settings() {
     const [ws, archived] = await Promise.all([listWorkspaces(), listArchivedWorkspaces()]);
     setWorkspaces(ws);
     setArchivedWorkspaces(archived);
+  }
+
+  function getWorkspaceSlugValidationError(slug) {
+    return validateWorkspaceSlug(slug.trim(), {
+      tooLong: t('workspace.slugTooLong'),
+      tooShort: t('workspace.slugTooShort'),
+      invalidChars: t('workspace.slugInvalidChars'),
+      edgeDash: t('workspace.slugEdgeDash'),
+    }).error;
   }
 
   useEffect(() => {
@@ -151,17 +166,24 @@ export default function Settings() {
     setCreateError('');
 
     const name = newWorkspaceName.trim();
+    const slug = newWorkspaceSlug.trim();
     if (name.length < 3 || name.length > 50) {
       setCreateError(t('workspace.nameLengthError'));
+      return;
+    }
+    const slugError = getWorkspaceSlugValidationError(slug);
+    if (slugError) {
+      setCreateError(slugError);
       return;
     }
 
     setIsCreating(true);
     try {
-      await createWorkspace(name);
+      await createWorkspace(name, { slug: slug || undefined });
       await refreshWorkspaces();
       setShowCreateModal(false);
       setNewWorkspaceName('');
+      setNewWorkspaceSlug('');
     } catch (err) {
       setCreateError(err.message || t('workspace.createFailed'));
     } finally {
@@ -184,6 +206,39 @@ export default function Settings() {
       }
     } catch (err) {
       alert(err.message || t('workspace.deleteFailed'));
+    }
+  }
+
+  function startEditWorkspaceSlug(workspace) {
+    setSlugActionError('');
+    setEditingSlugWorkspaceId(workspace.id);
+    setEditingSlugValue(workspace.slug || '');
+  }
+
+  function cancelEditWorkspaceSlug() {
+    setEditingSlugWorkspaceId(null);
+    setEditingSlugValue('');
+    setSlugActionError('');
+  }
+
+  async function saveWorkspaceSlug(workspaceId) {
+    const slug = editingSlugValue.trim();
+    const slugError = getWorkspaceSlugValidationError(slug);
+    if (slugError) {
+      setSlugActionError(slugError);
+      return;
+    }
+
+    setIsSavingSlug(true);
+    setSlugActionError('');
+    try {
+      await updateWorkspace(workspaceId, { slug });
+      await refreshWorkspaces();
+      cancelEditWorkspaceSlug();
+    } catch (err) {
+      setSlugActionError(err.message || t('workspace.updateFailed'));
+    } finally {
+      setIsSavingSlug(false);
     }
   }
 
@@ -315,7 +370,16 @@ export default function Settings() {
           }}
         >
           <h2>{t('workspace.management')}</h2>
-          <button type="button" className="btn-primary" onClick={() => setShowCreateModal(true)}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              setCreateError('');
+              setNewWorkspaceName('');
+              setNewWorkspaceSlug('');
+              setShowCreateModal(true);
+            }}
+          >
             {t('workspace.createNew')}
           </button>
         </div>
@@ -363,6 +427,38 @@ export default function Settings() {
                   >
                     {t('workspace.memberCount', { count: ws.memberCount })}
                   </div>
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: '#666',
+                      marginTop: '4px',
+                    }}
+                  >
+                    {t('workspace.slugLabel')}: <code>{ws.slug || '-'}</code>
+                  </div>
+                  {editingSlugWorkspaceId === ws.id && (
+                    <div style={{ marginTop: '8px', maxWidth: '300px' }}>
+                      <input
+                        type="text"
+                        value={editingSlugValue}
+                        onChange={(e) => setEditingSlugValue(e.target.value)}
+                        className="form-input"
+                        style={{ width: '100%' }}
+                        placeholder="team-alpha"
+                      />
+                      {slugActionError && (
+                        <div
+                          style={{
+                            color: '#dc3545',
+                            fontSize: '12px',
+                            marginTop: '6px',
+                          }}
+                        >
+                          {slugActionError}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -372,6 +468,35 @@ export default function Settings() {
                   >
                     {t('workspace.manageMembers')}
                   </button>
+                  {ws.ownerId === user.id &&
+                    (editingSlugWorkspaceId === ws.id ? (
+                      <>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => saveWorkspaceSlug(ws.id)}
+                          disabled={isSavingSlug}
+                        >
+                          {isSavingSlug ? t('common.saving') : t('common.save')}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={cancelEditWorkspaceSlug}
+                          disabled={isSavingSlug}
+                        >
+                          {t('common.cancel')}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => startEditWorkspaceSlug(ws)}
+                      >
+                        {t('workspace.editSlug')}
+                      </button>
+                    ))}
                   {!ws.isPersonal && ws.ownerId === user.id && (
                     <button
                       type="button"
@@ -539,7 +664,12 @@ export default function Settings() {
           <button
             type="button"
             aria-label={t('workspace.closeCreateModal')}
-            onClick={() => setShowCreateModal(false)}
+            onClick={() => {
+              setShowCreateModal(false);
+              setCreateError('');
+              setNewWorkspaceName('');
+              setNewWorkspaceSlug('');
+            }}
             style={{
               position: 'absolute',
               inset: 0,
@@ -585,18 +715,41 @@ export default function Settings() {
                   style={{ width: '100%' }}
                   placeholder={t('workspace.namePlaceholder')}
                 />
-                {createError && (
-                  <div
-                    style={{
-                      color: '#dc3545',
-                      fontSize: '14px',
-                      marginTop: '8px',
-                    }}
-                  >
-                    {createError}
-                  </div>
-                )}
               </div>
+              <div style={{ marginBottom: '16px' }}>
+                <label
+                  htmlFor="new-workspace-slug"
+                  style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    fontWeight: 500,
+                  }}
+                >
+                  {t('workspace.slugLabelOptional')}
+                </label>
+                <input
+                  id="new-workspace-slug"
+                  type="text"
+                  value={newWorkspaceSlug}
+                  onChange={(e) => setNewWorkspaceSlug(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%' }}
+                  placeholder="team-alpha"
+                />
+                <small className="form-hint">{t('workspace.slugHint')}</small>
+              </div>
+              {createError && (
+                <div
+                  style={{
+                    color: '#dc3545',
+                    fontSize: '14px',
+                    marginTop: '-8px',
+                    marginBottom: '12px',
+                  }}
+                >
+                  {createError}
+                </div>
+              )}
               <div
                 style={{
                   display: 'flex',
@@ -607,7 +760,12 @@ export default function Settings() {
                 <button
                   type="button"
                   className="btn-secondary"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setCreateError('');
+                    setNewWorkspaceName('');
+                    setNewWorkspaceSlug('');
+                  }}
                 >
                   {t('common.cancel')}
                 </button>

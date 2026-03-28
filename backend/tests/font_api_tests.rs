@@ -186,10 +186,22 @@ async fn test_font_upload_publish_and_public_glyph_lifecycle() {
         .unwrap();
     let publish_response = app.clone().oneshot(publish_request).await.unwrap();
     assert_eq!(publish_response.status(), axum::http::StatusCode::OK);
+    let publish_body = publish_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let publish_payload: Value = serde_json::from_slice(&publish_body).unwrap();
+    assert_eq!(publish_payload["workspaceSlug"], "test-workspace");
+    assert_eq!(
+        publish_payload["url"],
+        "/fonts/test-workspace/{fontstack}/{range}.pbf"
+    );
 
     let public_glyph_request = Request::builder()
         .method("GET")
-        .uri("/fonts/pressstart2p-test/glyphs/Press%20Start%202P%20Regular/0-255.pbf")
+        .uri("/fonts/test-workspace/Press%20Start%202P%20Regular/0-255.pbf")
         .body(Body::empty())
         .unwrap();
     let public_glyph_response = app.clone().oneshot(public_glyph_request).await.unwrap();
@@ -204,7 +216,7 @@ async fn test_font_upload_publish_and_public_glyph_lifecycle() {
 
     let invalid_range_request = Request::builder()
         .method("GET")
-        .uri("/fonts/pressstart2p-test/glyphs/Press%20Start%202P%20Regular/0-999.pbf")
+        .uri("/fonts/test-workspace/Press%20Start%202P%20Regular/0-999.pbf")
         .body(Body::empty())
         .unwrap();
     let invalid_range_response = app.clone().oneshot(invalid_range_request).await.unwrap();
@@ -226,7 +238,7 @@ async fn test_font_upload_publish_and_public_glyph_lifecycle() {
 
     let public_after_unpublish_request = Request::builder()
         .method("GET")
-        .uri("/fonts/pressstart2p-test/glyphs/Press%20Start%202P%20Regular/0-255.pbf")
+        .uri("/fonts/test-workspace/Press%20Start%202P%20Regular/0-255.pbf")
         .body(Body::empty())
         .unwrap();
     let public_after_unpublish_response = app
@@ -358,7 +370,7 @@ async fn test_delete_font_removes_public_access() {
 
     let public_glyph_request = Request::builder()
         .method("GET")
-        .uri("/fonts/deletable-font/glyphs/Press%20Start%202P%20Regular/0-255.pbf")
+        .uri("/fonts/test-workspace/Press%20Start%202P%20Regular/0-255.pbf")
         .body(Body::empty())
         .unwrap();
     let public_glyph_response = app.clone().oneshot(public_glyph_request).await.unwrap();
@@ -400,6 +412,7 @@ async fn test_list_and_get_font_use_camel_case_contract() {
     assert!(item.get("startCp").is_some());
     assert!(item.get("endCp").is_some());
     assert!(item.get("isPublic").is_some());
+    assert!(item.get("workspaceSlug").is_some());
     assert!(item.get("createdAt").is_some());
     assert!(item.get("glyph_count").is_none());
     assert!(item.get("is_public").is_none());
@@ -415,6 +428,7 @@ async fn test_list_and_get_font_use_camel_case_contract() {
     let got: Value = serde_json::from_slice(&get_body).unwrap();
     assert!(got.get("glyphCount").is_some());
     assert!(got.get("isPublic").is_some());
+    assert!(got.get("workspaceSlug").is_some());
     assert!(got.get("glyph_count").is_none());
     assert!(got.get("is_public").is_none());
 }

@@ -85,7 +85,7 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         )
         .route("/tiles/{slug}/meta", get(get_public_tile_meta))
         .route(
-            "/fonts/{slug}/glyphs/{fontstack}/{*range}",
+            "/fonts/{workspace_slug}/{fontstack}/{*range}",
             get(get_public_glyph),
         );
 

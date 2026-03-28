@@ -218,6 +218,7 @@ mod tests {
         CREATE TABLE workspaces (
             id VARCHAR PRIMARY KEY,
             name VARCHAR UNIQUE NOT NULL,
+            slug VARCHAR UNIQUE,
             owner_id VARCHAR NOT NULL REFERENCES users(id),
             is_personal BOOLEAN NOT NULL DEFAULT FALSE,
             deleted_at TIMESTAMP,

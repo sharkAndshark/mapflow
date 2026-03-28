@@ -122,10 +122,14 @@ pub async fn upload_file(
 
                     let new_workspace_id = uuid::Uuid::new_v4().to_string();
                     let workspace_name = "Test Workspace".to_string();
+                    let workspace_slug = crate::workspace::workspace_slug_base_from_name_or_id(
+                        &workspace_name,
+                        &new_workspace_id,
+                    );
 
                     conn.execute(
-                        "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, true, CURRENT_TIMESTAMP)",
-                        duckdb::params![&new_workspace_id, &workspace_name, &user_id],
+                        "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)",
+                        duckdb::params![&new_workspace_id, &workspace_name, &workspace_slug, &user_id],
                     ).ok();
 
                     conn.execute(

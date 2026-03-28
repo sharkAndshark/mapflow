@@ -109,10 +109,14 @@ async fn get_workspace_id(
 
                 let workspace_id = uuid::Uuid::new_v4().to_string();
                 let workspace_name = "Test Workspace".to_string();
+                let workspace_slug = crate::workspace::workspace_slug_base_from_name_or_id(
+                    &workspace_name,
+                    &workspace_id,
+                );
 
                 conn.execute(
-                    "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, true, CURRENT_TIMESTAMP)",
-                    duckdb::params![&workspace_id, &workspace_name, &user_id],
+                    "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)",
+                    duckdb::params![&workspace_id, &workspace_name, &workspace_slug, &user_id],
                 ).ok();
 
                 conn.execute(
@@ -149,6 +153,7 @@ pub struct FontItem {
     pub error: Option<String>,
     pub is_public: bool,
     pub slug: Option<String>,
+    pub workspace_slug: String,
     pub created_at: String,
     pub published_at: Option<String>,
 }
@@ -170,6 +175,7 @@ pub struct PublishFontResponse {
     pub url: String,
     pub slug: String,
     pub is_public: bool,
+    pub workspace_slug: String,
 }
 
 pub async fn upload_font(
@@ -351,17 +357,18 @@ pub async fn list_fonts(
     let conn = state.db.lock().await;
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, fontstack, family, style, glyph_count, start_cp, end_cp, status, error, is_public, slug, created_at, published_at
-             FROM fonts
-             WHERE workspace_id = ?
-             ORDER BY created_at DESC",
+            "SELECT f.id, f.name, f.fontstack, f.family, f.style, f.glyph_count, f.start_cp, f.end_cp, f.status, f.error, f.is_public, f.slug, COALESCE(w.slug, w.id), f.created_at, f.published_at
+             FROM fonts f
+             JOIN workspaces w ON w.id = f.workspace_id
+             WHERE f.workspace_id = ?
+             ORDER BY f.created_at DESC",
         )
         .map_err(internal_error)?;
 
     let fonts_iter = stmt
         .query_map(duckdb::params![&workspace_id], |row| {
-            let created_at: chrono::NaiveDateTime = row.get(12)?;
-            let published_at: Option<chrono::NaiveDateTime> = row.get(13)?;
+            let created_at: chrono::NaiveDateTime = row.get(13)?;
+            let published_at: Option<chrono::NaiveDateTime> = row.get(14)?;
             Ok(FontItem {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -375,6 +382,7 @@ pub async fn list_fonts(
                 error: row.get(9)?,
                 is_public: row.get(10)?,
                 slug: row.get(11)?,
+                workspace_slug: row.get(12)?,
                 created_at: created_at.and_utc().to_rfc3339(),
                 published_at: published_at.map(|t| t.and_utc().to_rfc3339()),
             })
@@ -400,13 +408,14 @@ pub async fn get_font(
     let conn = state.db.lock().await;
     let font: Option<FontItem> = conn
         .query_row(
-            "SELECT id, name, fontstack, family, style, glyph_count, start_cp, end_cp, status, error, is_public, slug, created_at, published_at
-             FROM fonts
-             WHERE id = ? AND workspace_id = ?",
+            "SELECT f.id, f.name, f.fontstack, f.family, f.style, f.glyph_count, f.start_cp, f.end_cp, f.status, f.error, f.is_public, f.slug, COALESCE(w.slug, w.id), f.created_at, f.published_at
+             FROM fonts f
+             JOIN workspaces w ON w.id = f.workspace_id
+             WHERE f.id = ? AND f.workspace_id = ?",
             duckdb::params![&id, &workspace_id],
             |row| {
-                let created_at: chrono::NaiveDateTime = row.get(12)?;
-                let published_at: Option<chrono::NaiveDateTime> = row.get(13)?;
+                let created_at: chrono::NaiveDateTime = row.get(13)?;
+                let published_at: Option<chrono::NaiveDateTime> = row.get(14)?;
                 Ok(FontItem {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -420,6 +429,7 @@ pub async fn get_font(
                     error: row.get(9)?,
                     is_public: row.get(10)?,
                     slug: row.get(11)?,
+                    workspace_slug: row.get(12)?,
                     created_at: created_at.and_utc().to_rfc3339(),
                     published_at: published_at.map(|t| t.and_utc().to_rfc3339()),
                 })
@@ -526,6 +536,15 @@ fn parse_glyph_range(range: &str) -> Option<(u32, u32)> {
     Some((start, end))
 }
 
+fn normalize_requested_fontstack(fontstack: &str) -> &str {
+    fontstack
+        .split(',')
+        .next()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(fontstack)
+}
+
 pub async fn publish_font(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
@@ -543,21 +562,43 @@ pub async fn publish_font(
 
     let conn = state.db.lock().await;
 
-    let font_exists: bool = conn
+    let workspace_meta: Option<(String, String)> = conn
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM fonts WHERE id = ? AND workspace_id = ?)",
+            "SELECT COALESCE(w.slug, w.id), f.fontstack
+             FROM fonts f
+             JOIN workspaces w ON w.id = f.workspace_id
+             WHERE f.id = ? AND f.workspace_id = ?",
             duckdb::params![&id, &workspace_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
+        .optional()
         .map_err(internal_error)?;
 
-    if !font_exists {
+    let Some((workspace_slug, fontstack)) = workspace_meta else {
         drop(conn);
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
                 error: "Font not found".to_string(),
             }),
+        ));
+    };
+
+    let published_conflict: bool = conn
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM fonts
+                WHERE workspace_id = ? AND id != ? AND is_public = TRUE AND fontstack = ?
+            )",
+            duckdb::params![&workspace_id, &id, &fontstack],
+            |row| row.get(0),
+        )
+        .map_err(internal_error)?;
+
+    if published_conflict {
+        drop(conn);
+        return Err(bad_request(
+            "Another published font with the same fontstack already exists in this workspace",
         ));
     }
 
@@ -579,11 +620,12 @@ pub async fn publish_font(
                 ));
             }
             info!(font_id = %id, slug = %slug, "Font published");
-            let url = format!("/fonts/{}/glyphs/{{fontstack}}/{{range}}.pbf", slug);
+            let url = format!("/fonts/{}/{{fontstack}}/{{range}}.pbf", workspace_slug);
             Ok(Json(PublishFontResponse {
                 url,
                 slug,
                 is_public: true,
+                workspace_slug,
             }))
         }
         Err(e) => {
@@ -633,10 +675,11 @@ pub async fn unpublish_font(
 
 pub async fn get_public_glyph(
     State(state): State<AppState>,
-    AxumPath((slug, _fontstack, range)): AxumPath<(String, String, String)>,
+    AxumPath((workspace_slug, fontstack, range)): AxumPath<(String, String, String)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let (start, end) = parse_glyph_range(&range)
         .ok_or_else(|| bad_request("Invalid glyph range format, expected <start>-<end>.pbf"))?;
+    let normalized_fontstack = normalize_requested_fontstack(&fontstack).to_string();
 
     let conn = state.db.lock().await;
 
@@ -644,12 +687,13 @@ pub async fn get_public_glyph(
         .query_row(
             "SELECT f.glyphs_path
              FROM fonts f
-             WHERE f.slug = ?
+             JOIN workspaces w ON w.id = f.workspace_id
+             WHERE COALESCE(w.slug, w.id) = ?
+               AND f.fontstack = ?
                AND f.is_public = TRUE
-               AND EXISTS (
-                 SELECT 1 FROM workspaces w WHERE w.id = f.workspace_id AND w.deleted_at IS NULL
-               )",
-            duckdb::params![&slug],
+               AND f.status = 'ready'
+               AND w.deleted_at IS NULL",
+            duckdb::params![&workspace_slug, &normalized_fontstack],
             |row| row.get(0),
         )
         .optional()
@@ -742,6 +786,7 @@ mod tests {
             error: None,
             is_public: true,
             slug: Some("noto-sans".to_string()),
+            workspace_slug: "team-alpha".to_string(),
             created_at: "2024-01-01T00:00:00Z".to_string(),
             published_at: Some("2024-01-01T00:01:00Z".to_string()),
         };
@@ -753,6 +798,7 @@ mod tests {
         assert!(obj.contains_key("startCp"));
         assert!(obj.contains_key("endCp"));
         assert!(obj.contains_key("isPublic"));
+        assert!(obj.contains_key("workspaceSlug"));
         assert!(obj.contains_key("createdAt"));
         assert!(obj.contains_key("publishedAt"));
 

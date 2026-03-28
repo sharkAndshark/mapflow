@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct Workspace {
     pub id: String,
     pub name: String,
+    pub slug: String,
     pub owner_id: String,
     #[serde(rename = "isPersonal")]
     pub is_personal: bool,
@@ -29,6 +30,7 @@ pub struct WorkspaceMember {
 pub struct WorkspaceWithMemberCount {
     pub id: String,
     pub name: String,
+    pub slug: String,
     #[serde(rename = "ownerId")]
     pub owner_id: String,
     #[serde(rename = "isPersonal")]
@@ -54,6 +56,7 @@ pub struct WorkspaceMemberWithInfo {
 pub struct WorkspaceResponse {
     pub id: String,
     pub name: String,
+    pub slug: String,
     #[serde(rename = "ownerId")]
     pub owner_id: String,
     #[serde(rename = "isPersonal")]
@@ -64,12 +67,15 @@ pub struct WorkspaceResponse {
 pub struct CurrentWorkspaceResponse {
     pub id: String,
     pub name: String,
+    pub slug: String,
     #[serde(rename = "isPersonal")]
     pub is_personal: bool,
 }
 
 pub const WORKSPACE_NAME_MIN_LEN: usize = 3;
 pub const WORKSPACE_NAME_MAX_LEN: usize = 50;
+pub const WORKSPACE_SLUG_MIN_LEN: usize = 3;
+pub const WORKSPACE_SLUG_MAX_LEN: usize = 63;
 pub const LEGACY_SHARED_WORKSPACE_NAME: &str = "Migrated Workspace";
 
 pub fn validate_workspace_name(name: &str) -> Result<String, String> {
@@ -108,6 +114,81 @@ pub fn make_personal_workspace_name(username: &str) -> String {
 
 pub fn make_legacy_shared_workspace_name() -> &'static str {
     LEGACY_SHARED_WORKSPACE_NAME
+}
+
+pub fn validate_workspace_slug(slug: &str) -> Result<String, String> {
+    let slug = slug.trim().to_ascii_lowercase();
+    let len = slug.chars().count();
+
+    if slug.is_empty() {
+        return Err("工作空间 slug 不能为空".to_string());
+    }
+    if len < WORKSPACE_SLUG_MIN_LEN {
+        return Err(format!(
+            "工作空间 slug 至少需要 {} 个字符",
+            WORKSPACE_SLUG_MIN_LEN
+        ));
+    }
+    if len > WORKSPACE_SLUG_MAX_LEN {
+        return Err(format!(
+            "工作空间 slug 不能超过 {} 个字符",
+            WORKSPACE_SLUG_MAX_LEN
+        ));
+    }
+    if slug.starts_with('-') || slug.ends_with('-') {
+        return Err("工作空间 slug 不能以连字符开头或结尾".to_string());
+    }
+    if !slug
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return Err("工作空间 slug 仅支持小写字母、数字和连字符".to_string());
+    }
+    Ok(slug)
+}
+
+pub fn slugify_workspace_name(name: &str) -> String {
+    let mut out = String::new();
+    let mut last_is_dash = false;
+
+    for ch in name.chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_lowercase() || c.is_ascii_digit() {
+            out.push(c);
+            last_is_dash = false;
+        } else if (ch.is_whitespace() || c == '-' || c == '_') && !last_is_dash {
+            out.push('-');
+            last_is_dash = true;
+        }
+    }
+
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.len() > WORKSPACE_SLUG_MAX_LEN {
+        trimmed[..WORKSPACE_SLUG_MAX_LEN]
+            .trim_end_matches('-')
+            .to_string()
+    } else {
+        trimmed
+    }
+}
+
+pub fn fallback_workspace_slug_from_id(workspace_id: &str) -> String {
+    let suffix = &workspace_id[..workspace_id.len().min(8)];
+    format!("ws-{suffix}")
+}
+
+pub fn workspace_slug_base_from_name_or_id(name: &str, workspace_id: &str) -> String {
+    let from_name = slugify_workspace_name(name);
+    if validate_workspace_slug(&from_name).is_ok() {
+        return from_name;
+    }
+
+    let from_id = fallback_workspace_slug_from_id(workspace_id);
+    if validate_workspace_slug(&from_id).is_ok() {
+        return from_id;
+    }
+
+    "workspace-default".to_string()
 }
 
 #[cfg(test)]
@@ -170,5 +251,48 @@ mod tests {
         let too_long_name = "测".repeat(51);
         assert_eq!(too_long_name.chars().count(), 51);
         assert!(validate_workspace_name(&too_long_name).is_err());
+    }
+
+    #[test]
+    fn validate_workspace_slug_rejects_invalid_chars() {
+        assert_eq!(validate_workspace_slug("Hello").unwrap(), "hello");
+        assert!(validate_workspace_slug("abc_def").is_err());
+        assert!(validate_workspace_slug("-abc").is_err());
+        assert!(validate_workspace_slug("abc-").is_err());
+    }
+
+    #[test]
+    fn validate_workspace_slug_accepts_lowercase_dash() {
+        assert_eq!(
+            validate_workspace_slug("team-alpha-01").unwrap(),
+            "team-alpha-01"
+        );
+    }
+
+    #[test]
+    fn slugify_workspace_name_normalizes_to_kebab_case() {
+        assert_eq!(slugify_workspace_name("Team Alpha 01"), "team-alpha-01");
+        assert_eq!(slugify_workspace_name("  Team___Beta  "), "team-beta");
+        assert_eq!(slugify_workspace_name("中文空间"), "");
+    }
+
+    #[test]
+    fn fallback_workspace_slug_from_id_prefixes_ws() {
+        assert_eq!(
+            fallback_workspace_slug_from_id("abcdef123456"),
+            "ws-abcdef12"
+        );
+    }
+
+    #[test]
+    fn workspace_slug_base_prefers_name_then_id() {
+        assert_eq!(
+            workspace_slug_base_from_name_or_id("Team One", "abcdef123456"),
+            "team-one"
+        );
+        assert_eq!(
+            workspace_slug_base_from_name_or_id("中文空间", "abcdef123456"),
+            "ws-abcdef12"
+        );
     }
 }

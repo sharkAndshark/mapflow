@@ -36,3 +36,32 @@ export function validateSlug(slug, messages = {}) {
   }
   return { valid: true, error: '' };
 }
+
+export function validateWorkspaceSlug(slug, messages = {}) {
+  if (!slug) return { valid: true, error: '' };
+  if (slug.length > 63) {
+    return {
+      valid: false,
+      error: messages.tooLong || 'Workspace slug cannot exceed 63 characters',
+    };
+  }
+  if (slug.length < 3) {
+    return {
+      valid: false,
+      error: messages.tooShort || 'Workspace slug must be at least 3 characters',
+    };
+  }
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    return {
+      valid: false,
+      error: messages.invalidChars || 'Only lowercase letters, numbers, and hyphens are supported',
+    };
+  }
+  if (slug.startsWith('-') || slug.endsWith('-')) {
+    return {
+      valid: false,
+      error: messages.edgeDash || 'Workspace slug cannot start or end with a hyphen',
+    };
+  }
+  return { valid: true, error: '' };
+}

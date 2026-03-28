@@ -176,11 +176,14 @@ export async function listWorkspaces() {
   return res.json();
 }
 
-export async function createWorkspace(name) {
+export async function createWorkspace(name, options = {}) {
+  const body = { name };
+  if (options.slug) body.slug = options.slug;
+
   const res = await fetchWithAuth('/api/workspaces', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -189,11 +192,18 @@ export async function createWorkspace(name) {
   return res.json();
 }
 
-export async function updateWorkspace(workspaceId, name) {
+export async function updateWorkspace(workspaceId, updates) {
+  const body =
+    typeof updates === 'string'
+      ? { name: updates }
+      : {
+          ...(updates || {}),
+        };
+
   const res = await fetchWithAuth(`/api/workspaces/${workspaceId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

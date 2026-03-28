@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listFonts, uploadFont, deleteFont, publishFont, unpublishFont } from './api.js';
-import { validateSlug } from './utils.js';
 
 const FONT_STATUS_LABELS = {
   processing: 'font.status.processing',
@@ -21,7 +20,6 @@ export default function FontsPanel() {
   const [selectedId, setSelectedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [publishSlug, setPublishSlug] = useState('');
   const [publishError, setPublishError] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -110,8 +108,7 @@ export default function FontsPanel() {
     setPublishError('');
     setIsPublishing(true);
     try {
-      await publishFont(fontId, { slug: publishSlug.trim() || undefined });
-      setPublishSlug('');
+      await publishFont(fontId);
       await refreshFonts();
     } catch (err) {
       setPublishError(err.message || t('font.publishFailed'));
@@ -130,8 +127,12 @@ export default function FontsPanel() {
     }
   }
 
-  function copyPublicUrl(slug) {
-    const url = `${window.location.origin}/fonts/${slug}/glyphs/{fontstack}/{range}.pbf`;
+  function buildPublicPath(workspaceSlug) {
+    return `/fonts/${workspaceSlug}/{fontstack}/{range}.pbf`;
+  }
+
+  function copyPublicUrl(workspaceSlug) {
+    const url = `${window.location.origin}${buildPublicPath(workspaceSlug)}`;
     navigator.clipboard
       .writeText(url)
       .then(() => {
@@ -142,13 +143,6 @@ export default function FontsPanel() {
         alert(t('font.copyFailed'));
       });
   }
-
-  const slugValidationError = useMemo(() => {
-    return validateSlug(publishSlug.trim(), {
-      tooLong: t('file.detail.slugTooLong'),
-      invalidChars: t('file.detail.slugInvalidChars'),
-    }).error;
-  }, [publishSlug, t]);
 
   return (
     <div className="panel-body">
@@ -290,42 +284,11 @@ export default function FontsPanel() {
                           <span style={{ color: '#888' }}>{t('font.notPublished')}</span>
 
                           <div>
-                            <label
-                              htmlFor="font-publish-slug-input"
-                              style={{
-                                fontSize: '12px',
-                                color: '#666',
-                                marginBottom: '4px',
-                                display: 'block',
-                              }}
-                            >
-                              {t('font.publishSlug')}
-                            </label>
-                            <input
-                              id="font-publish-slug-input"
-                              type="text"
-                              value={publishSlug}
-                              onChange={(e) => setPublishSlug(e.target.value)}
-                              placeholder={selectedFont.id}
-                              className="form-input"
-                              style={{ width: '100%' }}
-                              data-testid="font-publish-slug-input"
-                            />
-                            {slugValidationError && (
-                              <div className="alert" style={{ marginTop: '4px', fontSize: '12px' }}>
-                                {slugValidationError}
-                              </div>
-                            )}
-                            <small className="form-hint">{t('font.publishSlugHint')}</small>
-                          </div>
-
-                          <div>
                             <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>
                               {t('font.publicUrl')}
                             </div>
                             <div className="form-value code" style={{ fontSize: '12px' }}>
-                              /fonts/{publishSlug.trim() || selectedFont.id}/glyphs/{'{fontstack}'}/
-                              {'{range}'}.pbf
+                              {buildPublicPath(selectedFont.workspaceSlug || 'workspace')}
                             </div>
                           </div>
 
@@ -339,7 +302,7 @@ export default function FontsPanel() {
                             type="button"
                             className="btn-primary"
                             style={{ fontSize: '12px', padding: '4px 12px' }}
-                            disabled={isPublishing || !!slugValidationError}
+                            disabled={isPublishing}
                             onClick={() => handlePublish(selectedFont.id)}
                             data-testid="font-publish-button"
                           >
@@ -364,13 +327,15 @@ export default function FontsPanel() {
                         <div className="detail-value">
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div className="form-value code" style={{ fontSize: '12px' }}>
-                              /fonts/{selectedFont.slug}/glyphs/{'{fontstack}'}/{'{range}'}.pbf
+                              {buildPublicPath(selectedFont.workspaceSlug || 'workspace')}
                             </div>
                             <button
                               type="button"
                               className="btn-text"
                               style={{ fontSize: '12px', padding: 0, textAlign: 'left' }}
-                              onClick={() => copyPublicUrl(selectedFont.slug)}
+                              onClick={() =>
+                                copyPublicUrl(selectedFont.workspaceSlug || 'workspace')
+                              }
                               data-testid="font-copy-url-button"
                             >
                               {copySuccess ? t('common.copied') : t('font.copyUrl')}
