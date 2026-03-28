@@ -7,7 +7,10 @@ use axum::{
 use axum_login::AuthSession;
 use chrono::Utc;
 use duckdb::OptionalExt;
+use pbf_font_tools::prost::Message;
+use pbf_font_tools::Glyphs;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
 use tokio::{
     fs,
@@ -536,13 +539,19 @@ fn parse_glyph_range(range: &str) -> Option<(u32, u32)> {
     Some((start, end))
 }
 
-fn normalize_requested_fontstack(fontstack: &str) -> &str {
-    fontstack
-        .split(',')
-        .next()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(fontstack)
+fn parse_requested_fontstacks(fontstack: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut parsed = Vec::new();
+    for part in fontstack.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            parsed.push(trimmed.to_string());
+        }
+    }
+    parsed
 }
 
 pub async fn publish_font(
@@ -679,82 +688,147 @@ pub async fn get_public_glyph(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let (start, end) = parse_glyph_range(&range)
         .ok_or_else(|| bad_request("Invalid glyph range format, expected <start>-<end>.pbf"))?;
-    let normalized_fontstack = normalize_requested_fontstack(&fontstack).to_string();
+    let requested_fontstacks = parse_requested_fontstacks(&fontstack);
+    if requested_fontstacks.is_empty() {
+        return Err(bad_request("Invalid fontstack"));
+    }
 
     let conn = state.db.lock().await;
 
-    let glyphs_path: Option<String> = conn
-        .query_row(
-            "SELECT f.glyphs_path
-             FROM fonts f
-             JOIN workspaces w ON w.id = f.workspace_id
-             WHERE COALESCE(w.slug, w.id) = ?
-               AND f.fontstack = ?
-               AND f.is_public = TRUE
-               AND f.status = 'ready'
-               AND w.deleted_at IS NULL",
-            duckdb::params![&workspace_slug, &normalized_fontstack],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(internal_error)?;
+    let mut glyphs_paths = Vec::new();
+    for requested_fontstack in &requested_fontstacks {
+        let glyphs_path: Option<String> = conn
+            .query_row(
+                "SELECT f.glyphs_path
+                 FROM fonts f
+                 JOIN workspaces w ON w.id = f.workspace_id
+                 WHERE COALESCE(w.slug, w.id) = ?
+                   AND f.fontstack = ?
+                   AND f.is_public = TRUE
+                   AND f.status = 'ready'
+                   AND w.deleted_at IS NULL",
+                duckdb::params![&workspace_slug, requested_fontstack],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(internal_error)?;
+        if let Some(path) = glyphs_path {
+            glyphs_paths.push(path);
+        }
+    }
 
     drop(conn);
 
-    let Some(glyphs_path) = glyphs_path else {
+    if glyphs_paths.is_empty() {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
                 error: "Font not found".to_string(),
             }),
         ));
-    };
+    }
 
-    let glyphs_path = glyphs_path.trim_start_matches("./uploads/");
-    let pbf_path = state
-        .upload_dir
-        .join(glyphs_path)
-        .join(format!("{}-{}.pbf", start, end));
+    let should_merge = requested_fontstacks.len() > 1 || glyphs_paths.len() > 1;
+    if !should_merge {
+        let glyphs_path = glyphs_paths[0].trim_start_matches("./uploads/");
+        let pbf_path = state
+            .upload_dir
+            .join(glyphs_path)
+            .join(format!("{}-{}.pbf", start, end));
 
-    let canonical_path = match fs::canonicalize(&pbf_path).await {
-        Ok(path) => path,
-        Err(_) => {
+        let canonical_path = match fs::canonicalize(&pbf_path).await {
+            Ok(path) => path,
+            Err(_) => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "Glyph range not found".to_string(),
+                    }),
+                ))
+            }
+        };
+
+        if !canonical_path.starts_with(&state.upload_dir_canonical) {
             return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "Access denied".to_string(),
+                }),
+            ));
+        }
+
+        return match fs::read(&canonical_path).await {
+            Ok(data) => Ok((
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/x-protobuf")],
+                data,
+            )),
+            Err(_) => Err((
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
                     error: "Glyph range not found".to_string(),
                 }),
-            ))
-        }
-    };
-
-    if !canonical_path.starts_with(&state.upload_dir_canonical) {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ErrorResponse {
-                error: "Access denied".to_string(),
-            }),
-        ));
+            )),
+        };
     }
 
-    match fs::read(&canonical_path).await {
-        Ok(data) => Ok((
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, "application/x-protobuf")],
-            data,
-        )),
-        Err(_) => Err((
+    let mut merged_glyphs = Glyphs::default();
+    let mut has_any_stack = false;
+
+    for glyphs_path in glyphs_paths {
+        let glyphs_path = glyphs_path.trim_start_matches("./uploads/");
+        let pbf_path = state
+            .upload_dir
+            .join(glyphs_path)
+            .join(format!("{}-{}.pbf", start, end));
+
+        let canonical_path = match fs::canonicalize(&pbf_path).await {
+            Ok(path) => path,
+            Err(_) => continue,
+        };
+
+        if !canonical_path.starts_with(&state.upload_dir_canonical) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "Access denied".to_string(),
+                }),
+            ));
+        }
+
+        let bytes = match fs::read(&canonical_path).await {
+            Ok(data) => data,
+            Err(_) => continue,
+        };
+
+        let glyphs = Glyphs::decode(bytes.as_slice()).map_err(internal_error)?;
+        if glyphs.stacks.is_empty() {
+            continue;
+        }
+
+        has_any_stack = true;
+        merged_glyphs.stacks.extend(glyphs.stacks);
+    }
+
+    if !has_any_stack {
+        return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
                 error: "Glyph range not found".to_string(),
             }),
-        )),
+        ));
     }
+
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/x-protobuf")],
+        merged_glyphs.encode_to_vec(),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_glyph_range, FontItem};
+    use super::{parse_glyph_range, parse_requested_fontstacks, FontItem};
 
     #[test]
     fn parse_glyph_range_accepts_valid_patterns() {
@@ -769,6 +843,15 @@ mod tests {
         assert_eq!(parse_glyph_range("300-10"), None);
         assert_eq!(parse_glyph_range("../0-255"), None);
         assert_eq!(parse_glyph_range("0-255/extra"), None);
+    }
+
+    #[test]
+    fn parse_requested_fontstacks_splits_and_deduplicates() {
+        assert_eq!(
+            parse_requested_fontstacks("Noto Sans Regular, Noto Sans Regular , Arial Unicode"),
+            vec!["Noto Sans Regular".to_string(), "Arial Unicode".to_string()]
+        );
+        assert_eq!(parse_requested_fontstacks(" ,  "), Vec::<String>::new());
     }
 
     #[test]

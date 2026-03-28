@@ -354,6 +354,7 @@
     "slugLabel": "Slug",
     "slugLabelOptional": "工作空间 Slug（可选）",
     "slugHint": "仅支持小写字母、数字和连字符，例如：team-alpha",
+    "slugRequired": "编辑时必须填写工作空间 slug",
     "editSlug": "编辑 Slug",
     "slugTooLong": "工作空间 slug 不能超过 63 个字符",
     "slugTooShort": "工作空间 slug 至少需要 3 个字符",

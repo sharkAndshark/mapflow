@@ -223,6 +223,10 @@ export default function Settings() {
 
   async function saveWorkspaceSlug(workspaceId) {
     const slug = editingSlugValue.trim();
+    if (!slug) {
+      setSlugActionError(t('workspace.slugRequired'));
+      return;
+    }
     const slugError = getWorkspaceSlugValidationError(slug);
     if (slugError) {
       setSlugActionError(slugError);

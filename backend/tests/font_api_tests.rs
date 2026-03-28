@@ -214,6 +214,28 @@ async fn test_font_upload_publish_and_public_glyph_lifecycle() {
         Some("application/x-protobuf")
     );
 
+    let fallback_fontstack_request = Request::builder()
+        .method("GET")
+        .uri("/fonts/test-workspace/Press%20Start%202P%20Regular,Missing%20Fallback/0-255.pbf")
+        .body(Body::empty())
+        .unwrap();
+    let fallback_fontstack_response = app
+        .clone()
+        .oneshot(fallback_fontstack_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        fallback_fontstack_response.status(),
+        axum::http::StatusCode::OK
+    );
+    assert_eq!(
+        fallback_fontstack_response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("application/x-protobuf")
+    );
+
     let invalid_range_request = Request::builder()
         .method("GET")
         .uri("/fonts/test-workspace/Press%20Start%202P%20Regular/0-999.pbf")

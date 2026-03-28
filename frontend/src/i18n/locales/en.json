@@ -354,6 +354,7 @@
     "slugLabel": "Slug",
     "slugLabelOptional": "Workspace Slug (Optional)",
     "slugHint": "Only lowercase letters, numbers, and hyphens. Example: team-alpha",
+    "slugRequired": "Workspace slug is required when editing",
     "editSlug": "Edit Slug",
     "slugTooLong": "Workspace slug cannot exceed 63 characters",
     "slugTooShort": "Workspace slug must be at least 3 characters",
