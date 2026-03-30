@@ -92,7 +92,7 @@ async fn upload_fixture_font(app: &axum::Router) -> String {
 
     let upload_response = app.clone().oneshot(upload_request).await.unwrap();
     let upload_status = upload_response.status();
-    if upload_status != axum::http::StatusCode::OK {
+    if upload_status != axum::http::StatusCode::CREATED {
         let upload_body = upload_response
             .into_body()
             .collect()
@@ -100,7 +100,7 @@ async fn upload_fixture_font(app: &axum::Router) -> String {
             .unwrap()
             .to_bytes();
         panic!(
-            "expected upload 200 but got {} with body {}",
+            "expected upload 201 but got {} with body {}",
             upload_status,
             String::from_utf8_lossy(&upload_body)
         );

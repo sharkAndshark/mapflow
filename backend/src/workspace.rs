@@ -1,8 +1,13 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use duckdb::OptionalExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+
+use crate::http_errors::internal_error;
+use crate::models::ErrorResponse;
+use crate::AuthBackend;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workspace {
@@ -244,6 +249,62 @@ pub async fn ensure_test_mode_workspace(db: &Arc<Mutex<duckdb::Connection>>) -> 
 
     drop(conn);
     Some(new_workspace_id)
+}
+
+pub async fn get_active_workspace_id(
+    auth_session: &axum_login::AuthSession<AuthBackend>,
+    db: &Arc<Mutex<duckdb::Connection>>,
+) -> Result<String, (axum::http::StatusCode, axum::Json<ErrorResponse>)> {
+    match &auth_session.user {
+        Some(user) => {
+            let workspace_id = user.current_workspace_id.clone().ok_or_else(|| {
+                (
+                    axum::http::StatusCode::CONFLICT,
+                    axum::Json(ErrorResponse {
+                        error: "No active workspace available, please switch workspace".to_string(),
+                    }),
+                )
+            })?;
+
+            let conn = db.lock().await;
+            let active_workspace: Option<String> = conn
+                .query_row(
+                    r"
+                    SELECT w.id
+                    FROM workspaces w
+                    JOIN workspace_members wm ON w.id = wm.workspace_id
+                    WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
+                    LIMIT 1
+                    ",
+                    duckdb::params![&workspace_id, &user.id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(internal_error)?;
+            drop(conn);
+
+            if active_workspace.is_none() {
+                return Err((
+                    axum::http::StatusCode::CONFLICT,
+                    axum::Json(ErrorResponse {
+                        error:
+                            "Current workspace is archived or inaccessible, please switch workspace"
+                                .to_string(),
+                    }),
+                ));
+            }
+
+            Ok(workspace_id)
+        }
+        None => ensure_test_mode_workspace(db).await.ok_or_else(|| {
+            (
+                axum::http::StatusCode::UNAUTHORIZED,
+                axum::Json(ErrorResponse {
+                    error: "Not authenticated".to_string(),
+                }),
+            )
+        }),
+    }
 }
 
 #[cfg(test)]

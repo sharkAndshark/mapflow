@@ -22,6 +22,7 @@ use crate::{
     font_processor::{process_font, FontMetadata},
     http_errors::{bad_request, internal_error},
     models::ErrorResponse,
+    workspace::get_active_workspace_id,
     AppState, AuthBackend,
 };
 
@@ -29,62 +30,27 @@ fn create_id() -> String {
     Uuid::new_v4().to_string()
 }
 
-async fn get_workspace_id(
-    auth_session: &AuthSession<crate::AuthBackend>,
-    state: &AppState,
-) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
-    match &auth_session.user {
-        Some(user) => {
-            let workspace_id = user.current_workspace_id.clone().ok_or_else(|| {
-                (
-                    StatusCode::CONFLICT,
-                    Json(ErrorResponse {
-                        error: "No active workspace available, please switch workspace".to_string(),
-                    }),
-                )
-            })?;
-
-            let conn = state.db.lock().await;
-            let active_workspace: Option<String> = conn
-                .query_row(
-                    r"
-                    SELECT w.id
-                    FROM workspaces w
-                    JOIN workspace_members wm ON w.id = wm.workspace_id
-                    WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
-                    LIMIT 1
-                    ",
-                    duckdb::params![&workspace_id, &user.id],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(internal_error)?;
-            drop(conn);
-
-            if active_workspace.is_none() {
-                return Err((
-                    StatusCode::CONFLICT,
-                    Json(ErrorResponse {
-                        error:
-                            "Current workspace is archived or inaccessible, please switch workspace"
-                                .to_string(),
-                    }),
-                ));
-            }
-
-            Ok(workspace_id)
+fn relative_path_for(absolute: &Path, upload_dir: &Path) -> String {
+    if let Ok(relative) = absolute.strip_prefix(upload_dir) {
+        let dir_name = upload_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("uploads");
+        let mut s = format!(
+            "./{}/{}",
+            dir_name,
+            relative.to_string_lossy().replace('\\', "/")
+        );
+        if !s.starts_with('.') {
+            s = format!("./{s}");
         }
-        None => crate::workspace::ensure_test_mode_workspace(&state.db)
-            .await
-            .ok_or_else(|| {
-                (
-                    StatusCode::UNAUTHORIZED,
-                    Json(ErrorResponse {
-                        error: "Not authenticated".to_string(),
-                    }),
-                )
-            }),
+        return s;
     }
+    let mut s = absolute.to_string_lossy().replace('\\', "/");
+    if !s.starts_with('.') {
+        s = format!("./{s}");
+    }
+    s
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -132,7 +98,7 @@ pub async fn upload_font(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+    let workspace_id = get_active_workspace_id(&auth_session, &state.db).await?;
 
     let mut field = loop {
         let next = multipart.next_field().await.map_err(|e| {
@@ -201,8 +167,8 @@ pub async fn upload_font(
     drop(file);
 
     let glyphs_dir = fonts_dir.join("glyphs");
-    let original_rel = format!("./uploads/fonts/{}/original.{}", &font_id, ext);
-    let glyphs_rel = format!("./uploads/fonts/{}/glyphs", &font_id);
+    let original_rel = relative_path_for(&original_path, &state.upload_dir);
+    let glyphs_rel = relative_path_for(&glyphs_dir, &state.upload_dir);
 
     let display_name = Path::new(&safe_name)
         .file_stem()
@@ -258,10 +224,13 @@ pub async fn upload_font(
         }
     });
 
-    Ok(Json(FontUploadResponse {
-        id: font_id,
-        status: "processing".to_string(),
-    }))
+    Ok((
+        StatusCode::CREATED,
+        Json(FontUploadResponse {
+            id: font_id,
+            status: "processing".to_string(),
+        }),
+    ))
 }
 
 async fn update_font_error(state: &AppState, font_id: &str, error: &str) {
@@ -323,7 +292,7 @@ pub async fn list_fonts(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+    let workspace_id = get_active_workspace_id(&auth_session, &state.db).await?;
 
     let conn = state.db.lock().await;
     let mut stmt = conn
@@ -354,7 +323,7 @@ pub async fn get_font(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+    let workspace_id = get_active_workspace_id(&auth_session, &state.db).await?;
 
     let conn = state.db.lock().await;
     let font: Option<FontItem> = conn
@@ -387,7 +356,7 @@ pub async fn delete_font(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+    let workspace_id = get_active_workspace_id(&auth_session, &state.db).await?;
 
     let conn = state.db.lock().await;
 
@@ -488,7 +457,7 @@ pub async fn publish_font(
     AxumPath(id): AxumPath<String>,
     Json(req): Json<PublishFontRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+    let workspace_id = get_active_workspace_id(&auth_session, &state.db).await?;
 
     let slug = match req.slug {
         Some(s) => validate_slug(&s).map_err(|e| bad_request(&e))?,
@@ -581,7 +550,7 @@ pub async fn unpublish_font(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let workspace_id = get_workspace_id(&auth_session, &state).await?;
+    let workspace_id = get_active_workspace_id(&auth_session, &state.db).await?;
 
     info!(font_id = %id, "Unpublish font request");
 
