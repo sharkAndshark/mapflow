@@ -5,7 +5,6 @@ use axum::{
     Json,
 };
 use axum_login::AuthSession;
-use chrono::Utc;
 use duckdb::OptionalExt;
 use pbf_font_tools::prost::Message;
 use pbf_font_tools::Glyphs;
@@ -75,69 +74,16 @@ async fn get_workspace_id(
 
             Ok(workspace_id)
         }
-        None => {
-            if std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1") {
-                let conn = state.db.lock().await;
-
-                let workspace_id: Option<String> = conn
-                    .query_row(
-                        "SELECT id FROM workspaces WHERE is_personal = true AND deleted_at IS NULL LIMIT 1",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .ok()
-                    .flatten();
-
-                if let Some(wid) = workspace_id {
-                    drop(conn);
-                    return Ok(wid);
-                }
-
-                let existing_user_id: Option<String> = conn
-                    .query_row("SELECT id FROM users LIMIT 1", [], |row| row.get(0))
-                    .ok()
-                    .flatten();
-
-                let user_id = match existing_user_id {
-                    Some(uid) => uid,
-                    None => {
-                        let new_user_id = uuid::Uuid::new_v4().to_string();
-                        conn.execute(
-                            "INSERT INTO users (id, username, password_hash, role, current_workspace_id, created_at) VALUES (?, ?, '', 'user', NULL, CURRENT_TIMESTAMP)",
-                            duckdb::params![&new_user_id, format!("test_user_{}", &new_user_id[..8])],
-                        ).ok();
-                        new_user_id
-                    }
-                };
-
-                let workspace_id = uuid::Uuid::new_v4().to_string();
-                let workspace_name = "Test Workspace".to_string();
-                let workspace_slug = crate::workspace::workspace_slug_base_from_name_or_id(
-                    &workspace_name,
-                    &workspace_id,
-                );
-
-                conn.execute(
-                    "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)",
-                    duckdb::params![&workspace_id, &workspace_name, &workspace_slug, &user_id],
-                ).ok();
-
-                conn.execute(
-                    "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
-                    duckdb::params![&workspace_id, &user_id],
-                ).ok();
-
-                drop(conn);
-                Ok(workspace_id)
-            } else {
-                Err((
+        None => crate::workspace::ensure_test_mode_workspace(&state.db)
+            .await
+            .ok_or_else(|| {
+                (
                     StatusCode::UNAUTHORIZED,
                     Json(ErrorResponse {
                         error: "Not authenticated".to_string(),
                     }),
-                ))
-            }
-        }
+                )
+            }),
     }
 }
 
@@ -229,7 +175,7 @@ pub async fn upload_font(
         .await
         .map_err(internal_error)?;
 
-    let original_path = fonts_dir.join("original");
+    let original_path = fonts_dir.join(format!("original.{}", ext));
     let mut file = BufWriter::new(
         fs::File::create(&original_path)
             .await
@@ -255,10 +201,9 @@ pub async fn upload_font(
     drop(file);
 
     let glyphs_dir = fonts_dir.join("glyphs");
-    let original_rel = format!("./uploads/fonts/{}/original", &font_id);
+    let original_rel = format!("./uploads/fonts/{}/original.{}", &font_id, ext);
     let glyphs_rel = format!("./uploads/fonts/{}/glyphs", &font_id);
 
-    let created_at = Utc::now().to_rfc3339();
     let display_name = Path::new(&safe_name)
         .file_stem()
         .and_then(|n| n.to_str())
@@ -268,7 +213,7 @@ pub async fn upload_font(
     let conn = state.db.lock().await;
     conn.execute(
         "INSERT INTO fonts (id, workspace_id, name, fontstack, original_path, glyphs_path, status, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)",
         duckdb::params![
             &font_id,
             &workspace_id,
@@ -277,7 +222,6 @@ pub async fn upload_font(
             &original_rel,
             &glyphs_rel,
             "processing",
-            &created_at,
         ],
     )
     .map_err(internal_error)?;
@@ -322,10 +266,12 @@ pub async fn upload_font(
 
 async fn update_font_error(state: &AppState, font_id: &str, error: &str) {
     let conn = state.db.lock().await;
-    let _ = conn.execute(
+    if let Err(e) = conn.execute(
         "UPDATE fonts SET status = 'failed', error = ? WHERE id = ?",
         duckdb::params![error, font_id],
-    );
+    ) {
+        warn!(font_id = %font_id, db_error = %e, "Failed to update font error status");
+    }
 }
 
 async fn update_font_ready(
@@ -351,6 +297,28 @@ async fn update_font_ready(
     Ok(())
 }
 
+fn read_font_row(row: &duckdb::Row) -> Result<FontItem, duckdb::Error> {
+    let created_at: chrono::NaiveDateTime = row.get(13)?;
+    let published_at: Option<chrono::NaiveDateTime> = row.get(14)?;
+    Ok(FontItem {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        fontstack: row.get(2)?,
+        family: row.get(3)?,
+        style: row.get(4)?,
+        glyph_count: row.get(5)?,
+        start_cp: row.get(6)?,
+        end_cp: row.get(7)?,
+        status: row.get(8)?,
+        error: row.get(9)?,
+        is_public: row.get(10)?,
+        slug: row.get(11)?,
+        workspace_slug: row.get(12)?,
+        created_at: created_at.and_utc().to_rfc3339(),
+        published_at: published_at.map(|t| t.and_utc().to_rfc3339()),
+    })
+}
+
 pub async fn list_fonts(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
@@ -369,27 +337,7 @@ pub async fn list_fonts(
         .map_err(internal_error)?;
 
     let fonts_iter = stmt
-        .query_map(duckdb::params![&workspace_id], |row| {
-            let created_at: chrono::NaiveDateTime = row.get(13)?;
-            let published_at: Option<chrono::NaiveDateTime> = row.get(14)?;
-            Ok(FontItem {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                fontstack: row.get(2)?,
-                family: row.get(3)?,
-                style: row.get(4)?,
-                glyph_count: row.get(5)?,
-                start_cp: row.get(6)?,
-                end_cp: row.get(7)?,
-                status: row.get(8)?,
-                error: row.get(9)?,
-                is_public: row.get(10)?,
-                slug: row.get(11)?,
-                workspace_slug: row.get(12)?,
-                created_at: created_at.and_utc().to_rfc3339(),
-                published_at: published_at.map(|t| t.and_utc().to_rfc3339()),
-            })
-        })
+        .query_map(duckdb::params![&workspace_id], read_font_row)
         .map_err(internal_error)?;
 
     let mut fonts = Vec::new();
@@ -416,27 +364,7 @@ pub async fn get_font(
              JOIN workspaces w ON w.id = f.workspace_id
              WHERE f.id = ? AND f.workspace_id = ?",
             duckdb::params![&id, &workspace_id],
-            |row| {
-                let created_at: chrono::NaiveDateTime = row.get(13)?;
-                let published_at: Option<chrono::NaiveDateTime> = row.get(14)?;
-                Ok(FontItem {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    fontstack: row.get(2)?,
-                    family: row.get(3)?,
-                    style: row.get(4)?,
-                    glyph_count: row.get(5)?,
-                    start_cp: row.get(6)?,
-                    end_cp: row.get(7)?,
-                    status: row.get(8)?,
-                    error: row.get(9)?,
-                    is_public: row.get(10)?,
-                    slug: row.get(11)?,
-                    workspace_slug: row.get(12)?,
-                    created_at: created_at.and_utc().to_rfc3339(),
-                    published_at: published_at.map(|t| t.and_utc().to_rfc3339()),
-                })
-            },
+            read_font_row,
         )
         .optional()
         .map_err(internal_error)?;
@@ -611,10 +539,9 @@ pub async fn publish_font(
         ));
     }
 
-    let published_at = Utc::now().naive_utc();
     let result = conn.execute(
-        "UPDATE fonts SET is_public = TRUE, slug = ?, published_at = ? WHERE id = ? AND workspace_id = ? AND status = 'ready'",
-        duckdb::params![&slug, published_at, &id, &workspace_id],
+        "UPDATE fonts SET is_public = TRUE, slug = ?, published_at = CURRENT_TIMESTAMP WHERE id = ? AND workspace_id = ? AND status = 'ready'",
+        duckdb::params![&slug, &id, &workspace_id],
     );
 
     match result {

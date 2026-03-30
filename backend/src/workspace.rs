@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workspace {
@@ -189,6 +192,58 @@ pub fn workspace_slug_base_from_name_or_id(name: &str, workspace_id: &str) -> St
     }
 
     "workspace-default".to_string()
+}
+
+pub async fn ensure_test_mode_workspace(db: &Arc<Mutex<duckdb::Connection>>) -> Option<String> {
+    let conn = db.lock().await;
+
+    let workspace_id: Option<String> = conn
+        .query_row(
+            "SELECT id FROM workspaces WHERE is_personal = true AND deleted_at IS NULL LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    if let Some(wid) = workspace_id {
+        drop(conn);
+        return Some(wid);
+    }
+
+    let existing_user_id: Option<String> = conn
+        .query_row("SELECT id FROM users LIMIT 1", [], |row| row.get(0))
+        .ok()
+        .flatten();
+
+    let user_id = match existing_user_id {
+        Some(uid) => uid,
+        None => {
+            let new_user_id = uuid::Uuid::new_v4().to_string();
+            let _ = conn.execute(
+                "INSERT INTO users (id, username, password_hash, role, current_workspace_id, created_at) VALUES (?, ?, '', 'user', NULL, CURRENT_TIMESTAMP)",
+                duckdb::params![&new_user_id, format!("test_user_{}", &new_user_id[..8])],
+            );
+            new_user_id
+        }
+    };
+
+    let new_workspace_id = uuid::Uuid::new_v4().to_string();
+    let workspace_name = "Test Workspace".to_string();
+    let workspace_slug = workspace_slug_base_from_name_or_id(&workspace_name, &new_workspace_id);
+
+    let _ = conn.execute(
+        "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)",
+        duckdb::params![&new_workspace_id, &workspace_name, &workspace_slug, &user_id],
+    );
+
+    let _ = conn.execute(
+        "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        duckdb::params![&new_workspace_id, &user_id],
+    );
+
+    drop(conn);
+    Some(new_workspace_id)
 }
 
 #[cfg(test)]

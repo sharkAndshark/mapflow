@@ -12,6 +12,7 @@ use tokio::{
     fs,
     io::{AsyncWriteExt, BufWriter},
 };
+use tracing::debug;
 use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
@@ -22,7 +23,6 @@ use crate::{
     models::{ErrorResponse, FileItem},
     AppState, AuthBackend,
 };
-use tracing::debug;
 
 pub async fn upload_file(
     auth_session: AuthSession<AuthBackend>,
@@ -76,84 +76,16 @@ pub async fn upload_file(
 
             workspace_id
         }
-        None => {
-            debug!("upload_file: no user in session, checking test mode");
-            let test_mode = std::env::var("MAPFLOW_TEST_MODE").as_deref() == Ok("1");
-            debug!("upload_file: test_mode = {}", test_mode);
-            if test_mode {
-                debug!("upload_file: test mode enabled, looking for workspace");
-                let conn = state.db.lock().await;
-
-                let workspace_id: Option<String> = conn
-                    .query_row(
-                        "SELECT id FROM workspaces WHERE is_personal = true AND deleted_at IS NULL LIMIT 1",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .ok()
-                    .flatten();
-
-                if let Some(wid) = workspace_id {
-                    drop(conn);
-                    debug!(
-                        "upload_file: found existing workspace in test mode: {}",
-                        wid
-                    );
-                    wid
-                } else {
-                    debug!("upload_file: no workspace found, creating one");
-
-                    let existing_user_id: Option<String> = conn
-                        .query_row("SELECT id FROM users LIMIT 1", [], |row| row.get(0))
-                        .ok()
-                        .flatten();
-
-                    let user_id = match existing_user_id {
-                        Some(uid) => uid,
-                        None => {
-                            let new_user_id = uuid::Uuid::new_v4().to_string();
-                            conn.execute(
-                                "INSERT INTO users (id, username, password_hash, role, current_workspace_id, created_at) VALUES (?, ?, '', 'user', NULL, CURRENT_TIMESTAMP)",
-                                duckdb::params![&new_user_id, format!("test_user_{}", &new_user_id[..8])],
-                            ).ok();
-                            new_user_id
-                        }
-                    };
-
-                    let new_workspace_id = uuid::Uuid::new_v4().to_string();
-                    let workspace_name = "Test Workspace".to_string();
-                    let workspace_slug = crate::workspace::workspace_slug_base_from_name_or_id(
-                        &workspace_name,
-                        &new_workspace_id,
-                    );
-
-                    conn.execute(
-                        "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)",
-                        duckdb::params![&new_workspace_id, &workspace_name, &workspace_slug, &user_id],
-                    ).ok();
-
-                    conn.execute(
-                        "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
-                        duckdb::params![&new_workspace_id, &user_id],
-                    ).ok();
-
-                    drop(conn);
-                    debug!(
-                        "upload_file: created new workspace in test mode: {}",
-                        new_workspace_id
-                    );
-                    new_workspace_id
-                }
-            } else {
-                debug!("upload_file: not authenticated and not in test mode");
-                return Err((
+        None => crate::workspace::ensure_test_mode_workspace(&state.db)
+            .await
+            .ok_or_else(|| {
+                (
                     StatusCode::UNAUTHORIZED,
                     Json(ErrorResponse {
                         error: "Not authenticated".to_string(),
                     }),
-                ));
-            }
-        }
+                )
+            })?,
     };
 
     let mut field = loop {
