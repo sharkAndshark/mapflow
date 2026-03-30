@@ -1058,7 +1058,7 @@ pub async fn publish_file(
                     StatusCode::CONFLICT,
                     Json(ErrorResponse { error: error_msg }),
                 ));
-            } else if err_msg.contains("UNIQUE")
+            } else if err_msg.contains("published_files")
                 || (err_msg.contains("slug") && err_msg.contains("unique"))
             {
                 Err("Slug already in use".to_string())

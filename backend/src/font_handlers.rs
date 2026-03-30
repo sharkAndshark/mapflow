@@ -177,21 +177,27 @@ pub async fn upload_font(
         .to_string();
 
     let conn = state.db.lock().await;
-    conn.execute(
-        "INSERT INTO fonts (id, workspace_id, name, fontstack, original_path, glyphs_path, status, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)",
-        duckdb::params![
-            &font_id,
-            &workspace_id,
-            &display_name,
-            &display_name,
-            &original_rel,
-            &glyphs_rel,
-            "processing",
-        ],
-    )
-    .map_err(internal_error)?;
+    let insert_result: Result<(), duckdb::Error> = conn
+        .execute(
+            "INSERT INTO fonts (id, workspace_id, name, fontstack, original_path, glyphs_path, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)",
+            duckdb::params![
+                &font_id,
+                &workspace_id,
+                &display_name,
+                &display_name,
+                &original_rel,
+                &glyphs_rel,
+                "processing",
+            ],
+        )
+        .map(|_| ());
     drop(conn);
+
+    if let Err(e) = insert_result {
+        let _ = fs::remove_dir_all(&fonts_dir).await;
+        return Err(internal_error(e));
+    }
 
     let state_clone = state.clone();
     let font_id_clone = font_id.clone();
@@ -535,7 +541,7 @@ pub async fn publish_font(
         }
         Err(e) => {
             let err_msg = e.to_string();
-            if err_msg.contains("UNIQUE") || err_msg.contains("unique") {
+            if err_msg.contains("idx_fonts_workspace_slug") {
                 drop(conn);
                 Err(bad_request("Slug already in use"))
             } else {

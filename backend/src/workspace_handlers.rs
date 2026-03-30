@@ -93,7 +93,7 @@ fn build_unique_workspace_slug(
     };
 
     let mut candidate = base.clone();
-    let mut suffix: u32 = 2;
+    let mut suffix: u32 = 1;
 
     loop {
         let in_use: i64 = conn
@@ -903,7 +903,7 @@ pub async fn update_workspace(
         )
         .map_err(|err| {
             let err_text = err.to_string();
-            if err_text.contains("slug") {
+            if err_text.contains("idx_workspaces_slug") {
                 workspace_slug_conflict_or_internal(err)
             } else {
                 workspace_name_conflict_or_internal(err)
@@ -1078,7 +1078,7 @@ pub async fn restore_workspace(
             )
             .map_err(|err| {
                 let err_text = err.to_string();
-                if err_text.contains("slug") {
+                if err_text.contains("idx_workspaces_slug") {
                     workspace_slug_conflict_or_internal(err)
                 } else {
                     workspace_name_conflict_or_internal(err)
@@ -1121,7 +1121,7 @@ pub async fn restore_workspace(
             )
             .map_err(|err| {
                 let err_text = err.to_string();
-                if err_text.contains("slug") {
+                if err_text.contains("idx_workspaces_slug") {
                     workspace_slug_conflict_or_internal(err)
                 } else {
                     workspace_name_conflict_or_internal(err)
