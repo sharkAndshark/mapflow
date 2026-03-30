@@ -633,7 +633,8 @@ pub async fn get_public_glyph(
                    AND f.fontstack = ?
                    AND f.is_public = TRUE
                    AND f.status = 'ready'
-                   AND w.deleted_at IS NULL",
+                   AND w.deleted_at IS NULL
+                 LIMIT 1",
                 duckdb::params![&workspace_slug, requested_fontstack],
                 |row| row.get(0),
             )

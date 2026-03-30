@@ -978,6 +978,15 @@ pub async fn delete_workspace(
         })?;
 
         conn.execute(
+            "UPDATE fonts SET is_public = FALSE, slug = NULL, published_at = NULL WHERE workspace_id = ?",
+            duckdb::params![&workspace_id],
+        )
+        .map_err(|err| {
+            conn.execute_batch("ROLLBACK").ok();
+            internal_err(err)
+        })?;
+
+        conn.execute(
             "UPDATE workspaces SET deleted_at = ?, name = ?, slug = NULL WHERE id = ?",
             duckdb::params![&now, &archived_name, &workspace_id],
         )
