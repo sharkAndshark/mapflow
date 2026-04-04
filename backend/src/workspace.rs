@@ -180,6 +180,19 @@ pub fn slugify_workspace_name(name: &str) -> String {
     }
 }
 
+pub fn next_suffixed_slug(base: &str, suffix: u32) -> String {
+    let suffix_text = format!("-{suffix}");
+    let max_base_len = WORKSPACE_SLUG_MAX_LEN
+        .saturating_sub(suffix_text.len())
+        .max(WORKSPACE_SLUG_MIN_LEN);
+    let truncated_base = if base.len() > max_base_len {
+        base[..max_base_len].trim_end_matches('-').to_string()
+    } else {
+        base.to_string()
+    };
+    format!("{truncated_base}{suffix_text}")
+}
+
 pub fn fallback_workspace_slug_from_id(workspace_id: &str) -> String {
     let suffix = &workspace_id[..workspace_id.len().min(8)];
     format!("ws-{suffix}")
