@@ -386,16 +386,7 @@ fn unique_workspace_slug(
             return Ok(candidate);
         }
 
-        let suffix_text = format!("-{suffix}");
-        let max_base_len = crate::workspace::WORKSPACE_SLUG_MAX_LEN
-            .saturating_sub(suffix_text.len())
-            .max(crate::workspace::WORKSPACE_SLUG_MIN_LEN);
-        let truncated_base = if base.len() > max_base_len {
-            base[..max_base_len].trim_end_matches('-').to_string()
-        } else {
-            base.clone()
-        };
-        candidate = format!("{truncated_base}{suffix_text}");
+        candidate = crate::workspace::next_suffixed_slug(&base, suffix);
         suffix = suffix.saturating_add(1);
     }
 }

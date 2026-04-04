@@ -36,21 +36,28 @@ fn relative_path_for(absolute: &Path, upload_dir: &Path) -> String {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("uploads");
-        let mut s = format!(
+        return format!(
             "./{}/{}",
             dir_name,
             relative.to_string_lossy().replace('\\', "/")
         );
-        if !s.starts_with('.') {
-            s = format!("./{s}");
-        }
-        return s;
     }
-    let mut s = absolute.to_string_lossy().replace('\\', "/");
-    if !s.starts_with('.') {
-        s = format!("./{s}");
+    let s = absolute.to_string_lossy().replace('\\', "/");
+    if s.starts_with('.') {
+        s
+    } else {
+        format!("./{s}")
     }
-    s
+}
+
+fn resolve_glyphs_dir(stored_path: &str, upload_dir: &Path) -> std::path::PathBuf {
+    let dir_name = upload_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("uploads");
+    let prefix = format!("./{dir_name}/");
+    let relative = stored_path.strip_prefix(&prefix).unwrap_or(stored_path);
+    upload_dir.join(relative)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -203,13 +210,13 @@ pub async fn upload_font(
     let font_id_clone = font_id.clone();
     let original_path_clone = original_path.clone();
     let glyphs_dir_clone = glyphs_dir.clone();
+    let fonts_dir_clone = fonts_dir.clone();
 
     tokio::spawn(async move {
-        let original = original_path_clone.clone();
-        let glyphs = glyphs_dir_clone.clone();
         let font_id_for_blocking = font_id_clone.clone();
+        let cleanup_dir = fonts_dir_clone.clone();
 
-        let result = tokio::task::spawn_blocking(move || process_font(&original, &glyphs)).await;
+        let result = tokio::task::spawn_blocking(move || process_font(&original_path_clone, &glyphs_dir_clone)).await;
 
         match result {
             Ok(Ok((metadata, ranges))) => {
@@ -222,10 +229,16 @@ pub async fn upload_font(
             Ok(Err(e)) => {
                 error!(font_id = %font_id_clone, error = %e, "Failed to process font");
                 update_font_error(&state_clone, &font_id_clone, &e.to_string()).await;
+                if let Err(cleanup_err) = tokio::fs::remove_dir_all(&fonts_dir_clone).await {
+                    warn!(font_dir = %fonts_dir_clone.display(), error = %cleanup_err, "Failed to clean up font directory after processing failure");
+                }
             }
             Err(e) => {
                 error!(font_id = %font_id_for_blocking, error = %e, "Failed to spawn blocking task");
                 update_font_error(&state_clone, &font_id_for_blocking, &e.to_string()).await;
+                if let Err(cleanup_err) = tokio::fs::remove_dir_all(&cleanup_dir).await {
+                    warn!(font_dir = %cleanup_dir.display(), error = %cleanup_err, "Failed to clean up font directory after blocking task failure");
+                }
             }
         }
     });
@@ -247,6 +260,7 @@ async fn update_font_error(state: &AppState, font_id: &str, error: &str) {
     ) {
         warn!(font_id = %font_id, db_error = %e, "Failed to update font error status");
     }
+    drop(conn);
 }
 
 async fn update_font_ready(
@@ -269,6 +283,7 @@ async fn update_font_ready(
         ],
     )
     .map_err(|e| e.to_string())?;
+    drop(conn);
     Ok(())
 }
 
@@ -393,13 +408,26 @@ pub async fn delete_font(
 
     drop(conn);
 
-    let glyphs_path = glyphs_path.trim_start_matches("./uploads/");
-    let glyphs_dir = state.upload_dir.join(glyphs_path);
+    let glyphs_dir = resolve_glyphs_dir(&glyphs_path, &state.upload_dir);
     let font_dir = glyphs_dir
         .parent()
         .map_or(glyphs_dir.clone(), std::path::Path::to_path_buf);
-    if let Err(e) = tokio::fs::remove_dir_all(&font_dir).await {
-        warn!(font_dir = %font_dir.display(), error = %e, "Failed to remove font directory");
+
+    match tokio::fs::canonicalize(&font_dir).await {
+        Ok(canonical_font_dir) if canonical_font_dir.starts_with(&state.upload_dir_canonical) => {
+            if let Err(e) = tokio::fs::remove_dir_all(&canonical_font_dir).await {
+                warn!(font_dir = %canonical_font_dir.display(), error = %e, "Failed to remove font directory");
+            }
+        }
+        Ok(canonical_font_dir) => {
+            warn!(
+                font_dir = %canonical_font_dir.display(),
+                "Skipping font directory removal: path escapes upload directory"
+            );
+        }
+        Err(e) => {
+            warn!(font_dir = %font_dir.display(), error = %e, "Font directory not found on disk, skipping removal");
+        }
     }
 
     info!(font_id = %id, "Font deleted");
@@ -633,10 +661,7 @@ pub async fn get_public_glyph(
 
     let should_merge = requested_fontstacks.len() > 1 || glyphs_paths.len() > 1;
     if !should_merge {
-        let glyphs_path = glyphs_paths[0].trim_start_matches("./uploads/");
-        let pbf_path = state
-            .upload_dir
-            .join(glyphs_path)
+        let pbf_path = resolve_glyphs_dir(&glyphs_paths[0], &state.upload_dir)
             .join(format!("{}-{}.pbf", start, end));
 
         let canonical_path = match fs::canonicalize(&pbf_path).await {
@@ -679,10 +704,7 @@ pub async fn get_public_glyph(
     let mut has_any_stack = false;
 
     for glyphs_path in glyphs_paths {
-        let glyphs_path = glyphs_path.trim_start_matches("./uploads/");
-        let pbf_path = state
-            .upload_dir
-            .join(glyphs_path)
+        let pbf_path = resolve_glyphs_dir(&glyphs_path, &state.upload_dir)
             .join(format!("{}-{}.pbf", start, end));
 
         let canonical_path = match fs::canonicalize(&pbf_path).await {
@@ -704,7 +726,13 @@ pub async fn get_public_glyph(
             Err(_) => continue,
         };
 
-        let glyphs = Glyphs::decode(bytes.as_slice()).map_err(internal_error)?;
+        let glyphs = match Glyphs::decode(bytes.as_slice()) {
+            Ok(g) => g,
+            Err(e) => {
+                warn!(path = %pbf_path.display(), error = %e, "Skipping corrupted glyph file in merge");
+                continue;
+            }
+        };
         if glyphs.stacks.is_empty() {
             continue;
         }
