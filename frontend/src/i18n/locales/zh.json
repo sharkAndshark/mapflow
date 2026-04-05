@@ -107,6 +107,26 @@
       "failed": "失败"
     }
   },
+  "icon": {
+    "name": "名称",
+    "fileType": "文件类型",
+    "dimensions": "尺寸",
+    "fileSize": "文件大小",
+    "uploadTime": "上传时间",
+    "updateTime": "更新时间",
+    "uploadIcon": "上传图标",
+    "uploading": "上传中...",
+    "noIcons": "暂无图标",
+    "selectIconToView": "选择一个图标查看详情",
+    "loadFailed": "加载图标列表失败",
+    "unsupportedFormat": "不支持的文件格式，仅允许 .png 和 .svg",
+    "uploadFailed": "图标上传失败",
+    "deleteBtn": "删除图标",
+    "deleteConfirm": "确定要删除该图标吗？",
+    "deleteFailed": "删除图标失败",
+    "updateFailed": "更新图标失败",
+    "nameEmpty": "名称不能为空"
+  },
   "fileList": {
     "name": "名称",
     "type": "类型",

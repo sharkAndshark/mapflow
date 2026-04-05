@@ -635,6 +635,29 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     )
     .expect("Failed to create fonts table");
 
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS icons (
+            id VARCHAR PRIMARY KEY,
+            workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+            name VARCHAR NOT NULL,
+            original_path VARCHAR NOT NULL,
+            file_type VARCHAR NOT NULL,
+            width INTEGER,
+            height INTEGER,
+            size BIGINT NOT NULL,
+            status VARCHAR NOT NULL DEFAULT 'ready',
+            error VARCHAR,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_icons_workspace
+            ON icons(workspace_id);
+        ",
+    )
+    .expect("Failed to create icons table");
+
     ensure_workspace_schema_and_backfill(&conn);
 
     conn

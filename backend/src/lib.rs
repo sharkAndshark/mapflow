@@ -12,6 +12,7 @@ mod font_handlers;
 mod font_processor;
 mod handlers;
 mod http_errors;
+mod icon_handlers;
 mod import;
 mod mbtiles;
 mod models;

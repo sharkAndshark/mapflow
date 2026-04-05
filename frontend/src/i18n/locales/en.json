@@ -107,6 +107,26 @@
       "failed": "Failed"
     }
   },
+  "icon": {
+    "name": "Name",
+    "fileType": "File Type",
+    "dimensions": "Dimensions",
+    "fileSize": "File Size",
+    "uploadTime": "Upload Time",
+    "updateTime": "Update Time",
+    "uploadIcon": "Upload Icon",
+    "uploading": "Uploading...",
+    "noIcons": "No icons uploaded yet",
+    "selectIconToView": "Select an icon to view details",
+    "loadFailed": "Failed to load icon list",
+    "unsupportedFormat": "Unsupported file format. Only .png and .svg are allowed",
+    "uploadFailed": "Icon upload failed",
+    "deleteBtn": "Delete Icon",
+    "deleteConfirm": "Are you sure you want to delete this icon?",
+    "deleteFailed": "Delete icon failed",
+    "updateFailed": "Update icon failed",
+    "nameEmpty": "Name cannot be empty"
+  },
   "fileList": {
     "name": "Name",
     "type": "Type",

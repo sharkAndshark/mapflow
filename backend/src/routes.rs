@@ -22,6 +22,7 @@ use crate::{
         update_crs, update_field_aliases, update_publish_settings, update_settings,
         update_tile_zoom,
     },
+    icon_handlers::{delete_icon, get_icon_file, list_icons, update_icon, upload_icon},
     postgis::{register_postgis_source, test_postgis_connection},
     public::{get_public_pmtiles, get_public_tile, get_public_tile_meta, head_public_pmtiles},
     upload::upload_file,
@@ -149,7 +150,10 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .route("/api/fonts", get(list_fonts).post(upload_font))
         .route("/api/fonts/{id}", get(get_font).delete(delete_font))
         .route("/api/fonts/{id}/publish", post(publish_font))
-        .route("/api/fonts/{id}/unpublish", post(unpublish_font));
+        .route("/api/fonts/{id}/unpublish", post(unpublish_font))
+        .route("/api/icons", get(list_icons).post(upload_icon))
+        .route("/api/icons/{id}", patch(update_icon).delete(delete_icon))
+        .route("/api/icons/{id}/file", get(get_icon_file));
 
     if with_auth {
         api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));

@@ -386,3 +386,51 @@ export async function unpublishFont(fontId) {
   }
   return null;
 }
+
+export async function listIcons() {
+  const res = await fetchWithAuth('/api/icons');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function uploadIcon(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetchWithAuth('/api/icons', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function updateIcon(iconId, data) {
+  const res = await fetchWithAuth(`/api/icons/${iconId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
+
+export async function deleteIcon(iconId) {
+  const res = await fetchWithAuth(`/api/icons/${iconId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
