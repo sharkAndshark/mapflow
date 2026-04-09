@@ -22,6 +22,7 @@ mod public;
 mod routes;
 mod session_store;
 mod static_assets;
+mod storage;
 mod test_routes;
 mod tiles;
 mod upload;

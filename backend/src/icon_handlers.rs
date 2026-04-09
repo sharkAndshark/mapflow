@@ -13,48 +13,14 @@ use tokio::{
     io::{AsyncWriteExt, BufWriter},
 };
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 use crate::{
     http_errors::{bad_request, internal_error},
     models::ErrorResponse,
+    storage::{create_id, relative_path_for, resolve_stored_path},
     workspace::get_active_workspace_id,
     AppState, AuthBackend,
 };
-
-fn create_id() -> String {
-    Uuid::new_v4().to_string()
-}
-
-fn relative_path_for(absolute: &Path, upload_dir: &Path) -> String {
-    if let Ok(relative) = absolute.strip_prefix(upload_dir) {
-        let dir_name = upload_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("uploads");
-        return format!(
-            "./{}/{}",
-            dir_name,
-            relative.to_string_lossy().replace('\\', "/")
-        );
-    }
-    let s = absolute.to_string_lossy().replace('\\', "/");
-    if s.starts_with('.') {
-        s
-    } else {
-        format!("./{s}")
-    }
-}
-
-fn resolve_icon_dir(stored_path: &str, upload_dir: &Path) -> std::path::PathBuf {
-    let dir_name = upload_dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("uploads");
-    let prefix = format!("./{dir_name}/");
-    let relative = stored_path.strip_prefix(&prefix).unwrap_or(stored_path);
-    upload_dir.join(relative)
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -359,7 +325,7 @@ pub async fn delete_icon(
 
     drop(conn);
 
-    let icon_file_dir = resolve_icon_dir(&original_path, &state.upload_dir);
+    let icon_file_dir = resolve_stored_path(&original_path, &state.upload_dir);
     let icon_dir = icon_file_dir
         .parent()
         .map_or(icon_file_dir.clone(), std::path::Path::to_path_buf);
@@ -412,7 +378,7 @@ pub async fn get_icon_file(
         ));
     };
 
-    let file_path = resolve_icon_dir(&original_path, &state.upload_dir);
+    let file_path = resolve_stored_path(&original_path, &state.upload_dir);
 
     let canonical_path = match fs::canonicalize(&file_path).await {
         Ok(path) => path,

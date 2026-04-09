@@ -16,49 +16,15 @@ use tokio::{
     io::{AsyncWriteExt, BufWriter},
 };
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 use crate::{
     font_processor::{process_font, FontMetadata},
     http_errors::{bad_request, internal_error},
     models::ErrorResponse,
+    storage::{create_id, relative_path_for, resolve_stored_path},
     workspace::get_active_workspace_id,
     AppState, AuthBackend,
 };
-
-fn create_id() -> String {
-    Uuid::new_v4().to_string()
-}
-
-fn relative_path_for(absolute: &Path, upload_dir: &Path) -> String {
-    if let Ok(relative) = absolute.strip_prefix(upload_dir) {
-        let dir_name = upload_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("uploads");
-        return format!(
-            "./{}/{}",
-            dir_name,
-            relative.to_string_lossy().replace('\\', "/")
-        );
-    }
-    let s = absolute.to_string_lossy().replace('\\', "/");
-    if s.starts_with('.') {
-        s
-    } else {
-        format!("./{s}")
-    }
-}
-
-fn resolve_glyphs_dir(stored_path: &str, upload_dir: &Path) -> std::path::PathBuf {
-    let dir_name = upload_dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("uploads");
-    let prefix = format!("./{dir_name}/");
-    let relative = stored_path.strip_prefix(&prefix).unwrap_or(stored_path);
-    upload_dir.join(relative)
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -408,7 +374,7 @@ pub async fn delete_font(
 
     drop(conn);
 
-    let glyphs_dir = resolve_glyphs_dir(&glyphs_path, &state.upload_dir);
+    let glyphs_dir = resolve_stored_path(&glyphs_path, &state.upload_dir);
     let font_dir = glyphs_dir
         .parent()
         .map_or(glyphs_dir.clone(), std::path::Path::to_path_buf);
@@ -661,7 +627,7 @@ pub async fn get_public_glyph(
 
     let should_merge = requested_fontstacks.len() > 1 || glyphs_paths.len() > 1;
     if !should_merge {
-        let pbf_path = resolve_glyphs_dir(&glyphs_paths[0], &state.upload_dir)
+        let pbf_path = resolve_stored_path(&glyphs_paths[0], &state.upload_dir)
             .join(format!("{}-{}.pbf", start, end));
 
         let canonical_path = match fs::canonicalize(&pbf_path).await {
@@ -704,7 +670,7 @@ pub async fn get_public_glyph(
     let mut has_any_stack = false;
 
     for glyphs_path in glyphs_paths {
-        let pbf_path = resolve_glyphs_dir(&glyphs_path, &state.upload_dir)
+        let pbf_path = resolve_stored_path(&glyphs_path, &state.upload_dir)
             .join(format!("{}-{}.pbf", start, end));
 
         let canonical_path = match fs::canonicalize(&pbf_path).await {
