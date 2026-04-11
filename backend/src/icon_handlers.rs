@@ -65,7 +65,12 @@ fn read_image_dimensions(
             let data = std::fs::read(path)?;
             let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default())?;
             let size = tree.size();
-            Ok((size.width() as u32, size.height() as u32))
+            let w = size.width().round() as u32;
+            let h = size.height().round() as u32;
+            if w == 0 || h == 0 {
+                return Err("SVG has no usable dimensions".into());
+            }
+            Ok((w, h))
         }
         _ => Err(format!("Unsupported file type: {file_type}").into()),
     }
