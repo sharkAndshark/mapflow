@@ -13,13 +13,14 @@ use tracing::info;
 use crate::{
     models::ErrorResponse,
     workspace::{
-        generate_deleted_workspace_name, validate_workspace_name, CurrentWorkspaceResponse,
-        WorkspaceMemberWithInfo, WorkspaceResponse, WorkspaceWithMemberCount,
+        generate_deleted_workspace_name, validate_workspace_name, validate_workspace_slug,
+        workspace_slug_base_from_name_or_id, CurrentWorkspaceResponse, WorkspaceMemberWithInfo,
+        WorkspaceResponse, WorkspaceWithMemberCount,
     },
     AppState, AuthBackend, User,
 };
 
-type WorkspaceRow = (String, String, String, bool, Option<String>, String);
+type WorkspaceRow = (String, String, String, String, bool, Option<String>, String);
 
 type ApiResult<T> = Result<T, Response>;
 
@@ -64,6 +65,56 @@ fn workspace_name_conflict_or_internal(err: duckdb::Error) -> Response {
         return bad_req("工作空间名称已被使用");
     }
     internal_err(err)
+}
+
+fn workspace_slug_conflict_or_internal(err: duckdb::Error) -> Response {
+    if is_unique_constraint_error(&err) {
+        return bad_req("工作空间 slug 已被使用");
+    }
+    internal_err(err)
+}
+
+fn workspace_slug_conflict() -> Response {
+    bad_req("工作空间 slug 已被使用")
+}
+
+#[allow(clippy::result_large_err)]
+fn build_unique_workspace_slug(
+    conn: &duckdb::Connection,
+    requested_slug: Option<&str>,
+    name: &str,
+    workspace_id: &str,
+    exclude_workspace_id: Option<&str>,
+) -> ApiResult<String> {
+    let base = if let Some(raw) = requested_slug {
+        validate_workspace_slug(raw).map_err(|e| bad_req(&e))?
+    } else {
+        workspace_slug_base_from_name_or_id(name, workspace_id)
+    };
+
+    let mut candidate = base.clone();
+    let mut suffix: u32 = 1;
+
+    loop {
+        let in_use: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM workspaces WHERE slug = ? AND (? IS NULL OR id != ?)",
+                duckdb::params![&candidate, &exclude_workspace_id, &exclude_workspace_id],
+                |row| row.get(0),
+            )
+            .map_err(internal_err)?;
+
+        if in_use == 0 {
+            return Ok(candidate);
+        }
+
+        if requested_slug.is_some() {
+            return Err(workspace_slug_conflict());
+        }
+
+        candidate = crate::workspace::next_suffixed_slug(&base, suffix);
+        suffix = suffix.saturating_add(1);
+    }
 }
 
 #[allow(clippy::result_large_err)]
@@ -135,7 +186,7 @@ async fn require_user(auth_session: &AuthSession<AuthBackend>) -> ApiResult<User
 }
 
 fn parse_workspace_row(row: WorkspaceRow) -> Result<crate::workspace::Workspace, String> {
-    let (id, name, owner_id, is_personal, deleted_at_str, created_at_str) = row;
+    let (id, name, slug, owner_id, is_personal, deleted_at_str, created_at_str) = row;
     let deleted_at = deleted_at_str
         .map(|s| {
             chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
@@ -151,6 +202,7 @@ fn parse_workspace_row(row: WorkspaceRow) -> Result<crate::workspace::Workspace,
     Ok(crate::workspace::Workspace {
         id,
         name,
+        slug,
         owner_id,
         is_personal,
         deleted_at,
@@ -176,6 +228,7 @@ pub async fn list_workspaces(
         .prepare(
             r"
             SELECT w.id, w.name, w.owner_id, w.is_personal, w.deleted_at, w.created_at,
+                   COALESCE(w.slug, w.id) as slug,
                    (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id) as member_count
             FROM workspaces w
             JOIN workspace_members wm ON w.id = wm.workspace_id
@@ -194,7 +247,8 @@ pub async fn list_workspaces(
                 row.get::<_, bool>(3)?,
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, String>(5)?,
-                row.get::<_, i64>(6)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, i64>(7)?,
             ))
         })
         .map_err(internal_err)?
@@ -205,7 +259,16 @@ pub async fn list_workspaces(
     let workspaces: Result<Vec<WorkspaceWithMemberCount>, String> = rows
         .into_iter()
         .map(
-            |(id, name, owner_id, is_personal, _deleted_at_str, created_at_str, member_count)| {
+            |(
+                id,
+                name,
+                owner_id,
+                is_personal,
+                _deleted_at_str,
+                created_at_str,
+                slug,
+                member_count,
+            )| {
                 let created_at =
                     chrono::NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S")
                         .map_err(|e| format!("Failed to parse created_at: {}", e))?
@@ -214,6 +277,7 @@ pub async fn list_workspaces(
                 Ok(WorkspaceWithMemberCount {
                     id,
                     name,
+                    slug,
                     owner_id,
                     is_personal,
                     member_count,
@@ -231,6 +295,7 @@ pub async fn list_workspaces(
 #[derive(Debug, Deserialize)]
 pub struct CreateWorkspaceRequest {
     pub name: String,
+    pub slug: Option<String>,
 }
 
 pub async fn create_workspace(
@@ -256,14 +321,15 @@ pub async fn create_workspace(
     }
 
     let workspace_id = uuid::Uuid::new_v4().to_string();
+    let slug = build_unique_workspace_slug(&conn, req.slug.as_deref(), &name, &workspace_id, None)?;
     let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_err)?;
 
     let insert_result = conn.execute(
-        "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, ?)",
-        duckdb::params![&workspace_id, &name, &user.id, &now],
+        "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, FALSE, ?)",
+        duckdb::params![&workspace_id, &name, &slug, &user.id, &now],
     );
 
     if let Err(e) = insert_result {
@@ -287,13 +353,14 @@ pub async fn create_workspace(
 
     conn.execute_batch("COMMIT").map_err(internal_err)?;
 
-    info!(workspace_id = %workspace_id, name = %name, owner_id = %user.id, "Workspace created");
+    info!(workspace_id = %workspace_id, name = %name, slug = %slug, owner_id = %user.id, "Workspace created");
 
     Ok((
         StatusCode::CREATED,
         Json(WorkspaceResponse {
             id: workspace_id,
             name,
+            slug,
             owner_id: user.id,
             is_personal: false,
         }),
@@ -329,7 +396,7 @@ pub async fn get_workspace(
 
     let row: Option<WorkspaceRow> = conn
         .query_row(
-            "SELECT id, name, owner_id, is_personal, deleted_at, created_at FROM workspaces WHERE id = ?",
+            "SELECT id, name, COALESCE(slug, id), owner_id, is_personal, deleted_at, created_at FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
             |row| {
                 Ok((
@@ -339,6 +406,7 @@ pub async fn get_workspace(
                     row.get(3)?,
                     row.get(4)?,
                     row.get(5)?,
+                    row.get(6)?,
                 ))
             },
         )
@@ -693,16 +761,17 @@ pub async fn switch_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let workspace_info: Option<(String, bool)> = conn
+    let workspace_info: Option<(String, String, bool)> = conn
         .query_row(
-            "SELECT name, is_personal FROM workspaces WHERE id = ? AND deleted_at IS NULL",
+            "SELECT name, COALESCE(slug, id), is_personal FROM workspaces WHERE id = ? AND deleted_at IS NULL",
             duckdb::params![&req.workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let (name, is_personal) = workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
+    let (name, slug, is_personal) =
+        workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
 
     let is_member: i64 = conn
         .query_row(
@@ -738,13 +807,15 @@ pub async fn switch_workspace(
     Ok(Json(CurrentWorkspaceResponse {
         id: req.workspace_id,
         name,
+        slug,
         is_personal,
     }))
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateWorkspaceRequest {
-    pub name: String,
+    pub name: Option<String>,
+    pub slug: Option<String>,
 }
 
 #[allow(clippy::result_large_err)]
@@ -755,19 +826,22 @@ pub async fn update_workspace(
     Json(req): Json<UpdateWorkspaceRequest>,
 ) -> ApiResult<impl IntoResponse> {
     let user = require_user(&auth_session).await?;
-    let name = validate_workspace_name(&req.name).map_err(|e| bad_req(&e))?;
+    if req.name.is_none() && req.slug.is_none() {
+        return Err(bad_req("至少需要提供 name 或 slug"));
+    }
+
     let conn = state.db.lock().await;
 
-    let workspace_info: Option<(String, bool, Option<String>)> = conn
+    let workspace_info: Option<(String, bool, Option<String>, String, String)> = conn
         .query_row(
-            "SELECT owner_id, is_personal, deleted_at FROM workspaces WHERE id = ?",
+            "SELECT owner_id, is_personal, deleted_at, name, COALESCE(slug, id) FROM workspaces WHERE id = ?",
             duckdb::params![&workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .optional()
         .map_err(internal_err)?;
 
-    let (owner_id, is_personal, deleted_at) =
+    let (owner_id, is_personal, deleted_at, current_name, current_slug) =
         workspace_info.ok_or_else(|| not_found("Workspace not found"))?;
 
     if user.id != owner_id {
@@ -778,34 +852,62 @@ pub async fn update_workspace(
         return Err(not_found("Workspace not found"));
     }
 
-    if is_personal {
-        return Err(bad_req("Cannot rename personal workspace"));
+    let target_name = match req.name {
+        Some(name_raw) => {
+            if is_personal {
+                return Err(bad_req("Cannot rename personal workspace"));
+            }
+            validate_workspace_name(&name_raw).map_err(|e| bad_req(&e))?
+        }
+        None => current_name.clone(),
+    };
+
+    if target_name != current_name {
+        let existing: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM workspaces WHERE name = ? AND id != ? AND deleted_at IS NULL",
+                duckdb::params![&target_name, &workspace_id],
+                |row| row.get(0),
+            )
+            .map_err(internal_err)?;
+
+        if existing > 0 {
+            return Err(bad_req("工作空间名称已被使用"));
+        }
     }
 
-    let existing: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM workspaces WHERE name = ? AND id != ? AND deleted_at IS NULL",
-            duckdb::params![&name, &workspace_id],
-            |row| row.get(0),
-        )
-        .map_err(internal_err)?;
-
-    if existing > 0 {
-        return Err(bad_req("工作空间名称已被使用"));
-    }
+    let target_slug = match req.slug {
+        Some(slug_raw) => build_unique_workspace_slug(
+            &conn,
+            Some(&slug_raw),
+            &target_name,
+            &workspace_id,
+            Some(&workspace_id),
+        )?,
+        None => current_slug.clone(),
+    };
 
     with_detached_workspace_members(&conn, &workspace_id, |conn| {
         conn.execute(
-            "UPDATE workspaces SET name = ? WHERE id = ?",
-            duckdb::params![&name, &workspace_id],
+            "UPDATE workspaces SET name = ?, slug = ? WHERE id = ?",
+            duckdb::params![&target_name, &target_slug, &workspace_id],
         )
-        .map_err(workspace_name_conflict_or_internal)?;
+        .map_err(|err| {
+            let err_text = err.to_string();
+            if err_text.contains("idx_workspaces_slug") {
+                workspace_slug_conflict_or_internal(err)
+            } else {
+                workspace_name_conflict_or_internal(err)
+            }
+        })?;
         Ok(())
     })?;
 
-    info!(workspace_id = %workspace_id, name = %name, "Workspace updated");
+    info!(workspace_id = %workspace_id, name = %target_name, slug = %target_slug, "Workspace updated");
 
-    Ok(Json(json!({ "id": workspace_id, "name": name })))
+    Ok(Json(
+        json!({ "id": workspace_id, "name": target_name, "slug": target_slug }),
+    ))
 }
 
 #[allow(clippy::result_large_err)]
@@ -867,7 +969,16 @@ pub async fn delete_workspace(
         })?;
 
         conn.execute(
-            "UPDATE workspaces SET deleted_at = ?, name = ? WHERE id = ?",
+            "UPDATE fonts SET is_public = FALSE, slug = NULL, published_at = NULL WHERE workspace_id = ?",
+            duckdb::params![&workspace_id],
+        )
+        .map_err(|err| {
+            conn.execute_batch("ROLLBACK").ok();
+            internal_err(err)
+        })?;
+
+        conn.execute(
+            "UPDATE workspaces SET deleted_at = ?, name = ?, slug = NULL WHERE id = ?",
             duckdb::params![&now, &archived_name, &workspace_id],
         )
         .map_err(|err| {
@@ -896,6 +1007,7 @@ pub async fn delete_workspace(
 #[derive(Debug, Deserialize)]
 pub struct RestoreWorkspaceRequest {
     pub name: Option<String>,
+    pub slug: Option<String>,
 }
 
 #[allow(clippy::result_large_err)]
@@ -930,6 +1042,13 @@ pub async fn restore_workspace(
 
     if let Some(new_name) = &req.name {
         let name = validate_workspace_name(new_name).map_err(|e| bad_req(&e))?;
+        let slug = build_unique_workspace_slug(
+            &conn,
+            req.slug.as_deref(),
+            &name,
+            &workspace_id,
+            Some(&workspace_id),
+        )?;
 
         let existing: i64 = conn
             .query_row(
@@ -945,18 +1064,34 @@ pub async fn restore_workspace(
 
         with_detached_workspace_members(&conn, &workspace_id, |conn| {
             conn.execute(
-                "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
-                duckdb::params![&name, &workspace_id],
+                "UPDATE workspaces SET name = ?, slug = ?, deleted_at = NULL WHERE id = ?",
+                duckdb::params![&name, &slug, &workspace_id],
             )
-            .map_err(workspace_name_conflict_or_internal)?;
+            .map_err(|err| {
+                let err_text = err.to_string();
+                if err_text.contains("idx_workspaces_slug") {
+                    workspace_slug_conflict_or_internal(err)
+                } else {
+                    workspace_name_conflict_or_internal(err)
+                }
+            })?;
             Ok(())
         })?;
 
-        info!(workspace_id = %workspace_id, name = %name, "Workspace restored with new name");
+        info!(workspace_id = %workspace_id, name = %name, slug = %slug, "Workspace restored with new name");
 
-        Ok(Json(json!({ "id": workspace_id, "name": name })))
+        Ok(Json(
+            json!({ "id": workspace_id, "name": name, "slug": slug }),
+        ))
     } else {
         let restored_name = archived_workspace_original_name(&current_name, &workspace_id);
+        let restored_slug = build_unique_workspace_slug(
+            &conn,
+            req.slug.as_deref(),
+            &restored_name,
+            &workspace_id,
+            Some(&workspace_id),
+        )?;
 
         let existing: i64 = conn
             .query_row(
@@ -972,16 +1107,25 @@ pub async fn restore_workspace(
 
         with_detached_workspace_members(&conn, &workspace_id, |conn| {
             conn.execute(
-                "UPDATE workspaces SET name = ?, deleted_at = NULL WHERE id = ?",
-                duckdb::params![&restored_name, &workspace_id],
+                "UPDATE workspaces SET name = ?, slug = ?, deleted_at = NULL WHERE id = ?",
+                duckdb::params![&restored_name, &restored_slug, &workspace_id],
             )
-            .map_err(workspace_name_conflict_or_internal)?;
+            .map_err(|err| {
+                let err_text = err.to_string();
+                if err_text.contains("idx_workspaces_slug") {
+                    workspace_slug_conflict_or_internal(err)
+                } else {
+                    workspace_name_conflict_or_internal(err)
+                }
+            })?;
             Ok(())
         })?;
 
-        info!(workspace_id = %workspace_id, "Workspace restored");
+        info!(workspace_id = %workspace_id, slug = %restored_slug, "Workspace restored");
 
-        Ok(Json(json!({ "id": workspace_id, "name": restored_name })))
+        Ok(Json(
+            json!({ "id": workspace_id, "name": restored_name, "slug": restored_slug }),
+        ))
     }
 }
 
@@ -996,6 +1140,7 @@ pub async fn list_archived_workspaces(
         .prepare(
             r"
             SELECT w.id, w.name, w.owner_id, w.is_personal, w.deleted_at, w.created_at
+                 , COALESCE(w.slug, w.id) as slug
             FROM workspaces w
             JOIN workspace_members wm ON w.id = wm.workspace_id
             WHERE wm.user_id = ? AND w.deleted_at IS NOT NULL
@@ -1013,6 +1158,7 @@ pub async fn list_archived_workspaces(
                 row.get::<_, bool>(3)?,
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
             ))
         })
         .map_err(internal_err)?
@@ -1023,7 +1169,7 @@ pub async fn list_archived_workspaces(
     let workspaces: Result<Vec<serde_json::Value>, String> = rows
         .into_iter()
         .map(
-            |(id, name, owner_id, is_personal, deleted_at_str, created_at_str)| {
+            |(id, name, owner_id, is_personal, deleted_at_str, created_at_str, slug)| {
                 let deleted_at = deleted_at_str
                     .map(|s| {
                         chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
@@ -1041,6 +1187,7 @@ pub async fn list_archived_workspaces(
                 Ok(json!({
                     "id": id,
                     "name": display_name,
+                    "slug": slug,
                     "ownerId": owner_id,
                     "isPersonal": is_personal,
                     "deletedAt": deleted_at,
@@ -1062,18 +1209,18 @@ pub async fn get_current_workspace(
     let user = require_user(&auth_session).await?;
     let conn = state.db.lock().await;
 
-    let workspace_info: Option<(String, String, bool)> =
+    let workspace_info: Option<(String, String, String, bool)> =
         if let Some(current_workspace_id) = &user.current_workspace_id {
             conn.query_row(
                 r"
-            SELECT w.id, w.name, w.is_personal
+            SELECT w.id, w.name, COALESCE(w.slug, w.id), w.is_personal
             FROM workspaces w
             JOIN workspace_members wm ON w.id = wm.workspace_id
             WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
             LIMIT 1
             ",
                 duckdb::params![current_workspace_id, &user.id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()
             .map_err(internal_err)?
@@ -1086,7 +1233,7 @@ pub async fn get_current_workspace(
         None => conn
             .query_row(
                 r"
-                SELECT w.id, w.name, w.is_personal
+                SELECT w.id, w.name, COALESCE(w.slug, w.id), w.is_personal
                 FROM workspaces w
                 JOIN workspace_members wm ON w.id = wm.workspace_id
                 WHERE wm.user_id = ? AND w.deleted_at IS NULL
@@ -1094,16 +1241,17 @@ pub async fn get_current_workspace(
                 LIMIT 1
                 ",
                 duckdb::params![&user.id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()
             .map_err(internal_err)?,
     };
 
     match workspace_info {
-        Some((id, name, is_personal)) => Ok(Json(CurrentWorkspaceResponse {
+        Some((id, name, slug, is_personal)) => Ok(Json(CurrentWorkspaceResponse {
             id,
             name,
+            slug,
             is_personal,
         })),
         None => Err(not_found("No workspace found")),

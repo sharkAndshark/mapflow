@@ -39,6 +39,7 @@ pub struct LoginResponse {
 pub struct CurrentWorkspace {
     id: String,
     name: String,
+    slug: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,20 +99,21 @@ async fn login(
 
     let current_workspace = if let Some(ref workspace_id) = user.current_workspace_id {
         let conn = state.db.lock().await;
-        let workspace_info: Option<(String,)> = conn
+        let workspace_info: Option<(String, String)> = conn
             .query_row(
-                "SELECT name FROM workspaces WHERE id = ? AND deleted_at IS NULL",
+                "SELECT name, COALESCE(slug, id) FROM workspaces WHERE id = ? AND deleted_at IS NULL",
                 duckdb::params![workspace_id],
-                |row| Ok((row.get(0)?,)),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .ok()
             .flatten();
         drop(conn);
 
-        workspace_info.map(|(name,)| CurrentWorkspace {
+        workspace_info.map(|(name, slug)| CurrentWorkspace {
             id: workspace_id.clone(),
             name,
+            slug,
         })
     } else {
         None
@@ -140,20 +142,21 @@ async fn check_auth(
         Some(user) => {
             let current_workspace = if let Some(ref workspace_id) = user.current_workspace_id {
                 let conn = state.db.lock().await;
-                let workspace_info: Option<(String,)> = conn
+                let workspace_info: Option<(String, String)> = conn
                     .query_row(
-                        "SELECT name FROM workspaces WHERE id = ? AND deleted_at IS NULL",
+                        "SELECT name, COALESCE(slug, id) FROM workspaces WHERE id = ? AND deleted_at IS NULL",
                         duckdb::params![workspace_id],
-                        |row| Ok((row.get(0)?,)),
+                        |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()
                     .ok()
                     .flatten();
                 drop(conn);
 
-                workspace_info.map(|(name,)| CurrentWorkspace {
+                workspace_info.map(|(name, slug)| CurrentWorkspace {
                     id: workspace_id.clone(),
                     name,
+                    slug,
                 })
             } else {
                 None
@@ -285,10 +288,12 @@ async fn init_system(
 
     let workspace_id = uuid::Uuid::new_v4().to_string();
     let workspace_name = crate::workspace::make_personal_workspace_name(&req.username);
+    let workspace_slug =
+        crate::workspace::workspace_slug_base_from_name_or_id(&workspace_name, &workspace_id);
 
     conn.execute(
-        "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, ?)",
-        duckdb::params![&workspace_id, &workspace_name, &user_id, &created_at],
+        "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, TRUE, ?)",
+        duckdb::params![&workspace_id, &workspace_name, &workspace_slug, &user_id, &created_at],
     )
     .map_err(|e| {
         conn.execute("ROLLBACK", []).ok();

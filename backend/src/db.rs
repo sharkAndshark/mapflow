@@ -76,16 +76,42 @@ pub async fn reconcile_processing_files(
     )
 }
 
+pub async fn reconcile_processing_fonts(
+    db: &Arc<Mutex<duckdb::Connection>>,
+) -> Result<usize, duckdb::Error> {
+    let conn = db.lock().await;
+    conn.execute(
+        "UPDATE fonts SET status = 'failed', error = ? WHERE status = 'processing'",
+        duckdb::params![PROCESSING_RECONCILIATION_ERROR],
+    )
+}
+
 fn ensure_workspace_schema_and_backfill(conn: &duckdb::Connection) {
     let _ = conn.execute(
         "ALTER TABLE users ADD COLUMN current_workspace_id VARCHAR",
         [],
     );
     let _ = conn.execute("ALTER TABLE files ADD COLUMN workspace_id VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE workspaces ADD COLUMN slug VARCHAR", []);
     let _ = conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_files_workspace ON files(workspace_id)",
         [],
     );
+    let _ = conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_slug ON workspaces(slug)",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE fonts ADD COLUMN is_public BOOLEAN DEFAULT FALSE",
+        [],
+    );
+    let _ = conn.execute("ALTER TABLE fonts ADD COLUMN slug VARCHAR", []);
+    let _ = conn.execute("ALTER TABLE fonts ADD COLUMN published_at TIMESTAMP", []);
+    let _ = conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_fonts_workspace_slug ON fonts(workspace_id, slug)",
+        [],
+    );
+    let _ = conn.execute("DROP INDEX IF EXISTS idx_fonts_workspace_fontstack", []);
 
     recover_detached_workspace_members(conn).expect("Failed to recover detached workspace members");
     backfill_workspace_data(conn).expect("Failed to backfill workspace data");
@@ -141,10 +167,11 @@ fn backfill_workspace_data(conn: &duckdb::Connection) -> Result<(), duckdb::Erro
             &crate::workspace::make_personal_workspace_name(&username),
             &workspace_id,
         )?;
+        let workspace_slug = unique_workspace_slug(conn, &workspace_name, &workspace_id)?;
 
         conn.execute(
-            "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, TRUE, ?)",
-            duckdb::params![&workspace_id, &workspace_name, &user_id, &created_at],
+            "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, TRUE, ?)",
+            duckdb::params![&workspace_id, &workspace_name, &workspace_slug, &user_id, &created_at],
         )?;
         conn.execute(
             "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, ?)",
@@ -208,9 +235,11 @@ fn backfill_workspace_data(conn: &duckdb::Connection) -> Result<(), duckdb::Erro
                     crate::workspace::make_legacy_shared_workspace_name(),
                     &shared_workspace_id,
                 )?;
+                let workspace_slug =
+                    unique_workspace_slug(conn, &workspace_name, &shared_workspace_id)?;
                 conn.execute(
-                    "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, FALSE, ?)",
-                    duckdb::params![&shared_workspace_id, &workspace_name, &owner_id, &created_at],
+                    "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, FALSE, ?)",
+                    duckdb::params![&shared_workspace_id, &workspace_name, &workspace_slug, &owner_id, &created_at],
                 )?;
             }
 
@@ -306,6 +335,22 @@ fn backfill_workspace_data(conn: &duckdb::Connection) -> Result<(), duckdb::Erro
         }
     }
 
+    let workspaces_without_slug = {
+        let mut stmt = conn.prepare("SELECT id, name FROM workspaces WHERE slug IS NULL")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    for (workspace_id, workspace_name) in workspaces_without_slug {
+        let workspace_slug = unique_workspace_slug(conn, &workspace_name, &workspace_id)?;
+        conn.execute(
+            "UPDATE workspaces SET slug = ? WHERE id = ?",
+            duckdb::params![&workspace_slug, &workspace_id],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -329,6 +374,30 @@ fn unique_workspace_name(
         base_name,
         &workspace_id[..workspace_id.len().min(8)]
     ))
+}
+
+fn unique_workspace_slug(
+    conn: &duckdb::Connection,
+    workspace_name: &str,
+    workspace_id: &str,
+) -> Result<String, duckdb::Error> {
+    let base = crate::workspace::workspace_slug_base_from_name_or_id(workspace_name, workspace_id);
+
+    let mut candidate = base.clone();
+    let mut suffix = 1_u32;
+    loop {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM workspaces WHERE slug = ?",
+            duckdb::params![&candidate],
+            |row| row.get(0),
+        )?;
+        if count == 0 {
+            return Ok(candidate);
+        }
+
+        candidate = crate::workspace::next_suffixed_slug(&base, suffix);
+        suffix = suffix.saturating_add(1);
+    }
 }
 
 pub fn init_database(db_path: &Path) -> duckdb::Connection {
@@ -508,6 +577,7 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         CREATE TABLE IF NOT EXISTS workspaces (
             id VARCHAR PRIMARY KEY,
             name VARCHAR UNIQUE NOT NULL,
+            slug VARCHAR UNIQUE,
             owner_id VARCHAR NOT NULL REFERENCES users(id),
             is_personal BOOLEAN NOT NULL DEFAULT FALSE,
             deleted_at TIMESTAMP,
@@ -519,6 +589,9 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
 
         CREATE INDEX IF NOT EXISTS idx_workspaces_deleted_at
             ON workspaces(deleted_at);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_slug
+            ON workspaces(slug);
 
         CREATE TABLE IF NOT EXISTS workspace_members (
             workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
@@ -539,6 +612,60 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         ",
     )
     .expect("Failed to create workspace tables");
+
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS fonts (
+            id VARCHAR PRIMARY KEY,
+            workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+            name VARCHAR NOT NULL,
+            fontstack VARCHAR NOT NULL,
+            family VARCHAR,
+            style VARCHAR,
+            original_path VARCHAR NOT NULL,
+            glyphs_path VARCHAR NOT NULL,
+            glyph_count INTEGER,
+            start_cp INTEGER,
+            end_cp INTEGER,
+            status VARCHAR NOT NULL DEFAULT 'processing',
+            error VARCHAR,
+            is_public BOOLEAN DEFAULT FALSE,
+            slug VARCHAR,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            published_at TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fonts_workspace
+            ON fonts(workspace_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fonts_workspace_slug
+            ON fonts(workspace_id, slug);
+        ",
+    )
+    .expect("Failed to create fonts table");
+
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS icons (
+            id VARCHAR PRIMARY KEY,
+            workspace_id VARCHAR NOT NULL REFERENCES workspaces(id),
+            name VARCHAR NOT NULL,
+            original_path VARCHAR NOT NULL,
+            file_type VARCHAR NOT NULL,
+            width INTEGER,
+            height INTEGER,
+            size BIGINT NOT NULL,
+            status VARCHAR NOT NULL DEFAULT 'ready',
+            error VARCHAR,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_icons_workspace
+            ON icons(workspace_id);
+        ",
+    )
+    .expect("Failed to create icons table");
 
     ensure_workspace_schema_and_backfill(&conn);
 

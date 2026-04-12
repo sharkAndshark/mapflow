@@ -1,10 +1,19 @@
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
+use duckdb::OptionalExt;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
+
+use crate::http_errors::internal_error;
+use crate::models::ErrorResponse;
+use crate::AuthBackend;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workspace {
     pub id: String,
     pub name: String,
+    pub slug: String,
     pub owner_id: String,
     #[serde(rename = "isPersonal")]
     pub is_personal: bool,
@@ -29,6 +38,7 @@ pub struct WorkspaceMember {
 pub struct WorkspaceWithMemberCount {
     pub id: String,
     pub name: String,
+    pub slug: String,
     #[serde(rename = "ownerId")]
     pub owner_id: String,
     #[serde(rename = "isPersonal")]
@@ -54,6 +64,7 @@ pub struct WorkspaceMemberWithInfo {
 pub struct WorkspaceResponse {
     pub id: String,
     pub name: String,
+    pub slug: String,
     #[serde(rename = "ownerId")]
     pub owner_id: String,
     #[serde(rename = "isPersonal")]
@@ -64,12 +75,15 @@ pub struct WorkspaceResponse {
 pub struct CurrentWorkspaceResponse {
     pub id: String,
     pub name: String,
+    pub slug: String,
     #[serde(rename = "isPersonal")]
     pub is_personal: bool,
 }
 
 pub const WORKSPACE_NAME_MIN_LEN: usize = 3;
 pub const WORKSPACE_NAME_MAX_LEN: usize = 50;
+pub const WORKSPACE_SLUG_MIN_LEN: usize = 3;
+pub const WORKSPACE_SLUG_MAX_LEN: usize = 63;
 pub const LEGACY_SHARED_WORKSPACE_NAME: &str = "Migrated Workspace";
 
 pub fn validate_workspace_name(name: &str) -> Result<String, String> {
@@ -108,6 +122,202 @@ pub fn make_personal_workspace_name(username: &str) -> String {
 
 pub fn make_legacy_shared_workspace_name() -> &'static str {
     LEGACY_SHARED_WORKSPACE_NAME
+}
+
+pub fn validate_workspace_slug(slug: &str) -> Result<String, String> {
+    let slug = slug.trim().to_ascii_lowercase();
+    let len = slug.chars().count();
+
+    if slug.is_empty() {
+        return Err("工作空间 slug 不能为空".to_string());
+    }
+    if len < WORKSPACE_SLUG_MIN_LEN {
+        return Err(format!(
+            "工作空间 slug 至少需要 {} 个字符",
+            WORKSPACE_SLUG_MIN_LEN
+        ));
+    }
+    if len > WORKSPACE_SLUG_MAX_LEN {
+        return Err(format!(
+            "工作空间 slug 不能超过 {} 个字符",
+            WORKSPACE_SLUG_MAX_LEN
+        ));
+    }
+    if slug.starts_with('-') || slug.ends_with('-') {
+        return Err("工作空间 slug 不能以连字符开头或结尾".to_string());
+    }
+    if !slug
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return Err("工作空间 slug 仅支持小写字母、数字和连字符".to_string());
+    }
+    Ok(slug)
+}
+
+pub fn slugify_workspace_name(name: &str) -> String {
+    let mut out = String::new();
+    let mut last_is_dash = false;
+
+    for ch in name.chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_lowercase() || c.is_ascii_digit() {
+            out.push(c);
+            last_is_dash = false;
+        } else if (ch.is_whitespace() || c == '-' || c == '_') && !last_is_dash {
+            out.push('-');
+            last_is_dash = true;
+        }
+    }
+
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.len() > WORKSPACE_SLUG_MAX_LEN {
+        trimmed[..WORKSPACE_SLUG_MAX_LEN]
+            .trim_end_matches('-')
+            .to_string()
+    } else {
+        trimmed
+    }
+}
+
+pub fn next_suffixed_slug(base: &str, suffix: u32) -> String {
+    let suffix_text = format!("-{suffix}");
+    let max_base_len = WORKSPACE_SLUG_MAX_LEN
+        .saturating_sub(suffix_text.len())
+        .max(WORKSPACE_SLUG_MIN_LEN);
+    let truncated_base = if base.len() > max_base_len {
+        base[..max_base_len].trim_end_matches('-').to_string()
+    } else {
+        base.to_string()
+    };
+    format!("{truncated_base}{suffix_text}")
+}
+
+pub fn fallback_workspace_slug_from_id(workspace_id: &str) -> String {
+    let suffix = &workspace_id[..workspace_id.len().min(8)];
+    format!("ws-{suffix}")
+}
+
+pub fn workspace_slug_base_from_name_or_id(name: &str, workspace_id: &str) -> String {
+    let from_name = slugify_workspace_name(name);
+    if validate_workspace_slug(&from_name).is_ok() {
+        return from_name;
+    }
+
+    let from_id = fallback_workspace_slug_from_id(workspace_id);
+    if validate_workspace_slug(&from_id).is_ok() {
+        return from_id;
+    }
+
+    "workspace-default".to_string()
+}
+
+pub async fn ensure_test_mode_workspace(db: &Arc<Mutex<duckdb::Connection>>) -> Option<String> {
+    let conn = db.lock().await;
+
+    let workspace_id: Option<String> = conn
+        .query_row(
+            "SELECT id FROM workspaces WHERE is_personal = true AND deleted_at IS NULL LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    if let Some(wid) = workspace_id {
+        drop(conn);
+        return Some(wid);
+    }
+
+    let existing_user_id: Option<String> = conn
+        .query_row("SELECT id FROM users LIMIT 1", [], |row| row.get(0))
+        .ok()
+        .flatten();
+
+    let user_id = match existing_user_id {
+        Some(uid) => uid,
+        None => {
+            let new_user_id = uuid::Uuid::new_v4().to_string();
+            let _ = conn.execute(
+                "INSERT INTO users (id, username, password_hash, role, current_workspace_id, created_at) VALUES (?, ?, '', 'user', NULL, CURRENT_TIMESTAMP)",
+                duckdb::params![&new_user_id, format!("test_user_{}", &new_user_id[..8])],
+            );
+            new_user_id
+        }
+    };
+
+    let new_workspace_id = uuid::Uuid::new_v4().to_string();
+    let workspace_name = "Test Workspace".to_string();
+    let workspace_slug = workspace_slug_base_from_name_or_id(&workspace_name, &new_workspace_id);
+
+    let _ = conn.execute(
+        "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)",
+        duckdb::params![&new_workspace_id, &workspace_name, &workspace_slug, &user_id],
+    );
+
+    let _ = conn.execute(
+        "INSERT INTO workspace_members (workspace_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        duckdb::params![&new_workspace_id, &user_id],
+    );
+
+    drop(conn);
+    Some(new_workspace_id)
+}
+
+pub async fn get_active_workspace_id(
+    auth_session: &axum_login::AuthSession<AuthBackend>,
+    db: &Arc<Mutex<duckdb::Connection>>,
+) -> Result<String, (axum::http::StatusCode, axum::Json<ErrorResponse>)> {
+    match &auth_session.user {
+        Some(user) => {
+            let workspace_id = user.current_workspace_id.clone().ok_or_else(|| {
+                (
+                    axum::http::StatusCode::CONFLICT,
+                    axum::Json(ErrorResponse {
+                        error: "No active workspace available, please switch workspace".to_string(),
+                    }),
+                )
+            })?;
+
+            let conn = db.lock().await;
+            let active_workspace: Option<String> = conn
+                .query_row(
+                    r"
+                    SELECT w.id
+                    FROM workspaces w
+                    JOIN workspace_members wm ON w.id = wm.workspace_id
+                    WHERE w.id = ? AND wm.user_id = ? AND w.deleted_at IS NULL
+                    LIMIT 1
+                    ",
+                    duckdb::params![&workspace_id, &user.id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(internal_error)?;
+            drop(conn);
+
+            if active_workspace.is_none() {
+                return Err((
+                    axum::http::StatusCode::CONFLICT,
+                    axum::Json(ErrorResponse {
+                        error:
+                            "Current workspace is archived or inaccessible, please switch workspace"
+                                .to_string(),
+                    }),
+                ));
+            }
+
+            Ok(workspace_id)
+        }
+        None => ensure_test_mode_workspace(db).await.ok_or_else(|| {
+            (
+                axum::http::StatusCode::UNAUTHORIZED,
+                axum::Json(ErrorResponse {
+                    error: "Not authenticated".to_string(),
+                }),
+            )
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -170,5 +380,48 @@ mod tests {
         let too_long_name = "测".repeat(51);
         assert_eq!(too_long_name.chars().count(), 51);
         assert!(validate_workspace_name(&too_long_name).is_err());
+    }
+
+    #[test]
+    fn validate_workspace_slug_rejects_invalid_chars() {
+        assert_eq!(validate_workspace_slug("Hello").unwrap(), "hello");
+        assert!(validate_workspace_slug("abc_def").is_err());
+        assert!(validate_workspace_slug("-abc").is_err());
+        assert!(validate_workspace_slug("abc-").is_err());
+    }
+
+    #[test]
+    fn validate_workspace_slug_accepts_lowercase_dash() {
+        assert_eq!(
+            validate_workspace_slug("team-alpha-01").unwrap(),
+            "team-alpha-01"
+        );
+    }
+
+    #[test]
+    fn slugify_workspace_name_normalizes_to_kebab_case() {
+        assert_eq!(slugify_workspace_name("Team Alpha 01"), "team-alpha-01");
+        assert_eq!(slugify_workspace_name("  Team___Beta  "), "team-beta");
+        assert_eq!(slugify_workspace_name("中文空间"), "");
+    }
+
+    #[test]
+    fn fallback_workspace_slug_from_id_prefixes_ws() {
+        assert_eq!(
+            fallback_workspace_slug_from_id("abcdef123456"),
+            "ws-abcdef12"
+        );
+    }
+
+    #[test]
+    fn workspace_slug_base_prefers_name_then_id() {
+        assert_eq!(
+            workspace_slug_base_from_name_or_id("Team One", "abcdef123456"),
+            "team-one"
+        );
+        assert_eq!(
+            workspace_slug_base_from_name_or_id("中文空间", "abcdef123456"),
+            "ws-abcdef12"
+        );
     }
 }

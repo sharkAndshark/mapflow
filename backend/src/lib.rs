@@ -8,8 +8,11 @@ mod auth_routes;
 mod config;
 mod crs;
 mod db;
+mod font_handlers;
+mod font_processor;
 mod handlers;
 mod http_errors;
+mod icon_handlers;
 mod import;
 mod mbtiles;
 mod models;
@@ -19,6 +22,7 @@ mod public;
 mod routes;
 mod session_store;
 mod static_assets;
+mod storage;
 mod test_routes;
 mod tiles;
 mod upload;
@@ -35,8 +39,8 @@ pub use config::{
     read_preview_zoom_config,
 };
 pub use db::{
-    ensure_app_secret, init_database, is_initialized, reconcile_processing_files, set_initialized,
-    DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
+    ensure_app_secret, init_database, is_initialized, reconcile_processing_files,
+    reconcile_processing_fonts, set_initialized, DEFAULT_DB_PATH, PROCESSING_RECONCILIATION_ERROR,
 };
 pub use handlers::validate_slug;
 pub use models::{
@@ -216,6 +220,7 @@ mod tests {
         CREATE TABLE workspaces (
             id VARCHAR PRIMARY KEY,
             name VARCHAR UNIQUE NOT NULL,
+            slug VARCHAR UNIQUE,
             owner_id VARCHAR NOT NULL REFERENCES users(id),
             is_personal BOOLEAN NOT NULL DEFAULT FALSE,
             deleted_at TIMESTAMP,

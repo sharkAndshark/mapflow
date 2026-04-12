@@ -18,7 +18,12 @@ Windows 桌面集成:
 - 用户可属于多个工作空间（多对多：workspace_members）
 - Session 存储 currentWorkspaceId，所有文件操作基于此过滤
 - 个人工作空间：注册时自动创建，不可删除，名称格式 `{username}的个人空间`
+- 工作空间对外标识使用 `workspaces.slug`（可由 owner 调整）；管理 API 仍使用 workspace id
 - 公开瓦片 URL 通过 slug 访问，不依赖工作空间过滤
+
+**字体资源公开地址：**
+- 字体管理 API 使用 `/api/fonts/:id`（id 语义稳定）
+- 公开 glyph URL 使用 `/fonts/:workspaceSlug/:fontstack/:range`（对 style JSON 更稳定，不暴露单字体 slug）
 
 **MBTiles 支持：**
 - MBTiles 文件不导入 DuckDB，直接读取原始 SQLite 文件

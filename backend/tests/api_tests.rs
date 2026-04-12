@@ -7642,6 +7642,103 @@ async fn test_update_workspace_maps_unique_conflict_to_400() {
 }
 
 #[tokio::test]
+async fn test_update_workspace_slug_persists_and_visible_in_read_models() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir.path().join("workspace-update-slug-persist.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_api_router(state);
+    let cookie =
+        create_user_and_session(&app, db.clone(), "user-update-slug-1", "slugger", "admin").await;
+
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/api/workspaces")
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Slug Workspace"}"#))
+        .unwrap();
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    assert_eq!(create_response.status(), axum::http::StatusCode::CREATED);
+    let create_body = create_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created_workspace: serde_json::Value = serde_json::from_slice(&create_body).unwrap();
+    let workspace_id = created_workspace["id"].as_str().unwrap().to_string();
+
+    let update_request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/workspaces/{}", workspace_id))
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"slug":"slug-workspace"}"#))
+        .unwrap();
+    let update_response = app.clone().oneshot(update_request).await.unwrap();
+    assert_eq!(update_response.status(), axum::http::StatusCode::OK);
+    let update_body = update_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let updated_payload: serde_json::Value = serde_json::from_slice(&update_body).unwrap();
+    assert_eq!(updated_payload["slug"], "slug-workspace");
+
+    let get_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/workspaces/{}", workspace_id))
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let get_response = app.clone().oneshot(get_request).await.unwrap();
+    assert_eq!(get_response.status(), axum::http::StatusCode::OK);
+    let get_body = get_response.into_body().collect().await.unwrap().to_bytes();
+    let got_workspace: serde_json::Value = serde_json::from_slice(&get_body).unwrap();
+    assert_eq!(got_workspace["slug"], "slug-workspace");
+
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces")
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let list_response = app.oneshot(list_request).await.unwrap();
+    assert_eq!(list_response.status(), axum::http::StatusCode::OK);
+    let list_body = list_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let list_payload: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
+    let listed_workspace = list_payload
+        .as_array()
+        .and_then(|items| items.iter().find(|item| item["id"] == workspace_id))
+        .expect("workspace appears in list");
+    assert_eq!(listed_workspace["slug"], "slug-workspace");
+}
+
+#[tokio::test]
 async fn test_update_workspace_rejects_archived_workspace() {
     ensure_test_mode();
     let temp_dir = TempDir::new().expect("temp dir");
@@ -8746,6 +8843,162 @@ async fn test_delete_workspace_unpublishes_public_tiles() {
         )
         .unwrap();
     assert!(!is_public);
+}
+
+#[tokio::test]
+async fn test_public_font_glyphs_blocked_when_workspace_archived() {
+    ensure_test_mode();
+    let temp_dir = TempDir::new().expect("temp dir");
+    let upload_dir = temp_dir.path().join("uploads");
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    let upload_dir_canonical = upload_dir
+        .canonicalize()
+        .unwrap_or_else(|_| upload_dir.clone());
+
+    let db_path = temp_dir
+        .path()
+        .join("public-font-glyph-archived-workspace.duckdb");
+    let conn = init_database(&db_path);
+    let db = Arc::new(tokio::sync::Mutex::new(conn));
+
+    let state = AppState {
+        upload_dir,
+        upload_dir_canonical,
+        db: db.clone(),
+        max_size: Arc::new(RwLock::new(10 * 1024 * 1024)),
+        max_size_label: Arc::new(RwLock::new("10MB".to_string())),
+        auth_backend: AuthBackend::new(db.clone()),
+        session_store: DuckDBStore::new(db.clone()),
+    };
+    let app = build_test_router(state);
+
+    let active_workspace_id = "ws-font-active";
+    let archived_workspace_id = "ws-font-archived";
+    let active_workspace_slug = "font-active-workspace";
+    let archived_workspace_slug = "font-archived-workspace";
+
+    {
+        let conn = db.lock().await;
+
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![
+                "user-font-public",
+                "fontpublic",
+                "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36IgQE0VrqQ6EJdNpO5mLY",
+                "admin"
+            ],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP)",
+            duckdb::params![
+                active_workspace_id,
+                "Font Active",
+                active_workspace_slug,
+                "user-font-public"
+            ],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, deleted_at, created_at) VALUES (?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            duckdb::params![
+                archived_workspace_id,
+                "Font Archived",
+                archived_workspace_slug,
+                "user-font-public"
+            ],
+        )
+        .unwrap();
+    }
+
+    let active_font_id = "font-public-active";
+    let archived_font_id = "font-public-archived";
+    let active_slug = "public-active-font";
+    let archived_slug = "public-archived-font";
+
+    for (font_id, workspace_id) in [
+        (active_font_id, active_workspace_id),
+        (archived_font_id, archived_workspace_id),
+    ] {
+        let glyph_file_path = temp_dir
+            .path()
+            .join("uploads")
+            .join("fonts")
+            .join(font_id)
+            .join("glyphs")
+            .join("0-255.pbf");
+        std::fs::create_dir_all(glyph_file_path.parent().expect("glyphs dir")).unwrap();
+        std::fs::write(&glyph_file_path, b"glyph-data").unwrap();
+
+        let original_rel = format!("./uploads/fonts/{}/original", font_id);
+        let glyphs_rel = format!("./uploads/fonts/{}/glyphs", font_id);
+        let slug = if font_id == active_font_id {
+            active_slug
+        } else {
+            archived_slug
+        };
+
+        let conn = db.lock().await;
+        conn.execute(
+            "INSERT INTO fonts (id, workspace_id, name, fontstack, original_path, glyphs_path, status, is_public, slug, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'ready', TRUE, ?, CURRENT_TIMESTAMP)",
+            duckdb::params![
+                font_id,
+                workspace_id,
+                "Public Font",
+                "Public Font",
+                &original_rel,
+                &glyphs_rel,
+                slug,
+            ],
+        )
+        .unwrap();
+    }
+
+    let active_glyph_request = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/fonts/{}/Public%20Font/0-255.pbf",
+            active_workspace_slug
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let active_glyph_response = app.clone().oneshot(active_glyph_request).await.unwrap();
+    assert_eq!(active_glyph_response.status(), axum::http::StatusCode::OK);
+
+    let archived_glyph_request = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/fonts/{}/Public%20Font/0-255.pbf",
+            archived_workspace_slug
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let archived_glyph_response = app.clone().oneshot(archived_glyph_request).await.unwrap();
+    assert_eq!(
+        archived_glyph_response.status(),
+        axum::http::StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn test_fonts_api_supports_test_mode_without_auth() {
+    let (app, _temp) = setup_app().await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/fonts")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let _items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
 }
 
 #[tokio::test]

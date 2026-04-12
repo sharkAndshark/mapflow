@@ -138,10 +138,14 @@ async fn get_workspace_id(
 
                 let workspace_id = uuid::Uuid::new_v4().to_string();
                 let workspace_name = "Test Workspace".to_string();
+                let workspace_slug = crate::workspace::workspace_slug_base_from_name_or_id(
+                    &workspace_name,
+                    &workspace_id,
+                );
 
                 conn.execute(
-                    "INSERT INTO workspaces (id, name, owner_id, is_personal, created_at) VALUES (?, ?, ?, true, CURRENT_TIMESTAMP)",
-                    duckdb::params![&workspace_id, &workspace_name, &user_id],
+                    "INSERT INTO workspaces (id, name, slug, owner_id, is_personal, created_at) VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)",
+                    duckdb::params![&workspace_id, &workspace_name, &workspace_slug, &user_id],
                 ).ok();
 
                 conn.execute(
@@ -1054,7 +1058,7 @@ pub async fn publish_file(
                     StatusCode::CONFLICT,
                     Json(ErrorResponse { error: error_msg }),
                 ));
-            } else if err_msg.contains("UNIQUE")
+            } else if err_msg.contains("published_files")
                 || (err_msg.contains("slug") && err_msg.contains("unique"))
             {
                 Err("Slug already in use".to_string())

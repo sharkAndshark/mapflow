@@ -176,11 +176,14 @@ export async function listWorkspaces() {
   return res.json();
 }
 
-export async function createWorkspace(name) {
+export async function createWorkspace(name, options = {}) {
+  const body = { name };
+  if (options.slug) body.slug = options.slug;
+
   const res = await fetchWithAuth('/api/workspaces', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -189,11 +192,18 @@ export async function createWorkspace(name) {
   return res.json();
 }
 
-export async function updateWorkspace(workspaceId, name) {
+export async function updateWorkspace(workspaceId, updates) {
+  const body =
+    typeof updates === 'string'
+      ? { name: updates }
+      : {
+          ...(updates || {}),
+        };
+
   const res = await fetchWithAuth(`/api/workspaces/${workspaceId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -298,6 +308,125 @@ export async function removeWorkspaceMember(workspaceId, userId) {
 export async function leaveWorkspace(workspaceId) {
   const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/leave`, {
     method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
+
+export async function listFonts() {
+  const res = await fetchWithAuth('/api/fonts');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function uploadFont(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetchWithAuth('/api/fonts', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function getFont(fontId) {
+  const res = await fetchWithAuth(`/api/fonts/${fontId}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function deleteFont(fontId) {
+  const res = await fetchWithAuth(`/api/fonts/${fontId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
+
+export async function publishFont(fontId, options = {}) {
+  const body = {};
+  if (options.slug) body.slug = options.slug;
+
+  const res = await fetchWithAuth(`/api/fonts/${fontId}/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function unpublishFont(fontId) {
+  const res = await fetchWithAuth(`/api/fonts/${fontId}/unpublish`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
+
+export async function listIcons() {
+  const res = await fetchWithAuth('/api/icons');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function uploadIcon(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetchWithAuth('/api/icons', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function updateIcon(iconId, data) {
+  const res = await fetchWithAuth(`/api/icons/${iconId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
+
+export async function deleteIcon(iconId) {
+  const res = await fetchWithAuth(`/api/icons/${iconId}`, {
+    method: 'DELETE',
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
