@@ -305,7 +305,7 @@ UX 层面一个图层 = 一个数据源 + 一种符号化方式。用户想同�
 
 ## 实施阶段
 
-### Phase 1 — 地图 CRUD + 编辑器基础
+### Phase 1 — 地图 CRUD + 编辑器基础 ✅
 
 - `maps` 表 + CRUD API
 - MapsPanel + MapEditor 骨架
@@ -314,16 +314,33 @@ UX 层面一个图层 = 一个数据源 + 一种符号化方式。用户想同�
 - 添加数据源为图层，保存 style JSON
 - **不动现有发布功能**
 
-### Phase 2 — 编辑器完善 + 表达式
+### Phase 2 — 分类符号化 + 图层管理 ✅
 
 - 转换层：data-driven expressions（`['get',...]`/`['case',...]`/`['interpolate',...]`）
 - 符号化向导：唯一值分类、分级色彩
-- 标注向导
 - 色带选择器
-- 字体/图标选择器
-- filter 编辑
 - 图层排序/显隐
-- 高级表达式编辑器
+- `data_bounds` 兼容对象/数组格式
+- `preview-sources` + `field-values` API
+- OL 地图自动飞到数据范围
+
+### Phase 2b — 配图能力补全（参考 QGIS）
+
+| 功能 | 说明 | 优先级 |
+|------|------|--------|
+| 标注（Label） | 字段/表达式标注，字体/颜色/halo/位置控制 | **高** |
+| 图层透明度 | 整体 opacity 滑块 | **高** |
+| 比例尺显隐 | 图层 min/max scale 可见范围 | **高** |
+| 要素过滤（Filter） | SQL-like WHERE 过滤器 | **高** |
+| 规则渲染器 | 嵌套 if/else 条件渲染 | **高** |
+| 比例符号（Proportional） | 按属性值缩放符号大小 | **高** |
+| 点聚合（Cluster） | OL Cluster source，近距点合并 | **高** |
+| 热力图（Heatmap） | OL Heatmap layer，半径/权重/色带 | **高** |
+| 线型（dash/dot） | line-dasharray 预设图案 | 中 |
+| 旋转/角度 | 数据驱动旋转符号 | 中 |
+| 图例标签编辑 | 分类 legend 可改名 | 中 |
+| OSM 底图 | 编辑器内可切换 OSM basemap | 中 |
+| 统计图表 | 饼图/柱状图叠加在要素上 | 低 |
 
 ### Phase 3 — 地图发布
 
