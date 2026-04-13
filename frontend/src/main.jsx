@@ -7,6 +7,7 @@ import App from './App.jsx';
 import Login from './Login.jsx';
 import Init from './Init.jsx';
 import Preview from './Preview.jsx';
+import MapEditor from './MapEditor.jsx';
 import Settings from './Settings.jsx';
 import TileEmbed from './TileEmbed.jsx';
 import TileDocs from './TileDocs.jsx';
@@ -33,6 +34,14 @@ root.render(
           element={
             <ProtectedRoute>
               <Preview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/editor/:id"
+          element={
+            <ProtectedRoute>
+              <MapEditor />
             </ProtectedRoute>
           }
         />

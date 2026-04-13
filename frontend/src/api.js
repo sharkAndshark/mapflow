@@ -434,3 +434,87 @@ export async function deleteIcon(iconId) {
   }
   return null;
 }
+
+export async function listMaps() {
+  const res = await fetchWithAuth('/api/maps');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function createMap(name) {
+  const res = await fetchWithAuth('/api/maps', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function getMap(mapId) {
+  const res = await fetchWithAuth(`/api/maps/${mapId}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function updateMap(mapId, updates) {
+  const res = await fetchWithAuth(`/api/maps/${mapId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function deleteMap(mapId) {
+  const res = await fetchWithAuth(`/api/maps/${mapId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
+
+export async function listPreviewSources() {
+  const res = await fetchWithAuth('/api/maps/preview-sources');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function getFieldValues(sourceId, field, limit = 50) {
+  const res = await fetchWithAuth(
+    `/api/maps/preview-sources/${sourceId}/field-values?field=${encodeURIComponent(field)}&limit=${limit}`,
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function getSchema(fileId) {
+  const res = await fetchWithAuth(`/api/files/${fileId}/schema`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}

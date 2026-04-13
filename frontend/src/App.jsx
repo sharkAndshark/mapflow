@@ -20,6 +20,7 @@ import {
 import { formatSize, parseType, validateSlug } from './utils.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
 import ResourcesPanel from './ResourcesPanel.jsx';
+import MapsPanel from './MapsPanel.jsx';
 
 const INITIAL_POSTGIS_FORM = {
   connectionName: '',
@@ -1847,6 +1848,17 @@ export default function App() {
           >
             {t('app.mainTabResources')}
           </button>
+          <button
+            type="button"
+            className={`tab-btn ${mainTab === 'maps' ? 'active' : ''}`}
+            onClick={() => setMainTab('maps')}
+            role="tab"
+            aria-selected={mainTab === 'maps'}
+            aria-controls="main-tabpanel-maps"
+            data-testid="main-tab-maps"
+          >
+            {t('app.mainTabMaps')}
+          </button>
         </div>
 
         {errorMessage ? <div className="alert">{errorMessage}</div> : null}
@@ -1930,8 +1942,10 @@ export default function App() {
               />
             </div>
           </div>
-        ) : (
+        ) : mainTab === 'resources' ? (
           <ResourcesPanel />
+        ) : (
+          <MapsPanel />
         )}
       </section>
 

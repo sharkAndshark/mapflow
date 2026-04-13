@@ -667,6 +667,26 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
     )
     .expect("Failed to create icons table");
 
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS maps (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            workspace_id VARCHAR NOT NULL,
+            style_json VARCHAR,
+            slug VARCHAR UNIQUE,
+            is_public BOOLEAN DEFAULT FALSE,
+            published_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_maps_workspace
+            ON maps(workspace_id);
+        ",
+    )
+    .expect("Failed to create maps table");
+
     ensure_workspace_schema_and_backfill(&conn);
 
     conn

@@ -248,3 +248,43 @@ pub struct RegisterPostgisSourceResponse {
     pub file_id: String,
     pub status: String,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MapItem {
+    pub id: String,
+    pub name: String,
+    pub style_json: Option<String>,
+    pub slug: Option<String>,
+    pub is_public: bool,
+    pub published_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMapRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMapRequest {
+    pub name: Option<String>,
+    pub style_json: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewSourceItem {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crs: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crs_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_bounds: Option<String>,
+    pub status: String,
+}

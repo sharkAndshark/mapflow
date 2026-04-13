@@ -58,6 +58,21 @@ Windows 桌面集成:
   - Windows console: Ctrl+C/控制台关闭事件触发优雅关闭尝试（开发/CI 入口）
   - macOS user service: 可选通过 `scripts/macos/launchd-install.sh` 以 LaunchAgent 托管，避免终端窗口生命周期影响
 
+## 地图编辑器（设计阶段，未实施）
+
+> 详细设计见 `docs/dev/map-editor-design.md`
+
+**核心理念**：发布统一到地图编辑器，数据/资源只做 CRUD + 预览。
+
+- 存储：标准 Mapbox Style Spec v8 JSON（`maps.style_json`）
+- 渲染：OpenLayers Flat Style + Expression API（通过转换层，表达式语法与 Mapbox 几乎 1:1）
+- Custom CRS：原生支持（OL 自定义 Projection + TileGrid，style JSON 中通过 `_mapflow:*` 扩展字段表达）
+- 编辑器 UX：ArcGIS 风格符号化向导（单一颜色/唯一值分类/分级色彩），非 Maputnik 属性面板
+- 公开端点：`/maps/{slug}/style.json`、`/maps/{slug}/tiles/{sourceId}/{z}/{x}/{y}` 等
+- 首页：`[数据] [资源] [地图]` 三 Tab 并列
+
+**迁移**：四阶段渐进（CRUD → 编辑器 → 发布 → 清理旧端点）。旧 `/tiles/{slug}/*` 不兼容，直接废弃。
+
 ## 认证
 
 Session Cookie → axum-login → tower-sessions → DuckDB

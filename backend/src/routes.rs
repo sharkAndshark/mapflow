@@ -23,6 +23,10 @@ use crate::{
         update_tile_zoom,
     },
     icon_handlers::{delete_icon, get_icon_file, list_icons, update_icon, upload_icon},
+    map_handlers::{
+        create_map, delete_map, get_field_values, get_map, list_maps, list_preview_sources,
+        update_map,
+    },
     postgis::{register_postgis_source, test_postgis_connection},
     public::{get_public_pmtiles, get_public_tile, get_public_tile_meta, head_public_pmtiles},
     upload::upload_file,
@@ -153,7 +157,17 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .route("/api/fonts/{id}/unpublish", post(unpublish_font))
         .route("/api/icons", get(list_icons).post(upload_icon))
         .route("/api/icons/{id}", patch(update_icon).delete(delete_icon))
-        .route("/api/icons/{id}/file", get(get_icon_file));
+        .route("/api/icons/{id}/file", get(get_icon_file))
+        .route("/api/maps", get(list_maps).post(create_map))
+        .route("/api/maps/preview-sources", get(list_preview_sources))
+        .route(
+            "/api/maps/preview-sources/{sourceId}/field-values",
+            get(get_field_values),
+        )
+        .route(
+            "/api/maps/{id}",
+            get(get_map).put(update_map).delete(delete_map),
+        );
 
     if with_auth {
         api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));
