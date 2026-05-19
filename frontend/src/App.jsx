@@ -1951,21 +1951,25 @@ export default function App() {
 
       {showPostgisModal && (
         <div className="modal-overlay">
-          <button
-            type="button"
-            className="modal-overlay"
-            aria-label={t('common.close')}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          <div
             onClick={() => setShowPostgisModal(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowPostgisModal(false);
+            }}
             style={{
               position: 'absolute',
               inset: 0,
               background: 'transparent',
-              border: 'none',
-              padding: 0,
-              margin: 0,
             }}
           />
-          <div className="modal-content" style={{ position: 'relative' }}>
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          <div
+            className="modal-content"
+            style={{ position: 'relative' }}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3>{t('postgis.connect')}</h3>
               <button
