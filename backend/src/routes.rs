@@ -106,6 +106,18 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
             "/api/postgis/sources/register",
             post(register_postgis_source),
         )
+        .route(
+            "/api/postgis/connections/discover-schemas",
+            post(crate::postgis::discover_schemas),
+        )
+        .route(
+            "/api/postgis/connections/discover-tables",
+            post(crate::postgis::discover_tables),
+        )
+        .route(
+            "/api/postgis/connections/discover-columns",
+            post(crate::postgis::discover_columns),
+        )
         .route("/api/files/{id}/preview", get(get_preview_meta))
         .route(
             "/api/files/{id}/tiles/{z}/{x}/{y}",

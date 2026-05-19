@@ -167,6 +167,45 @@ export async function registerPostgisSource(payload) {
   return res.json();
 }
 
+export async function discoverPostgisSchemas(connection) {
+  const res = await fetchWithAuth('/api/postgis/connections/discover-schemas', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function discoverPostgisTables(connection, schema) {
+  const res = await fetchWithAuth('/api/postgis/connections/discover-tables', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection, schema }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function discoverPostgisColumns(connection, schema, table) {
+  const res = await fetchWithAuth('/api/postgis/connections/discover-columns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection, schema, table }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
 export async function listWorkspaces() {
   const res = await fetchWithAuth('/api/workspaces');
   if (!res.ok) {

@@ -288,3 +288,57 @@ pub struct PreviewSourceItem {
     pub data_bounds: Option<String>,
     pub status: String,
 }
+
+// PostGIS auto-discovery API structures
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoverSchemasRequest {
+    pub connection: PostgisConnectionConfig,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverSchemasResponse {
+    pub schemas: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoverTablesRequest {
+    pub connection: PostgisConnectionConfig,
+    pub schema: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TableInfo {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub table_type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverTablesResponse {
+    pub tables: Vec<TableInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoverColumnsRequest {
+    pub connection: PostgisConnectionConfig,
+    pub schema: String,
+    pub table: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GeometryColumnInfo {
+    #[serde(rename = "columnName")]
+    pub column_name: String,
+    pub srid: i32,
+    #[serde(rename = "geometryType")]
+    pub geometry_type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverColumnsResponse {
+    #[serde(rename = "geometryColumns")]
+    pub geometry_columns: Vec<GeometryColumnInfo>,
+    #[serde(rename = "fidCandidates")]
+    pub fid_candidates: Vec<String>,
+}

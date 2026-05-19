@@ -19,8 +19,11 @@ use crate::{
     ensure_app_secret,
     http_errors::{bad_request, internal_error},
     models::{
-        ErrorResponse, PostgisConnectionConfig, PostgisConnectionTestRequest,
-        PostgisConnectionTestResponse, RegisterPostgisSourceRequest, RegisterPostgisSourceResponse,
+        DiscoverColumnsRequest, DiscoverColumnsResponse, DiscoverSchemasRequest,
+        DiscoverSchemasResponse, DiscoverTablesRequest, DiscoverTablesResponse, ErrorResponse,
+        GeometryColumnInfo, PostgisConnectionConfig, PostgisConnectionTestRequest,
+        PostgisConnectionTestResponse, RegisterPostgisSourceRequest,
+        RegisterPostgisSourceResponse, TableInfo,
     },
     AppState,
 };
@@ -1133,4 +1136,115 @@ mod tests {
             .expect("read app_secret count");
         assert_eq!(app_secret_count, 0);
     }
+}
+
+pub async fn discover_schemas(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(_state): State<AppState>,
+    Json(req): Json<DiscoverSchemasRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let _ = require_postgis_admin(&auth_session)?;
+
+    let client = connect_postgis_client_from_connection(&req.connection)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    let rows = client
+        .query(
+            "SELECT schema_name FROM information_schema.schemata
+             WHERE schema_name NOT LIKE 'pg_%' AND schema_name != 'information_schema'
+             ORDER BY schema_name",
+            &[],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover schemas: {e}")))?;
+
+    let schemas = rows.iter().map(|row| row.get::<_, String>(0)).collect();
+    Ok(Json(DiscoverSchemasResponse { schemas }))
+}
+
+pub async fn discover_tables(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(_state): State<AppState>,
+    Json(req): Json<DiscoverTablesRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let _ = require_postgis_admin(&auth_session)?;
+
+    let client = connect_postgis_client_from_connection(&req.connection)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    let rows = client
+        .query(
+            "SELECT table_name, table_type FROM information_schema.tables
+             WHERE table_schema = $1 AND table_type IN ('BASE TABLE', 'VIEW')
+             ORDER BY table_name",
+            &[&req.schema],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover tables: {e}")))?;
+
+    let tables = rows
+        .iter()
+        .map(|row| TableInfo {
+            name: row.get(0),
+            table_type: if row.get::<_, String>(1) == "BASE TABLE" {
+                "table".to_string()
+            } else {
+                "view".to_string()
+            },
+        })
+        .collect();
+
+    Ok(Json(DiscoverTablesResponse { tables }))
+}
+
+pub async fn discover_columns(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(_state): State<AppState>,
+    Json(req): Json<DiscoverColumnsRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let _ = require_postgis_admin(&auth_session)?;
+
+    let client = connect_postgis_client_from_connection(&req.connection)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    // Query geometry columns from geometry_columns view
+    let geom_rows = client
+        .query(
+            "SELECT f_geometry_column, srid, type FROM geometry_columns
+             WHERE f_table_schema = $1 AND f_table_name = $2",
+            &[&req.schema, &req.table],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover geometry columns: {e}")))?;
+
+    let geometry_columns = geom_rows
+        .iter()
+        .map(|row| GeometryColumnInfo {
+            column_name: row.get(0),
+            srid: row.get(1),
+            geometry_type: row.get(2),
+        })
+        .collect();
+
+    // Query FID candidates (integer type columns)
+    let fid_rows = client
+        .query(
+            "SELECT column_name FROM information_schema.columns
+             WHERE table_schema = $1 AND table_name = $2
+               AND data_type IN ('smallint', 'integer', 'bigint')
+             ORDER BY ordinal_position",
+            &[&req.schema, &req.table],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover FID candidates: {e}")))?;
+
+    let fid_candidates = fid_rows.iter().map(|row| row.get::<_, String>(0)).collect();
+
+    Ok(Json(DiscoverColumnsResponse {
+        geometry_columns,
+        fid_candidates,
+    }))
 }

@@ -16,6 +16,9 @@ import {
   updatePublishSettings,
   listWorkspaces,
   switchWorkspace,
+  discoverPostgisSchemas,
+  discoverPostgisTables,
+  discoverPostgisColumns,
 } from './api.js';
 import { formatSize, parseType, validateSlug } from './utils.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
@@ -1382,6 +1385,13 @@ export default function App() {
   const [postgisMessageType, setPostgisMessageType] = useState('');
   const [isTestingPostgis, setIsTestingPostgis] = useState(false);
   const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
+  const [postgisSchemas, setPostgisSchemas] = useState([]);
+  const [postgisTables, setPostgisTables] = useState([]);
+  const [postgisColumns, setPostgisColumns] = useState(null);
+  const [isLoadingSchemas, setIsLoadingSchemas] = useState(false);
+  const [isLoadingTables, setIsLoadingTables] = useState(false);
+  const [isLoadingColumns, setIsLoadingColumns] = useState(false);
+  const [connectionTested, setConnectionTested] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
   const [currentWorkspace, setCurrentWorkspace] = useState(
     user?.current_workspace || user?.currentWorkspace || null,
@@ -1407,6 +1417,10 @@ export default function App() {
     setPostgisForm(INITIAL_POSTGIS_FORM);
     setPostgisMessage('');
     setPostgisMessageType('');
+    setPostgisSchemas([]);
+    setPostgisTables([]);
+    setPostgisColumns(null);
+    setConnectionTested(false);
   }
 
   function updatePostgisField(field, value) {
@@ -1441,6 +1455,10 @@ export default function App() {
     setPostgisMessage('');
     setPostgisMessageType('');
     setIsTestingPostgis(true);
+    setPostgisSchemas([]);
+    setPostgisTables([]);
+    setPostgisColumns(null);
+    setConnectionTested(false);
     try {
       const payload = {
         connection: {
@@ -1460,12 +1478,96 @@ export default function App() {
         }),
       );
       setPostgisMessageType('success');
+      setConnectionTested(true);
+      await loadPostgisSchemas(payload.connection);
     } catch (error) {
       setPostgisMessage(error instanceof Error ? error.message : t('postgis.connectionTestFailed'));
       setPostgisMessageType('error');
     } finally {
       setIsTestingPostgis(false);
     }
+  }
+
+  async function loadPostgisSchemas(connection) {
+    setIsLoadingSchemas(true);
+    try {
+      const result = await discoverPostgisSchemas(connection);
+      setPostgisSchemas(result.schemas || []);
+      if (
+        result.schemas &&
+        result.schemas.length > 0 &&
+        !result.schemas.includes(postgisForm.schema)
+      ) {
+        updatePostgisField('schema', result.schemas[0]);
+      }
+    } catch (error) {
+      console.error('Failed to load schemas:', error);
+    } finally {
+      setIsLoadingSchemas(false);
+    }
+  }
+
+  async function loadPostgisTables(connection, schema) {
+    if (!schema) {
+      setPostgisTables([]);
+      return;
+    }
+    setIsLoadingTables(true);
+    setPostgisColumns(null);
+    try {
+      const result = await discoverPostgisTables(connection, schema);
+      setPostgisTables(result.tables || []);
+      updatePostgisField('object', '');
+    } catch (error) {
+      console.error('Failed to load tables:', error);
+      setPostgisTables([]);
+    } finally {
+      setIsLoadingTables(false);
+    }
+  }
+
+  async function loadPostgisColumns(connection, schema, table) {
+    if (!schema || !table) {
+      setPostgisColumns(null);
+      return;
+    }
+    setIsLoadingColumns(true);
+    try {
+      const result = await discoverPostgisColumns(connection, schema, table);
+      setPostgisColumns(result);
+      if (result.geometryColumns && result.geometryColumns.length > 0) {
+        updatePostgisField('geometryColumn', result.geometryColumns[0].columnName);
+      }
+      if (result.fidCandidates && result.fidCandidates.length > 0) {
+        updatePostgisField('fidColumn', result.fidCandidates[0]);
+      }
+    } catch (error) {
+      console.error('Failed to load columns:', error);
+      setPostgisColumns(null);
+    } finally {
+      setIsLoadingColumns(false);
+    }
+  }
+
+  function getConnectionConfig() {
+    return {
+      host: postgisForm.host.trim(),
+      port: Number(postgisForm.port),
+      database: postgisForm.database.trim(),
+      username: postgisForm.username.trim(),
+      password: postgisForm.password,
+      sslMode: postgisForm.sslMode,
+    };
+  }
+
+  async function handleSchemaChange(schema) {
+    updatePostgisField('schema', schema);
+    await loadPostgisTables(getConnectionConfig(), schema);
+  }
+
+  async function handleTableChange(table) {
+    updatePostgisField('object', table);
+    await loadPostgisColumns(getConnectionConfig(), postgisForm.schema, table);
   }
 
   async function handleRegisterPostgisSource() {
@@ -2045,41 +2147,113 @@ export default function App() {
               </div>
               <div className="form-group">
                 <label htmlFor="postgis-schema">{t('postgis.schema')}</label>
-                <input
-                  id="postgis-schema"
-                  className="form-input"
-                  value={postgisForm.schema}
-                  onChange={(e) => updatePostgisField('schema', e.target.value)}
-                />
+                {connectionTested && postgisSchemas.length > 0 ? (
+                  <select
+                    id="postgis-schema"
+                    className="form-input"
+                    value={postgisForm.schema}
+                    onChange={(e) => handleSchemaChange(e.target.value)}
+                    disabled={isLoadingSchemas || isLoadingTables}
+                  >
+                    {postgisSchemas.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="postgis-schema"
+                    className="form-input"
+                    value={postgisForm.schema}
+                    onChange={(e) => updatePostgisField('schema', e.target.value)}
+                    placeholder={connectionTested ? t('postgis.noSchemas') : t('postgis.testFirst')}
+                    disabled={connectionTested}
+                  />
+                )}
               </div>
               <div className="form-group">
                 <label htmlFor="postgis-object">{t('postgis.object')}</label>
-                <input
-                  id="postgis-object"
-                  className="form-input"
-                  value={postgisForm.object}
-                  onChange={(e) => updatePostgisField('object', e.target.value)}
-                  placeholder="roads"
-                />
+                {connectionTested && postgisTables.length > 0 ? (
+                  <select
+                    id="postgis-object"
+                    className="form-input"
+                    value={postgisForm.object}
+                    onChange={(e) => handleTableChange(e.target.value)}
+                    disabled={isLoadingTables || isLoadingColumns}
+                  >
+                    <option value="">-- {t('postgis.selectTable')} --</option>
+                    {postgisTables.map((tbl) => (
+                      <option key={tbl.name} value={tbl.name}>
+                        {tbl.name} ({tbl.type})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="postgis-object"
+                    className="form-input"
+                    value={postgisForm.object}
+                    onChange={(e) => updatePostgisField('object', e.target.value)}
+                    placeholder={
+                      connectionTested ? t('postgis.selectSchemaFirst') : t('postgis.testFirst')
+                    }
+                    disabled={connectionTested}
+                  />
+                )}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="form-group">
                   <label htmlFor="postgis-geometry-column">{t('postgis.geometryColumn')}</label>
-                  <input
-                    id="postgis-geometry-column"
-                    className="form-input"
-                    value={postgisForm.geometryColumn}
-                    onChange={(e) => updatePostgisField('geometryColumn', e.target.value)}
-                  />
+                  {postgisColumns && postgisColumns.geometryColumns.length > 0 ? (
+                    <select
+                      id="postgis-geometry-column"
+                      className="form-input"
+                      value={postgisForm.geometryColumn}
+                      onChange={(e) => updatePostgisField('geometryColumn', e.target.value)}
+                    >
+                      {postgisColumns.geometryColumns.map((col) => (
+                        <option key={col.columnName} value={col.columnName}>
+                          {col.columnName} ({col.geometryType}, SRID:{col.srid})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="postgis-geometry-column"
+                      className="form-input"
+                      value={postgisForm.geometryColumn}
+                      onChange={(e) => updatePostgisField('geometryColumn', e.target.value)}
+                      placeholder={postgisForm.object ? t('postgis.noGeometryColumns') : ''}
+                      disabled={!postgisForm.object}
+                    />
+                  )}
                 </div>
                 <div className="form-group">
                   <label htmlFor="postgis-fid-column">{t('postgis.fidColumn')}</label>
-                  <input
-                    id="postgis-fid-column"
-                    className="form-input"
-                    value={postgisForm.fidColumn}
-                    onChange={(e) => updatePostgisField('fidColumn', e.target.value)}
-                  />
+                  {postgisColumns && postgisColumns.fidCandidates.length > 0 ? (
+                    <select
+                      id="postgis-fid-column"
+                      className="form-input"
+                      value={postgisForm.fidColumn}
+                      onChange={(e) => updatePostgisField('fidColumn', e.target.value)}
+                    >
+                      {postgisColumns.fidCandidates.map((col) => (
+                        <option key={col} value={col}>
+                          {col}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="postgis-fid-column"
+                      className="form-input"
+                      value={postgisForm.fidColumn}
+                      onChange={(e) => updatePostgisField('fidColumn', e.target.value)}
+                      placeholder={postgisForm.object ? t('postgis.noFidCandidates') : ''}
+                      disabled={!postgisForm.object}
+                    />
+                  )}
                 </div>
               </div>
               <div className="form-group">
