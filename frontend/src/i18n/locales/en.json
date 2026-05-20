@@ -270,8 +270,8 @@
     "maxValueExceeded": "Maximum value is 100 GB (102400 MB)"
   },
   "postgis": {
-    "connect": "Connect PostGIS",
-    "connectionName": "Connection Name",
+    "connect": "Connect",
+    "connecting": "Connecting...",
     "host": "Host",
     "port": "Port",
     "database": "Database",
@@ -282,7 +282,6 @@
     "object": "Table/View",
     "geometryColumn": "Geometry Column",
     "fidColumn": "FID Column",
-    "displayName": "Display Name (Optional)",
     "testConnection": "Test Connection",
     "testing": "Testing...",
     "testSuccess": "Connection successful",
@@ -292,18 +291,13 @@
     "registerSuccess": "Registered successfully",
     "registerFailed": "Registration failed",
     "registerAsSource": "Register as Data Source",
-    "connectionSuccessDetail": "Connection successful: PostgreSQL {{serverVersion}}, {{postgisVersion}}",
     "connectionHint": "Enter PostGIS database connection information",
-    "objectHint": "Specify the table or view name to register",
-    "connectionSuccess": "Connection successful",
-    "connectionTestFailed": "PostGIS connection test failed",
+    "connectionTestFailed": "PostGIS connection failed",
     "sourceRegisterFailed": "PostGIS source registration failed",
-    "selectTable": "Select table/view",
-    "noSchemas": "No schemas available",
-    "testFirst": "Test connection first",
-    "selectSchemaFirst": "Select schema first",
-    "noGeometryColumns": "No geometry columns",
-    "noFidCandidates": "No FID candidates"
+    "objects": "objects",
+    "import": "Import",
+    "importing": "Importing...",
+    "imported": "Imported"
   },
   "preview": {
     "title": "Preview",

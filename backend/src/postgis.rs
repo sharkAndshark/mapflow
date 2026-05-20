@@ -19,8 +19,9 @@ use crate::{
     ensure_app_secret,
     http_errors::{bad_request, internal_error},
     models::{
-        DiscoverColumnsRequest, DiscoverColumnsResponse, DiscoverSchemasRequest,
-        DiscoverSchemasResponse, DiscoverTablesRequest, DiscoverTablesResponse, ErrorResponse,
+        DiscoverColumnsRequest, DiscoverColumnsResponse, DiscoverObjectsRequest,
+        DiscoverObjectsResponse, DiscoverSchemasRequest, DiscoverSchemasResponse,
+        DiscoverTablesRequest, DiscoverTablesResponse, DiscoverableObject, ErrorResponse,
         GeometryColumnInfo, PostgisConnectionConfig, PostgisConnectionTestRequest,
         PostgisConnectionTestResponse, RegisterPostgisSourceRequest,
         RegisterPostgisSourceResponse, TableInfo,
@@ -1247,4 +1248,87 @@ pub async fn discover_columns(
         geometry_columns,
         fid_candidates,
     }))
+}
+
+pub async fn discover_objects(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(_state): State<AppState>,
+    Json(req): Json<DiscoverObjectsRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let _ = require_postgis_admin(&auth_session)?;
+
+    let client = connect_postgis_client_from_connection(&req.connection)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    // Find all tables/views with geometry columns across user schemas
+    let rows = client
+        .query(
+            "SELECT gc.f_table_schema, gc.f_table_name, t.table_type,
+                    array_agg(gc.f_geometry_column ORDER BY gc.f_geometry_column),
+                    array_agg(gc.srid ORDER BY gc.f_geometry_column),
+                    array_agg(gc.type ORDER BY gc.f_geometry_column)
+             FROM geometry_columns gc
+             JOIN information_schema.tables t
+               ON t.table_schema = gc.f_table_schema AND t.table_name = gc.f_table_name
+             WHERE gc.f_table_schema NOT LIKE 'pg_%'
+               AND gc.f_table_schema != 'information_schema'
+             GROUP BY gc.f_table_schema, gc.f_table_name, t.table_type
+             ORDER BY gc.f_table_schema, gc.f_table_name",
+            &[],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover objects: {e}")))?;
+
+    let mut objects = Vec::new();
+    for row in &rows {
+        let schema: String = row.get(0);
+        let table: String = row.get(1);
+        let table_type_raw: String = row.get(2);
+        let geom_names: Vec<String> = row.get(3);
+        let geom_srids: Vec<i32> = row.get(4);
+        let geom_types: Vec<String> = row.get(5);
+
+        let geometry_columns: Vec<GeometryColumnInfo> = geom_names
+            .into_iter()
+            .zip(geom_srids)
+            .zip(geom_types)
+            .map(|((column_name, srid), geometry_type)| GeometryColumnInfo {
+                column_name,
+                srid,
+                geometry_type,
+            })
+            .collect();
+
+        // Get FID candidates for this table
+        let fid_rows = client
+            .query(
+                "SELECT column_name FROM information_schema.columns
+                 WHERE table_schema = $1 AND table_name = $2
+                   AND data_type IN ('smallint', 'integer', 'bigint')
+                 ORDER BY ordinal_position",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(|e| internal_error(format!("Failed to discover FID candidates: {e}")))?;
+
+        let fid_candidates: Vec<String> = fid_rows
+            .iter()
+            .map(|r| r.get::<_, String>(0))
+            .collect();
+
+        objects.push(DiscoverableObject {
+            schema,
+            table,
+            table_type: if table_type_raw == "BASE TABLE" {
+                "table".to_string()
+            } else {
+                "view".to_string()
+            },
+            geometry_columns,
+            fid_candidates,
+        });
+    }
+
+    Ok(Json(DiscoverObjectsResponse { objects }))
 }

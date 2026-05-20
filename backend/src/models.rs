@@ -340,3 +340,27 @@ pub struct DiscoverColumnsResponse {
     #[serde(rename = "fidCandidates")]
     pub fid_candidates: Vec<String>,
 }
+
+// PostGIS discover-all-objects API
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoverObjectsRequest {
+    pub connection: PostgisConnectionConfig,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverableObject {
+    pub schema: String,
+    pub table: String,
+    #[serde(rename = "tableType")]
+    pub table_type: String,
+    #[serde(rename = "geometryColumns")]
+    pub geometry_columns: Vec<GeometryColumnInfo>,
+    #[serde(rename = "fidCandidates")]
+    pub fid_candidates: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverObjectsResponse {
+    pub objects: Vec<DiscoverableObject>,
+}

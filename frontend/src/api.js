@@ -206,6 +206,19 @@ export async function discoverPostgisColumns(connection, schema, table) {
   return res.json();
 }
 
+export async function discoverPostgisObjects(connection) {
+  const res = await fetchWithAuth('/api/postgis/connections/discover-objects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
 export async function listWorkspaces() {
   const res = await fetchWithAuth('/api/workspaces');
   if (!res.ok) {

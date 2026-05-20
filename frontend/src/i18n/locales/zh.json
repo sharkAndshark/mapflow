@@ -270,8 +270,8 @@
     "maxValueExceeded": "最大值为 100 GB（102400 MB）"
   },
   "postgis": {
-    "connect": "连接 PostGIS",
-    "connectionName": "连接名称",
+    "connect": "连接",
+    "connecting": "连接中...",
     "host": "主机",
     "port": "端口",
     "database": "数据库",
@@ -282,7 +282,6 @@
     "object": "表/视图",
     "geometryColumn": "几何列",
     "fidColumn": "FID 列",
-    "displayName": "显示名称（可选）",
     "testConnection": "测试连接",
     "testing": "测试中...",
     "testSuccess": "连接成功",
@@ -292,18 +291,13 @@
     "registerSuccess": "注册成功",
     "registerFailed": "注册失败",
     "registerAsSource": "注册为数据源",
-    "connectionSuccessDetail": "连接成功: PostgreSQL {{serverVersion}}, {{postgisVersion}}",
     "connectionHint": "输入 PostGIS 数据库连接信息",
-    "objectHint": "指定要注册的表或视图名称",
-    "connectionSuccess": "连接成功",
-    "connectionTestFailed": "PostGIS 连接测试失败",
+    "connectionTestFailed": "PostGIS 连接失败",
     "sourceRegisterFailed": "PostGIS 数据源注册失败",
-    "selectTable": "选择表/视图",
-    "noSchemas": "无可用 Schema",
-    "testFirst": "请先测试连接",
-    "selectSchemaFirst": "请先选择 Schema",
-    "noGeometryColumns": "无几何列",
-    "noFidCandidates": "无 FID 候选列"
+    "objects": "个对象",
+    "import": "导入",
+    "importing": "导入中...",
+    "imported": "已导入"
   },
   "preview": {
     "title": "预览",
