@@ -1472,12 +1472,9 @@ export default function App() {
       obj.geometryColumns && obj.geometryColumns.length > 0
         ? obj.geometryColumns[0].columnName
         : '';
-    const defaultFid =
-      obj.pkColumns && obj.pkColumns.length > 0
-        ? obj.pkColumns[0]
-        : obj.fidCandidates && obj.fidCandidates.length > 0
-          ? obj.fidCandidates[0]
-          : '';
+    const isTable = obj.tableType === 'table';
+    const validFidCols = isTable ? obj.pkColumns || [] : obj.fidCandidates || [];
+    const defaultFid = validFidCols.length > 0 ? validFidCols[0] : '';
     setImportGeomColumn(defaultGeom);
     setImportFidColumn(defaultFid);
     setImportPopoverKey(`${obj.schema}.${obj.table}`);
@@ -2014,6 +2011,11 @@ export default function App() {
                           obj.geometryColumns && obj.geometryColumns.length > 0
                             ? obj.geometryColumns[0]
                             : null;
+                        const isTable = obj.tableType === 'table';
+                        const validFidCols = isTable
+                          ? obj.pkColumns || []
+                          : obj.fidCandidates || [];
+                        const canImport = geomInfo && validFidCols.length > 0;
                         return (
                           <div key={key}>
                             <div
@@ -2051,10 +2053,17 @@ export default function App() {
                                 <span style={{ fontSize: '10px', color: '#4caf50' }}>
                                   {t('postgis.imported')}
                                 </span>
+                              ) : !canImport ? (
+                                <span
+                                  style={{ fontSize: '10px', color: '#999' }}
+                                  title={t('postgis.noValidFid')}
+                                >
+                                  {t('postgis.noValidFid')}
+                                </span>
                               ) : (
                                 <button
                                   type="button"
-                                  disabled={!geomInfo || isRegistering}
+                                  disabled={isRegistering}
                                   style={{
                                     fontSize: '11px',
                                     padding: '2px 10px',
@@ -2062,8 +2071,7 @@ export default function App() {
                                     borderRadius: '3px',
                                     background: 'transparent',
                                     color: '#1976d2',
-                                    cursor: geomInfo && !isRegistering ? 'pointer' : 'default',
-                                    opacity: geomInfo ? 1 : 0.5,
+                                    cursor: !isRegistering ? 'pointer' : 'default',
                                   }}
                                   onClick={() =>
                                     showPopover ? closeImportPopover() : openImportPopover(obj)
@@ -2131,12 +2139,12 @@ export default function App() {
                                       borderRadius: '3px',
                                     }}
                                   >
-                                    {obj.fidCandidates.map((col) => {
+                                    {validFidCols.map((col) => {
                                       const isPk = obj.pkColumns && obj.pkColumns.includes(col);
                                       return (
                                         <option key={col} value={col}>
                                           {col}
-                                          {isPk ? ' (PK)' : ` (${t('postgis.noUniqueConstraint')})`}
+                                          {isPk ? ' (PK)' : ''}
                                         </option>
                                       );
                                     })}

@@ -299,7 +299,8 @@
     "importing": "Importing...",
     "imported": "Imported",
     "confirmImport": "Confirm Import",
-    "noUniqueConstraint": "no unique constraint"
+    "noUniqueConstraint": "no unique constraint",
+    "noValidFid": "No valid FID column"
   },
   "preview": {
     "title": "Preview",

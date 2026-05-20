@@ -299,7 +299,8 @@
     "importing": "导入中...",
     "imported": "已导入",
     "confirmImport": "确认导入",
-    "noUniqueConstraint": "无唯一约束"
+    "noUniqueConstraint": "无唯一约束",
+    "noValidFid": "无可用 FID 列"
   },
   "preview": {
     "title": "预览",
