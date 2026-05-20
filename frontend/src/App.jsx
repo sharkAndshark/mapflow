@@ -434,6 +434,139 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
                 <strong>{t('file.detail.errorLabel')}:</strong> {file.error}
               </div>
             )}
+            {postgisDiscoveredObjects && postgisDiscoveredObjects.length > 0 && (
+              <div
+                style={{
+                  borderTop: '1px solid #e0e0e0',
+                  marginTop: 'auto',
+                  maxHeight: '260px',
+                  overflowY: 'auto',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6px 8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: '#555',
+                    background: '#fafafa',
+                    borderBottom: '1px solid #ececec',
+                  }}
+                >
+                  <button
+                    type="button"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '10px',
+                      padding: 0,
+                      color: '#555',
+                    }}
+                    onClick={() => setPostgisExpanded(!postgisExpanded)}
+                  >
+                    {postgisExpanded ? '▼' : '▶'}
+                  </button>
+                  <span>
+                    PostGIS: {postgisConnection?.host}:{postgisConnection?.port}/
+                    {postgisConnection?.database}
+                  </span>
+                  <span style={{ fontSize: '11px', fontWeight: 400, color: '#888' }}>
+                    ({postgisDiscoveredObjects.length} {t('postgis.objects')})
+                  </span>
+                  <button
+                    type="button"
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: '11px',
+                      background: 'none',
+                      border: 'none',
+                      color: '#999',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      setPostgisDiscoveredObjects(null);
+                      setPostgisConnection(null);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                {postgisExpanded && (
+                  <div>
+                    {postgisDiscoveredObjects.map((obj) => {
+                      const key = `${obj.schema}.${obj.table}`;
+                      const isRegistering = registeringObject === key;
+                      const geomInfo =
+                        obj.geometryColumns && obj.geometryColumns.length > 0
+                          ? obj.geometryColumns[0]
+                          : null;
+                      return (
+                        <div
+                          key={key}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '5px 8px',
+                            fontSize: '12px',
+                            borderBottom: '1px solid #f0f0f0',
+                            opacity: geomInfo ? 1 : 0.5,
+                          }}
+                        >
+                          <span style={{ color: '#666', minWidth: 0 }}>
+                            {obj.schema}.{obj.table}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              color: '#999',
+                              background: '#f5f5f5',
+                              padding: '1px 6px',
+                              borderRadius: '3px',
+                            }}
+                          >
+                            {obj.tableType}
+                          </span>
+                          {geomInfo && (
+                            <span style={{ fontSize: '10px', color: '#888' }}>
+                              {geomInfo.geometryType} · SRID:{geomInfo.srid}
+                            </span>
+                          )}
+                          <span style={{ flex: 1 }} />
+                          {obj.imported ? (
+                            <span style={{ fontSize: '10px', color: '#4caf50' }}>
+                              {t('postgis.imported')}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!geomInfo || isRegistering}
+                              style={{
+                                fontSize: '11px',
+                                padding: '2px 10px',
+                                border: '1px solid #1976d2',
+                                borderRadius: '3px',
+                                background: 'transparent',
+                                color: '#1976d2',
+                                cursor: geomInfo && !isRegistering ? 'pointer' : 'default',
+                                opacity: geomInfo ? 1 : 0.5,
+                              }}
+                              onClick={() => handleImportPostgisObject(obj)}
+                            >
+                              {isRegistering ? t('postgis.importing') : t('postgis.import')}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1922,140 +2055,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            {postgisDiscoveredObjects && postgisDiscoveredObjects.length > 0 && (
-              <div
-                style={{
-                  borderTop: '1px solid #e0e0e0',
-                  paddingTop: '12px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    padding: '4px 0',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: '#555',
-                  }}
-                  onClick={() => setPostgisExpanded(!postgisExpanded)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') setPostgisExpanded(!postgisExpanded);
-                  }}
-                >
-                  <span style={{ fontSize: '10px' }}>{postgisExpanded ? '▼' : '▶'}</span>
-                  <span>
-                    PostGIS: {postgisConnection?.host}:{postgisConnection?.port}/
-                    {postgisConnection?.database}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 400,
-                      color: '#888',
-                    }}
-                  >
-                    ({postgisDiscoveredObjects.length} {t('postgis.objects')})
-                  </span>
-                  <button
-                    type="button"
-                    style={{
-                      marginLeft: 'auto',
-                      fontSize: '11px',
-                      background: 'none',
-                      border: 'none',
-                      color: '#999',
-                      cursor: 'pointer',
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPostgisDiscoveredObjects(null);
-                      setPostgisConnection(null);
-                    }}
-                  >
-                    {t('common.close')}
-                  </button>
-                </div>
-                {postgisExpanded && (
-                  <div style={{ marginTop: '4px' }}>
-                    {postgisDiscoveredObjects.map((obj) => {
-                      const key = `${obj.schema}.${obj.table}`;
-                      const isRegistering = registeringObject === key;
-                      const geomInfo =
-                        obj.geometryColumns && obj.geometryColumns.length > 0
-                          ? obj.geometryColumns[0]
-                          : null;
-                      return (
-                        <div
-                          key={key}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '6px 8px',
-                            fontSize: '12px',
-                            borderBottom: '1px solid #f0f0f0',
-                            opacity: geomInfo ? 1 : 0.5,
-                          }}
-                        >
-                          <span style={{ color: '#666', minWidth: '0' }}>
-                            {obj.schema}.{obj.table}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: '10px',
-                              color: '#999',
-                              background: '#f5f5f5',
-                              padding: '1px 6px',
-                              borderRadius: '3px',
-                            }}
-                          >
-                            {obj.tableType}
-                          </span>
-                          {geomInfo && (
-                            <span style={{ fontSize: '10px', color: '#888' }}>
-                              {geomInfo.geometryType} · SRID:{geomInfo.srid}
-                            </span>
-                          )}
-                          <span style={{ flex: 1 }} />
-                          {obj.imported ? (
-                            <span
-                              style={{
-                                fontSize: '10px',
-                                color: '#4caf50',
-                              }}
-                            >
-                              {t('postgis.imported')}
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={!geomInfo || isRegistering}
-                              style={{
-                                fontSize: '11px',
-                                padding: '2px 10px',
-                                border: '1px solid #1976d2',
-                                borderRadius: '3px',
-                                background: 'transparent',
-                                color: '#1976d2',
-                                cursor: geomInfo && !isRegistering ? 'pointer' : 'default',
-                                opacity: geomInfo ? 1 : 0.5,
-                              }}
-                              onClick={() => handleImportPostgisObject(obj)}
-                            >
-                              {isRegistering ? t('postgis.importing') : t('postgis.import')}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="detail-area">
               <DetailSidebar
