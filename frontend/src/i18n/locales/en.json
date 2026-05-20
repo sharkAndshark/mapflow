@@ -297,7 +297,9 @@
     "objects": "objects",
     "import": "Import",
     "importing": "Importing...",
-    "imported": "Imported"
+    "imported": "Imported",
+    "confirmImport": "Confirm Import",
+    "noUniqueConstraint": "no unique constraint"
   },
   "preview": {
     "title": "Preview",

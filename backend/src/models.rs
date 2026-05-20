@@ -358,6 +358,8 @@ pub struct DiscoverableObject {
     pub geometry_columns: Vec<GeometryColumnInfo>,
     #[serde(rename = "fidCandidates")]
     pub fid_candidates: Vec<String>,
+    #[serde(rename = "pkColumns")]
+    pub pk_columns: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

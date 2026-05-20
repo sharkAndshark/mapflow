@@ -1317,6 +1317,36 @@ pub async fn discover_objects(
             .map(|r| r.get::<_, String>(0))
             .collect();
 
+        // Get PK/UNIQUE integer columns for tables
+        let pk_columns = if table_type_raw == "BASE TABLE" {
+            let pk_rows = client
+                .query(
+                    "SELECT a.attname
+                     FROM pg_index i
+                     JOIN pg_attribute a
+                       ON a.attrelid = i.indrelid
+                      AND a.attnum = ANY(i.indkey)
+                      AND a.attnum > 0
+                      AND NOT a.attisdropped
+                     JOIN pg_type t ON t.oid = a.atttypid
+                     JOIN pg_class c ON c.oid = i.indrelid
+                     JOIN pg_namespace n ON n.oid = c.relnamespace
+                     WHERE n.nspname = $1
+                       AND c.relname = $2
+                       AND (i.indisunique OR i.indisprimary)
+                       AND i.indnkeyatts = 1
+                       AND i.indpred IS NULL
+                       AND t.typname IN ('int2', 'int4', 'int8')
+                     ORDER BY a.attnum",
+                    &[&schema, &table],
+                )
+                .await
+                .map_err(|e| internal_error(format!("Failed to discover PK columns: {e}")))?;
+            pk_rows.iter().map(|r| r.get::<_, String>(0)).collect()
+        } else {
+            Vec::new()
+        };
+
         objects.push(DiscoverableObject {
             schema,
             table,
@@ -1327,6 +1357,7 @@ pub async fn discover_objects(
             },
             geometry_columns,
             fid_candidates,
+            pk_columns,
         });
     }
 

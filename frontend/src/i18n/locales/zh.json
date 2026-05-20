@@ -297,7 +297,9 @@
     "objects": "个对象",
     "import": "导入",
     "importing": "导入中...",
-    "imported": "已导入"
+    "imported": "已导入",
+    "confirmImport": "确认导入",
+    "noUniqueConstraint": "无唯一约束"
   },
   "preview": {
     "title": "预览",
