@@ -26,7 +26,6 @@ import ResourcesPanel from './ResourcesPanel.jsx';
 import MapsPanel from './MapsPanel.jsx';
 
 const INITIAL_POSTGIS_FORM = {
-  connectionName: '',
   host: '127.0.0.1',
   port: 5432,
   database: '',
@@ -37,7 +36,6 @@ const INITIAL_POSTGIS_FORM = {
   object: '',
   geometryColumn: 'geom',
   fidColumn: 'id',
-  displayName: '',
 };
 
 const STATUS_LABEL_KEYS = {
@@ -1517,7 +1515,6 @@ export default function App() {
     try {
       const result = await discoverPostgisTables(connection, schema);
       setPostgisTables(result.tables || []);
-      updatePostgisField('object', '');
     } catch (error) {
       console.error('Failed to load tables:', error);
       setPostgisTables([]);
@@ -1561,7 +1558,14 @@ export default function App() {
   }
 
   async function handleSchemaChange(schema) {
-    updatePostgisField('schema', schema);
+    setPostgisForm((prev) => ({
+      ...prev,
+      schema,
+      object: '',
+      geometryColumn: 'geom',
+      fidColumn: 'id',
+    }));
+    setPostgisColumns(null);
     await loadPostgisTables(getConnectionConfig(), schema);
   }
 
@@ -1573,10 +1577,14 @@ export default function App() {
   async function handleRegisterPostgisSource() {
     setPostgisMessage('');
     setPostgisMessageType('');
+    if (!postgisForm.object) {
+      setPostgisMessage(t('postgis.selectTable'));
+      setPostgisMessageType('error');
+      return;
+    }
     setIsRegisteringPostgis(true);
     try {
       const payload = {
-        connectionName: postgisForm.connectionName.trim(),
         connection: {
           host: postgisForm.host.trim(),
           port: Number(postgisForm.port),
@@ -1589,7 +1597,6 @@ export default function App() {
         object: postgisForm.object.trim(),
         geometryColumn: postgisForm.geometryColumn.trim(),
         fidColumn: postgisForm.fidColumn.trim(),
-        displayName: postgisForm.displayName.trim() || undefined,
       };
       const result = await registerPostgisSource(payload);
       await refreshFiles(result.fileId);
@@ -2084,16 +2091,6 @@ export default function App() {
               </button>
             </div>
             <div className="modal-body">
-              <div className="form-group">
-                <label htmlFor="postgis-connection-name">{t('postgis.connectionName')}</label>
-                <input
-                  id="postgis-connection-name"
-                  className="form-input"
-                  value={postgisForm.connectionName}
-                  onChange={(e) => updatePostgisField('connectionName', e.target.value)}
-                  placeholder="local-dev"
-                />
-              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px' }}>
                 <div className="form-group">
                   <label htmlFor="postgis-host">{t('postgis.host')}</label>
@@ -2255,15 +2252,6 @@ export default function App() {
                     />
                   )}
                 </div>
-              </div>
-              <div className="form-group">
-                <label htmlFor="postgis-display-name">{t('postgis.displayName')}</label>
-                <input
-                  id="postgis-display-name"
-                  className="form-input"
-                  value={postgisForm.displayName}
-                  onChange={(e) => updatePostgisField('displayName', e.target.value)}
-                />
               </div>
               {postgisMessage ? (
                 <div

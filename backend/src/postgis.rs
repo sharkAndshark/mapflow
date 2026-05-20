@@ -126,23 +126,23 @@ pub async fn register_postgis_source(
         }
     }
 
-    let connection_name = req.connection_name.trim().to_string();
-    if connection_name.is_empty() {
-        return Err(bad_request("connectionName is required"));
-    }
-
     let cfg = validate_connection_config(req.connection).map_err(|e| bad_request(&e))?;
     let schema_name = validate_identifier(req.schema.trim(), "schema")?;
     let object_name = validate_identifier(req.object.trim(), "object")?;
     let geom_column = validate_identifier(req.geometry_column.trim(), "geometryColumn")?;
     let fid_column = validate_identifier(req.fid_column.trim(), "fidColumn")?;
-    let display_name = req
-        .display_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| object_name.clone());
+    let display_name = object_name.clone();
+
+    let connection_name = req
+        .connection_name
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let connection_name = if connection_name.is_empty() {
+        format!("{}:{}", cfg.host, cfg.port)
+    } else {
+        connection_name
+    };
 
     let relation =
         introspect_relation(&cfg, &schema_name, &object_name, &geom_column, &fid_column).await?;

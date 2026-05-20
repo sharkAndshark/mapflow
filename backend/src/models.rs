@@ -229,8 +229,8 @@ pub struct PostgisConnectionTestResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterPostgisSourceRequest {
-    #[serde(rename = "connectionName")]
-    pub connection_name: String,
+    #[serde(rename = "connectionName", default)]
+    pub connection_name: Option<String>,
     pub connection: PostgisConnectionConfig,
     pub schema: String,
     pub object: String,
@@ -238,8 +238,6 @@ pub struct RegisterPostgisSourceRequest {
     pub geometry_column: String,
     #[serde(rename = "fidColumn")]
     pub fid_column: String,
-    #[serde(rename = "displayName")]
-    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
