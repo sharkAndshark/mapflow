@@ -280,8 +280,6 @@
     "sslMode": "SSL 模式",
     "schema": "Schema",
     "object": "表/视图",
-    "geometryColumn": "几何列",
-    "fidColumn": "FID 列",
     "testConnection": "测试连接",
     "testing": "测试中...",
     "testSuccess": "连接成功",
@@ -298,9 +296,8 @@
     "import": "导入",
     "importing": "导入中...",
     "imported": "已导入",
-    "confirmImport": "确认导入",
-    "noUniqueConstraint": "无唯一约束",
-    "noValidFid": "无可用 FID 列"
+    "update": "更新",
+    "rowCount": "{{count}} 行"
   },
   "preview": {
     "title": "预览",

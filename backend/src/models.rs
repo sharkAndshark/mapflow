@@ -69,6 +69,8 @@ pub struct PreviewMeta {
     pub data_bounds: Option<[f64; 4]>,
     #[serde(rename = "tileFormat", skip_serializing_if = "Option::is_none")]
     pub tile_format: Option<String>,
+    #[serde(rename = "tileSource", skip_serializing_if = "Option::is_none")]
+    pub tile_source: Option<String>,
     #[serde(rename = "minZoom", skip_serializing_if = "Option::is_none")]
     pub minzoom: Option<i32>,
     #[serde(rename = "maxZoom", skip_serializing_if = "Option::is_none")]
@@ -236,8 +238,8 @@ pub struct RegisterPostgisSourceRequest {
     pub object: String,
     #[serde(rename = "geometryColumn")]
     pub geometry_column: String,
-    #[serde(rename = "fidColumn")]
-    pub fid_column: String,
+    #[serde(rename = "fidColumn", default)]
+    pub fid_column: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -356,13 +358,23 @@ pub struct DiscoverableObject {
     pub table_type: String,
     #[serde(rename = "geometryColumns")]
     pub geometry_columns: Vec<GeometryColumnInfo>,
-    #[serde(rename = "fidCandidates")]
-    pub fid_candidates: Vec<String>,
-    #[serde(rename = "pkColumns")]
-    pub pk_columns: Vec<String>,
+    #[serde(rename = "existingFileId", skip_serializing_if = "Option::is_none")]
+    pub existing_file_id: Option<String>,
+    #[serde(rename = "rowCount")]
+    pub row_count: i64,
 }
 
 #[derive(Debug, Serialize)]
 pub struct DiscoverObjectsResponse {
+    pub objects: Vec<DiscoverableObject>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConnectPostgisResponse {
+    pub success: bool,
+    #[serde(rename = "serverVersion")]
+    pub server_version: String,
+    #[serde(rename = "postgisVersion")]
+    pub postgis_version: String,
     pub objects: Vec<DiscoverableObject>,
 }

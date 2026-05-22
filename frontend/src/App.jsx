@@ -9,16 +9,15 @@ import {
   listFiles,
   publishFile,
   registerPostgisSource,
-  testPostgisConnection,
+  connectPostgis,
   unpublishFile,
   updateTileZoom,
   updateFieldAliases,
   updatePublishSettings,
   listWorkspaces,
   switchWorkspace,
-  discoverPostgisObjects,
 } from './api.js';
-import { formatSize, parseType, validateSlug } from './utils.js';
+import { formatSize, formatFileSize, parseType, validateSlug } from './utils.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
 import ResourcesPanel from './ResourcesPanel.jsx';
 import MapsPanel from './MapsPanel.jsx';
@@ -405,7 +404,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
             <div className="detail-group">
               <div className="detail-label">{t('file.detail.fileSize')}</div>
-              <div className="detail-value">{formatSize(file.size || 0)}</div>
+              <div className="detail-value">{formatFileSize(file, t)}</div>
             </div>
 
             <div className="detail-group">
@@ -1381,9 +1380,6 @@ export default function App() {
   const [postgisConnection, setPostgisConnection] = useState(null);
   const [postgisExpanded, setPostgisExpanded] = useState(true);
   const [registeringObject, setRegisteringObject] = useState(null);
-  const [importPopoverKey, setImportPopoverKey] = useState(null);
-  const [importFidColumn, setImportFidColumn] = useState('');
-  const [importGeomColumn, setImportGeomColumn] = useState('');
   const [workspaces, setWorkspaces] = useState([]);
   const [currentWorkspace, setCurrentWorkspace] = useState(
     user?.current_workspace || user?.currentWorkspace || null,
@@ -1454,8 +1450,7 @@ export default function App() {
         password: postgisForm.password,
         sslMode: postgisForm.sslMode,
       };
-      await testPostgisConnection({ connection: conn });
-      const result = await discoverPostgisObjects(conn);
+      const result = await connectPostgis(conn);
       setPostgisConnection(conn);
       setPostgisDiscoveredObjects(result.objects || []);
       setShowPostgisModal(false);
@@ -1467,43 +1462,27 @@ export default function App() {
     }
   }
 
-  function openImportPopover(obj) {
-    const defaultGeom =
-      obj.geometryColumns && obj.geometryColumns.length > 0
-        ? obj.geometryColumns[0].columnName
-        : '';
-    const isTable = obj.tableType === 'table';
-    const validFidCols = isTable ? obj.pkColumns || [] : obj.fidCandidates || [];
-    const defaultFid = validFidCols.length > 0 ? validFidCols[0] : '';
-    setImportGeomColumn(defaultGeom);
-    setImportFidColumn(defaultFid);
-    setImportPopoverKey(`${obj.schema}.${obj.table}`);
-  }
-
-  function closeImportPopover() {
-    setImportPopoverKey(null);
-    setImportFidColumn('');
-    setImportGeomColumn('');
-  }
-
   async function handleImportPostgisObject(obj) {
-    if (!postgisConnection || !importFidColumn) return;
+    if (!postgisConnection) return;
+    const geomInfo =
+      obj.geometryColumns && obj.geometryColumns.length > 0 ? obj.geometryColumns[0] : null;
+    if (!geomInfo) return;
     setRegisteringObject(`${obj.schema}.${obj.table}`);
     try {
       const result = await registerPostgisSource({
         connection: postgisConnection,
         schema: obj.schema,
         object: obj.table,
-        geometryColumn: importGeomColumn,
-        fidColumn: importFidColumn,
+        geometryColumn: geomInfo.columnName,
       });
       await refreshFiles(result.fileId);
       setPostgisDiscoveredObjects((prev) =>
         prev.map((o) =>
-          o.schema === obj.schema && o.table === obj.table ? { ...o, imported: true } : o,
+          o.schema === obj.schema && o.table === obj.table
+            ? { ...o, existingFileId: result.fileId }
+            : o,
         ),
       );
-      closeImportPopover();
     } catch (error) {
       alert(error instanceof Error ? error.message : t('postgis.sourceRegisterFailed'));
     } finally {
@@ -1907,7 +1886,7 @@ export default function App() {
                         {item.type}
                         {item.tileSource === 'postgis' ? ' · PostGIS' : ''}
                       </span>
-                      <span>{formatSize(item.size || 0)}</span>
+                      <span>{formatFileSize(item, t)}</span>
                       <span className="muted">
                         {item.uploadedAt
                           ? dateTimeFormatter.format(new Date(item.uploadedAt))
@@ -2006,16 +1985,10 @@ export default function App() {
                       {postgisDiscoveredObjects.map((obj) => {
                         const key = `${obj.schema}.${obj.table}`;
                         const isRegistering = registeringObject === key;
-                        const showPopover = importPopoverKey === key;
                         const geomInfo =
                           obj.geometryColumns && obj.geometryColumns.length > 0
                             ? obj.geometryColumns[0]
                             : null;
-                        const isTable = obj.tableType === 'table';
-                        const validFidCols = isTable
-                          ? obj.pkColumns || []
-                          : obj.fidCandidates || [];
-                        const canImport = geomInfo && validFidCols.length > 0;
                         return (
                           <div key={key}>
                             <div
@@ -2048,129 +2021,31 @@ export default function App() {
                                   {geomInfo.geometryType} · SRID:{geomInfo.srid}
                                 </span>
                               )}
+                              <span style={{ fontSize: '10px', color: '#aaa' }}>
+                                {t('postgis.rowCount', { count: obj.rowCount })}
+                              </span>
                               <span style={{ flex: 1 }} />
-                              {obj.imported ? (
-                                <span style={{ fontSize: '10px', color: '#4caf50' }}>
-                                  {t('postgis.imported')}
-                                </span>
-                              ) : !canImport ? (
-                                <span
-                                  style={{ fontSize: '10px', color: '#999' }}
-                                  title={t('postgis.noValidFid')}
-                                >
-                                  {t('postgis.noValidFid')}
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={isRegistering}
-                                  style={{
-                                    fontSize: '11px',
-                                    padding: '2px 10px',
-                                    border: '1px solid #1976d2',
-                                    borderRadius: '3px',
-                                    background: 'transparent',
-                                    color: '#1976d2',
-                                    cursor: !isRegistering ? 'pointer' : 'default',
-                                  }}
-                                  onClick={() =>
-                                    showPopover ? closeImportPopover() : openImportPopover(obj)
-                                  }
-                                >
-                                  {isRegistering
-                                    ? t('postgis.importing')
-                                    : showPopover
-                                      ? t('common.cancel')
-                                      : t('postgis.import')}
-                                </button>
-                              )}
-                            </div>
-                            {showPopover && !obj.imported && (
-                              <div
+                              <button
+                                type="button"
+                                disabled={isRegistering || !geomInfo}
                                 style={{
-                                  padding: '8px 12px',
-                                  background: '#f8f9fa',
-                                  borderBottom: '1px solid #e0e0e0',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '12px',
-                                  fontSize: '12px',
+                                  fontSize: '11px',
+                                  padding: '2px 10px',
+                                  border: `1px solid ${obj.existingFileId ? '#ff9800' : '#1976d2'}`,
+                                  borderRadius: '3px',
+                                  background: 'transparent',
+                                  color: obj.existingFileId ? '#ff9800' : '#1976d2',
+                                  cursor: !isRegistering && geomInfo ? 'pointer' : 'default',
                                 }}
+                                onClick={() => handleImportPostgisObject(obj)}
                               >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <span style={{ color: '#666', whiteSpace: 'nowrap' }}>
-                                    {t('postgis.geometryColumn')}:
-                                  </span>
-                                  {obj.geometryColumns.length > 1 ? (
-                                    <select
-                                      value={importGeomColumn}
-                                      onChange={(e) => setImportGeomColumn(e.target.value)}
-                                      style={{
-                                        fontSize: '11px',
-                                        padding: '1px 4px',
-                                        border: '1px solid #ccc',
-                                        borderRadius: '3px',
-                                      }}
-                                    >
-                                      {obj.geometryColumns.map((col) => (
-                                        <option key={col.columnName} value={col.columnName}>
-                                          {col.columnName} ({col.geometryType}, SRID:{col.srid})
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <span style={{ color: '#333' }}>
-                                      {geomInfo?.columnName} ({geomInfo?.geometryType}, SRID:
-                                      {geomInfo?.srid})
-                                    </span>
-                                  )}
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <span style={{ color: '#666', whiteSpace: 'nowrap' }}>
-                                    {t('postgis.fidColumn')}:
-                                  </span>
-                                  <select
-                                    value={importFidColumn}
-                                    onChange={(e) => setImportFidColumn(e.target.value)}
-                                    style={{
-                                      fontSize: '11px',
-                                      padding: '1px 4px',
-                                      border: '1px solid #ccc',
-                                      borderRadius: '3px',
-                                    }}
-                                  >
-                                    {validFidCols.map((col) => {
-                                      const isPk = obj.pkColumns && obj.pkColumns.includes(col);
-                                      return (
-                                        <option key={col} value={col}>
-                                          {col}
-                                          {isPk ? ' (PK)' : ''}
-                                        </option>
-                                      );
-                                    })}
-                                  </select>
-                                </div>
-                                <button
-                                  type="button"
-                                  disabled={!importFidColumn || isRegistering}
-                                  style={{
-                                    fontSize: '11px',
-                                    padding: '2px 10px',
-                                    border: 'none',
-                                    borderRadius: '3px',
-                                    background:
-                                      importFidColumn && !isRegistering ? '#1976d2' : '#ccc',
-                                    color: '#fff',
-                                    cursor:
-                                      importFidColumn && !isRegistering ? 'pointer' : 'default',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                  onClick={() => handleImportPostgisObject(obj)}
-                                >
-                                  {t('postgis.confirmImport')}
-                                </button>
-                              </div>
-                            )}
+                                {isRegistering
+                                  ? t('postgis.importing')
+                                  : obj.existingFileId
+                                    ? t('postgis.update')
+                                    : t('postgis.import')}
+                              </button>
+                            </div>
                           </div>
                         );
                       })}

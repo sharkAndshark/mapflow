@@ -416,11 +416,11 @@ pub async fn get_preview_meta(
     });
 
     // For preview: tile files use file metadata zoom, dynamic data uses fixed range
-    let (preview_minzoom, preview_maxzoom) = if tile_format.is_some() {
-        // Tile file: use file metadata zoom
+    let (preview_minzoom, preview_maxzoom) = if tile_source == "mbtiles" {
+        // MBTiles: use file metadata zoom
         (minzoom, maxzoom)
     } else {
-        // Dynamic data: use fixed preview zoom range from config
+        // Dynamic data (DuckDB, PostGIS, etc.): use fixed preview zoom range from config
         let (min, max) = read_preview_zoom_config();
         (Some(min), Some(max))
     };
@@ -433,6 +433,7 @@ pub async fn get_preview_meta(
         bbox: bbox_values,
         data_bounds: data_bounds_array,
         tile_format,
+        tile_source: Some(tile_source),
         minzoom: preview_minzoom,
         maxzoom: preview_maxzoom,
     }))
@@ -488,116 +489,116 @@ pub async fn get_tile(
         ));
     }
 
-    if let Some(format) = tile_format {
-        let full_path = mbtiles::resolve_mbtiles_path(&file_path);
-        drop(conn);
-        match mbtiles::get_tile_from_mbtiles(&full_path, z, x, y).await {
-            Ok(Some(data)) => {
-                let ct = match format.as_str() {
-                    "mvt" => "application/vnd.mapbox-vector-tile",
-                    "png" => "image/png",
-                    _ => "application/octet-stream",
-                };
+    let tile_source = tile_source.unwrap_or_else(|| "duckdb".to_string());
 
-                let is_gzipped = data.starts_with(&[0x1f, 0x8b]);
-
-                if is_gzipped {
-                    return Ok((
-                        [
-                            (header::CONTENT_TYPE, ct),
-                            (header::CONTENT_ENCODING, "gzip"),
-                        ],
-                        data,
-                    )
-                        .into_response());
-                } else {
-                    return Ok(([(header::CONTENT_TYPE, ct)], data).into_response());
-                }
-            }
-            Ok(None) => {
-                return Ok(StatusCode::NO_CONTENT.into_response());
-            }
-            Err(e) => {
-                return Err(internal_error(format!("Failed to read MBTiles: {}", e)));
+    match tile_source.as_str() {
+        "postgis" => {
+            let source = fetch_postgis_source_config(&conn, &id)
+                .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
+                .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
+            let properties = build_property_columns_for_query(&conn, &id)
+                .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
+            drop(conn);
+            let mvt_blob = query_mvt_tile(&source, &properties, z, x, y, true)
+                .await
+                .map_err(|e| internal_error(format!("PostGIS tile generation failed: {e}")))?;
+            match mvt_blob {
+                Some(blob) => Ok((
+                    [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
+                    blob,
+                )
+                    .into_response()),
+                None => Ok(StatusCode::NO_CONTENT.into_response()),
             }
         }
-    }
-
-    let tile_source = tile_source.unwrap_or_else(|| "duckdb".to_string());
-    if tile_source == TILE_SOURCE_POSTGIS {
-        let source = fetch_postgis_source_config(&conn, &id)
-            .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
-            .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
-        let properties = build_property_columns_for_query(&conn, &id)
-            .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
-        drop(conn);
-        let mvt_blob = query_mvt_tile(&source, &properties, z, x, y, true)
-            .await
-            .map_err(|e| internal_error(format!("PostGIS tile generation failed: {e}")))?;
-        return match mvt_blob {
-            Some(blob) => Ok((
-                [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
-                blob,
-            )
-                .into_response()),
-            None => Ok(StatusCode::NO_CONTENT.into_response()),
-        };
-    }
-
-    let table_name = table_name.ok_or_else(|| {
-        (
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "File is not ready for preview".to_string(),
-            }),
-        )
-    })?;
-
-    let tile_params = TileParams {
-        source_crs: resolve_transform_source_crs(crs.as_deref()),
-        crs_type: crs_type.clone().unwrap_or_else(|| "standard".to_string()),
-        data_bounds: data_bounds_json
-            .as_ref()
-            .and_then(|j| DataBounds::from_json(j)),
-    };
-
-    let select_sql = build_mvt_select_sql(&conn, &id, &table_name, &tile_params, z, x, y, true)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Tile generation error: {}", e.0),
-                }),
-            )
-        })?;
-
-    let query_params = build_mvt_query_params(&tile_params, z, x, y);
-    let params_slice: Vec<&dyn duckdb::ToSql> = query_params.iter().map(|p| p.as_ref()).collect();
-
-    let mvt_blob: Option<Vec<u8>> =
-        match conn.query_row(&select_sql, params_slice.as_slice(), |row| row.get(0)) {
-            Ok(blob) => Some(blob),
-            Err(e) => {
-                tracing::error!(z, x, y, error = %e, sql = %select_sql, "Tile generation failed");
-                return Err(internal_error(format!("Tile generation failed: {}", e)));
+        "mbtiles" => {
+            let format = tile_format.unwrap_or_else(|| "mvt".to_string());
+            let full_path = mbtiles::resolve_mbtiles_path(&file_path);
+            drop(conn);
+            match mbtiles::get_tile_from_mbtiles(&full_path, z, x, y).await {
+                Ok(Some(data)) => {
+                    let ct = match format.as_str() {
+                        "mvt" => "application/vnd.mapbox-vector-tile",
+                        "png" => "image/png",
+                        _ => "application/octet-stream",
+                    };
+                    let is_gzipped = data.starts_with(&[0x1f, 0x8b]);
+                    if is_gzipped {
+                        Ok((
+                            [
+                                (header::CONTENT_TYPE, ct),
+                                (header::CONTENT_ENCODING, "gzip"),
+                            ],
+                            data,
+                        )
+                            .into_response())
+                    } else {
+                        Ok(([(header::CONTENT_TYPE, ct)], data).into_response())
+                    }
+                }
+                Ok(None) => Ok(StatusCode::NO_CONTENT.into_response()),
+                Err(e) => Err(internal_error(format!("Failed to read MBTiles: {}", e))),
             }
-        };
+        }
+        _ => {
+            let table_name = table_name.ok_or_else(|| {
+                (
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "File is not ready for preview".to_string(),
+                    }),
+                )
+            })?;
 
-    tracing::debug!(
-        z,
-        x,
-        y,
-        size = mvt_blob.as_ref().map(|v| v.len()),
-        "Tile request"
-    );
+            let tile_params = TileParams {
+                source_crs: resolve_transform_source_crs(crs.as_deref()),
+                crs_type: crs_type.clone().unwrap_or_else(|| "standard".to_string()),
+                data_bounds: data_bounds_json
+                    .as_ref()
+                    .and_then(|j| DataBounds::from_json(j)),
+            };
 
-    match mvt_blob {
-        Some(blob) if !blob.is_empty() => Ok((
-            [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
-            blob,
-        )
-            .into_response()),
-        _ => Ok(StatusCode::NO_CONTENT.into_response()),
+            let select_sql =
+                build_mvt_select_sql(&conn, &id, &table_name, &tile_params, z, x, y, true)
+                    .map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ErrorResponse {
+                                error: format!("Tile generation error: {}", e.0),
+                            }),
+                        )
+                    })?;
+
+            let query_params = build_mvt_query_params(&tile_params, z, x, y);
+            let params_slice: Vec<&dyn duckdb::ToSql> =
+                query_params.iter().map(|p| p.as_ref()).collect();
+
+            let mvt_blob: Option<Vec<u8>> =
+                match conn.query_row(&select_sql, params_slice.as_slice(), |row| row.get(0)) {
+                    Ok(blob) => Some(blob),
+                    Err(e) => {
+                        tracing::error!(z, x, y, error = %e, sql = %select_sql, "Tile generation failed");
+                        return Err(internal_error(format!("Tile generation failed: {}", e)));
+                    }
+                };
+
+            tracing::debug!(
+                z,
+                x,
+                y,
+                size = mvt_blob.as_ref().map(|v| v.len()),
+                "Tile request"
+            );
+
+            match mvt_blob {
+                Some(blob) if !blob.is_empty() => Ok((
+                    [(header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile")],
+                    blob,
+                )
+                    .into_response()),
+                _ => Ok(StatusCode::NO_CONTENT.into_response()),
+            }
+        }
     }
 }
 
@@ -609,16 +610,15 @@ pub async fn get_feature_properties(
     let workspace_id = get_workspace_id(&auth_session, &state).await?;
     let conn = state.db.lock().await;
 
-    let (status, table_name, tile_format, tile_source): (
+    let (status, table_name, tile_source): (
         String,
-        Option<String>,
         Option<String>,
         Option<String>,
     ) = conn
         .query_row(
-            "SELECT status, table_name, tile_format, tile_source FROM files WHERE id = ? AND workspace_id = ?",
+            "SELECT status, table_name, tile_source FROM files WHERE id = ? AND workspace_id = ?",
             duckdb::params![id, workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|_| {
             (
@@ -630,133 +630,134 @@ pub async fn get_feature_properties(
         })?;
 
     let tile_source = tile_source.unwrap_or_else(|| "duckdb".to_string());
-    if tile_source == TILE_SOURCE_POSTGIS {
-        if status != "ready" {
-            return Err((
-                StatusCode::CONFLICT,
-                Json(ErrorResponse {
-                    error: "File is not ready for preview".to_string(),
-                }),
-            ));
+
+    match tile_source.as_str() {
+        "postgis" => {
+            if status != "ready" {
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "File is not ready for preview".to_string(),
+                    }),
+                ));
+            }
+
+            let source = fetch_postgis_source_config(&conn, &id)
+                .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
+                .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
+            let properties = build_property_columns_for_query(&conn, &id)
+                .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
+            drop(conn);
+
+            let values = query_feature_properties_json(&source, &properties, fid)
+                .await
+                .map_err(|e| internal_error(format!("Failed to query PostGIS feature: {e}")))?;
+            let Some(values) = values else {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "Feature not found".to_string(),
+                    }),
+                ));
+            };
+
+            let properties = build_feature_properties(&properties, &values);
+            Ok(Json(FeaturePropertiesResponse { fid, properties }))
         }
-
-        let source = fetch_postgis_source_config(&conn, &id)
-            .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
-            .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
-        let properties = build_property_columns_for_query(&conn, &id)
-            .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
-        drop(conn);
-
-        let values = query_feature_properties_json(&source, &properties, fid)
-            .await
-            .map_err(|e| internal_error(format!("Failed to query PostGIS feature: {e}")))?;
-        let Some(values) = values else {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Feature not found".to_string(),
-                }),
-            ));
-        };
-
-        let properties = build_feature_properties(&properties, &values);
-        return Ok(Json(FeaturePropertiesResponse { fid, properties }));
-    }
-
-    if tile_format.is_some() {
-        return Err((
+        "mbtiles" => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
                 error: "Feature properties not available for MBTiles files".to_string(),
             }),
-        ));
-    }
+        )),
+        _ => {
+            let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
+                (
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "File is not ready for preview".to_string(),
+                    }),
+                )
+            })?;
 
-    let table_name = table_name.filter(|_| status == "ready").ok_or_else(|| {
-        (
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "File is not ready for preview".to_string(),
-            }),
-        )
-    })?;
+            let mut cols_stmt = conn
+                .prepare(
+                    "SELECT normalized_name, original_name, alias\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
+                )
+                .map_err(internal_error)?;
 
-    let mut cols_stmt = conn
-        .prepare(
-            "SELECT normalized_name, original_name, alias\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
-        )
-        .map_err(internal_error)?;
+            let cols_iter = cols_stmt
+                .query_map(duckdb::params![&id], |row| {
+                    let normalized: String = row.get(0)?;
+                    let original: String = row.get(1)?;
+                    let alias: Option<String> = row.get(2)?;
+                    Ok((normalized, original, alias))
+                })
+                .map_err(internal_error)?;
 
-    let cols_iter = cols_stmt
-        .query_map(duckdb::params![&id], |row| {
-            let normalized: String = row.get(0)?;
-            let original: String = row.get(1)?;
-            let alias: Option<String> = row.get(2)?;
-            Ok((normalized, original, alias))
-        })
-        .map_err(internal_error)?;
-
-    let mut columns: Vec<(String, String, Option<String>)> = Vec::new();
-    for c in cols_iter {
-        columns.push(c.map_err(internal_error)?);
-    }
-
-    let mut select_exprs: Vec<String> = Vec::with_capacity(columns.len());
-    for (normalized, _original, _alias) in &columns {
-        select_exprs.push(format!("\"{normalized}\""));
-    }
-
-    let sql = format!(
-        "SELECT {} FROM \"{}\" WHERE fid = ?",
-        select_exprs.join(", "),
-        table_name
-    );
-
-    let mut stmt = conn.prepare(&sql).map_err(internal_error)?;
-    let mut rows = stmt.query(duckdb::params![fid]).map_err(internal_error)?;
-
-    let Some(row) = rows.next().map_err(internal_error)? else {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "Feature not found".to_string(),
-            }),
-        ));
-    };
-
-    let mut properties: Vec<FeatureProperty> = Vec::with_capacity(columns.len());
-    for (index, (_normalized, original, alias)) in columns.iter().enumerate() {
-        let raw = match row.get_ref(index).map_err(internal_error)? {
-            ValueRef::Null => serde_json::Value::Null,
-            ValueRef::Boolean(v) => serde_json::Value::Bool(v),
-            ValueRef::TinyInt(v) => serde_json::Value::Number(v.into()),
-            ValueRef::SmallInt(v) => serde_json::Value::Number(v.into()),
-            ValueRef::Int(v) => serde_json::Value::Number(v.into()),
-            ValueRef::BigInt(v) => serde_json::Value::Number(v.into()),
-            ValueRef::UTinyInt(v) => serde_json::Value::Number(v.into()),
-            ValueRef::USmallInt(v) => serde_json::Value::Number(v.into()),
-            ValueRef::UInt(v) => serde_json::Value::Number(v.into()),
-            ValueRef::UBigInt(v) => serde_json::Value::Number(v.into()),
-            ValueRef::Float(v) => serde_json::Number::from_f64(v as f64)
-                .map(serde_json::Value::Number)
-                .unwrap_or(serde_json::Value::Null),
-            ValueRef::Double(v) => serde_json::Number::from_f64(v)
-                .map(serde_json::Value::Number)
-                .unwrap_or(serde_json::Value::Null),
-            ValueRef::Text(bytes) => {
-                serde_json::Value::String(String::from_utf8_lossy(bytes).to_string())
+            let mut columns: Vec<(String, String, Option<String>)> = Vec::new();
+            for c in cols_iter {
+                columns.push(c.map_err(internal_error)?);
             }
-            ValueRef::Blob(bytes) => serde_json::Value::String(format!("0x{}", hex::encode(bytes))),
-            other => serde_json::Value::String(format!("{other:?}")),
-        };
-        properties.push(FeatureProperty {
-            key: original.clone(),
-            value: raw,
-            alias: alias.clone(),
-        });
-    }
 
-    Ok(Json(FeaturePropertiesResponse { fid, properties }))
+            let mut select_exprs: Vec<String> = Vec::with_capacity(columns.len());
+            for (normalized, _original, _alias) in &columns {
+                select_exprs.push(format!("\"{normalized}\""));
+            }
+
+            let sql = format!(
+                "SELECT {} FROM \"{}\" WHERE fid = ?",
+                select_exprs.join(", "),
+                table_name
+            );
+
+            let mut stmt = conn.prepare(&sql).map_err(internal_error)?;
+            let mut rows = stmt.query(duckdb::params![fid]).map_err(internal_error)?;
+
+            let Some(row) = rows.next().map_err(internal_error)? else {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "Feature not found".to_string(),
+                    }),
+                ));
+            };
+
+            let mut properties: Vec<FeatureProperty> = Vec::with_capacity(columns.len());
+            for (index, (_normalized, original, alias)) in columns.iter().enumerate() {
+                let raw = match row.get_ref(index).map_err(internal_error)? {
+                    ValueRef::Null => serde_json::Value::Null,
+                    ValueRef::Boolean(v) => serde_json::Value::Bool(v),
+                    ValueRef::TinyInt(v) => serde_json::Value::Number(v.into()),
+                    ValueRef::SmallInt(v) => serde_json::Value::Number(v.into()),
+                    ValueRef::Int(v) => serde_json::Value::Number(v.into()),
+                    ValueRef::BigInt(v) => serde_json::Value::Number(v.into()),
+                    ValueRef::UTinyInt(v) => serde_json::Value::Number(v.into()),
+                    ValueRef::USmallInt(v) => serde_json::Value::Number(v.into()),
+                    ValueRef::UInt(v) => serde_json::Value::Number(v.into()),
+                    ValueRef::UBigInt(v) => serde_json::Value::Number(v.into()),
+                    ValueRef::Float(v) => serde_json::Number::from_f64(v as f64)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null),
+                    ValueRef::Double(v) => serde_json::Number::from_f64(v)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null),
+                    ValueRef::Text(bytes) => {
+                        serde_json::Value::String(String::from_utf8_lossy(bytes).to_string())
+                    }
+                    ValueRef::Blob(bytes) => serde_json::Value::String(format!("0x{}", hex::encode(bytes))),
+                    other => serde_json::Value::String(format!("{other:?}")),
+                };
+                properties.push(FeatureProperty {
+                    key: original.clone(),
+                    value: raw,
+                    alias: alias.clone(),
+                });
+            }
+
+            Ok(Json(FeaturePropertiesResponse { fid, properties }))
+        }
+    }
 }
 
 pub async fn get_file_schema(
@@ -767,11 +768,11 @@ pub async fn get_file_schema(
     let workspace_id = get_workspace_id(&auth_session, &state).await?;
     let conn = state.db.lock().await;
 
-    let (status, tile_format, file_path): (String, Option<String>, String) = conn
+    let (status, tile_source, tile_format, file_path): (String, Option<String>, Option<String>, String) = conn
         .query_row(
-            "SELECT status, tile_format, path FROM files WHERE id = ? AND workspace_id = ?",
+            "SELECT status, tile_source, tile_format, path FROM files WHERE id = ? AND workspace_id = ?",
             duckdb::params![id, workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|_| {
             (
@@ -792,61 +793,67 @@ pub async fn get_file_schema(
         ));
     }
 
-    if let Some(format) = tile_format {
-        drop(conn);
-        if format == "mvt" {
-            let full_path = mbtiles::resolve_mbtiles_path(&file_path);
-            match mbtiles::extract_mbtiles_layers_async(&full_path).await {
-                Ok(layers) => {
-                    return Ok(Json(crate::models::FileSchemaResponse { layers }));
+    let tile_source = tile_source.unwrap_or_else(|| "duckdb".to_string());
+
+    match tile_source.as_str() {
+        "mbtiles" => {
+            drop(conn);
+            let format = tile_format.unwrap_or_else(|| "mvt".to_string());
+            if format == "mvt" {
+                let full_path = mbtiles::resolve_mbtiles_path(&file_path);
+                match mbtiles::extract_mbtiles_layers_async(&full_path).await {
+                    Ok(layers) => {
+                        Ok(Json(crate::models::FileSchemaResponse { layers }))
+                    }
+                    Err(e) => {
+                        tracing::warn!(file_id = %id, path = %full_path.display(), format = %format, error = %e, "Failed to extract MBTiles layers, returning empty");
+                        Ok(Json(crate::models::FileSchemaResponse { layers: vec![] }))
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(file_id = %id, path = %full_path.display(), format = %format, error = %e, "Failed to extract MBTiles layers, returning empty");
-                    return Ok(Json(crate::models::FileSchemaResponse { layers: vec![] }));
-                }
+            } else {
+                Ok(Json(crate::models::FileSchemaResponse { layers: vec![] }))
             }
-        } else {
-            return Ok(Json(crate::models::FileSchemaResponse { layers: vec![] }));
+        }
+        _ => {
+            let mut cols_stmt = conn
+                .prepare(
+                    "SELECT original_name, mvt_type, alias, normalized_name\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
+                )
+                .map_err(internal_error)?;
+
+            let cols_iter = cols_stmt
+                .query_map(duckdb::params![&id], |row| {
+                    let original_name: String = row.get(0)?;
+                    let mvt_type: String = row.get(1)?;
+                    let alias: Option<String> = row.get(2)?;
+                    let normalized_name: Option<String> = row.get(3)?;
+                    Ok((original_name, mvt_type, alias, normalized_name))
+                })
+                .map_err(internal_error)?;
+
+            let mut fields = Vec::new();
+            for c in cols_iter {
+                let (name, r#type, alias, normalized) = c.map_err(internal_error)?;
+                fields.push(crate::models::FieldInfo {
+                    name,
+                    r#type,
+                    alias,
+                    normalized,
+                });
+            }
+
+            drop(conn);
+
+            let default_layer = crate::models::LayerInfo {
+                id: "default".to_string(),
+                description: None,
+                fields,
+            };
+            Ok(Json(crate::models::FileSchemaResponse {
+                layers: vec![default_layer],
+            }))
         }
     }
-
-    let mut cols_stmt = conn
-        .prepare(
-            "SELECT original_name, mvt_type, alias, normalized_name\n         FROM dataset_columns\n         WHERE source_id = ?\n         ORDER BY ordinal",
-        )
-        .map_err(internal_error)?;
-
-    let cols_iter = cols_stmt
-        .query_map(duckdb::params![&id], |row| {
-            let original_name: String = row.get(0)?;
-            let mvt_type: String = row.get(1)?;
-            let alias: Option<String> = row.get(2)?;
-            let normalized_name: Option<String> = row.get(3)?;
-            Ok((original_name, mvt_type, alias, normalized_name))
-        })
-        .map_err(internal_error)?;
-
-    let mut fields = Vec::new();
-    for c in cols_iter {
-        let (name, r#type, alias, normalized) = c.map_err(internal_error)?;
-        fields.push(crate::models::FieldInfo {
-            name,
-            r#type,
-            alias,
-            normalized,
-        });
-    }
-
-    drop(conn);
-
-    let default_layer = crate::models::LayerInfo {
-        id: "default".to_string(),
-        description: None,
-        fields,
-    };
-    Ok(Json(crate::models::FileSchemaResponse {
-        layers: vec![default_layer],
-    }))
 }
 
 pub fn validate_tile_coords(

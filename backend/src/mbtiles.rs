@@ -249,7 +249,7 @@ pub async fn import_mbtiles(
 
     let conn = db.lock().await;
     conn.execute(
-        "UPDATE files SET crs = 'EPSG:3857', tile_format = ?, minzoom = ?, maxzoom = ?, tile_bounds = ? WHERE id = ?",
+        "UPDATE files SET crs = 'EPSG:3857', tile_format = ?, tile_source = 'mbtiles', minzoom = ?, maxzoom = ?, tile_bounds = ? WHERE id = ?",
         duckdb::params![tile_format, metadata.minzoom, metadata.maxzoom, bounds_json, source_id],
     )
     .map_err(|e| format!("Failed to update file metadata: {}", e))?;

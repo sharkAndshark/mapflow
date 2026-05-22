@@ -19,7 +19,6 @@ use crate::{
     models::{ErrorResponse, PublicTileMeta},
     postgis::{
         build_property_columns_for_query, fetch_postgis_source_config, query_mvt_tile,
-        TILE_SOURCE_POSTGIS,
     },
     tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
@@ -161,138 +160,143 @@ pub async fn get_public_tile(
         ));
     }
 
-    if let Some(format) = meta.tile_format {
-        let full_path = mbtiles::resolve_mbtiles_path(&meta.file_path);
-        drop(conn);
-        match mbtiles::get_tile_from_mbtiles(&full_path, z, x, y).await {
-            Ok(Some(data)) => {
-                let ct = match format.as_str() {
-                    "mvt" => "application/vnd.mapbox-vector-tile",
-                    "png" => "image/png",
-                    _ => "application/octet-stream",
-                };
-                let is_gzipped = data.starts_with(&[0x1f, 0x8b]);
-                if is_gzipped {
-                    return Ok((
-                        [
-                            (header::CONTENT_TYPE, ct),
-                            (header::CONTENT_ENCODING, "gzip"),
-                            (header::CACHE_CONTROL, "public, max-age=300"),
-                        ],
-                        data,
-                    )
-                        .into_response());
-                } else {
-                    return Ok((
-                        [
-                            (header::CONTENT_TYPE, ct),
-                            (header::CACHE_CONTROL, "public, max-age=300"),
-                        ],
-                        data,
-                    )
-                        .into_response());
+    match meta.tile_source.as_str() {
+        "mbtiles" => {
+            let format = meta.tile_format.unwrap_or_else(|| "mvt".to_string());
+            let full_path = mbtiles::resolve_mbtiles_path(&meta.file_path);
+            drop(conn);
+            match mbtiles::get_tile_from_mbtiles(&full_path, z, x, y).await {
+                Ok(Some(data)) => {
+                    let ct = match format.as_str() {
+                        "mvt" => "application/vnd.mapbox-vector-tile",
+                        "png" => "image/png",
+                        _ => "application/octet-stream",
+                    };
+                    let is_gzipped = data.starts_with(&[0x1f, 0x8b]);
+                    if is_gzipped {
+                        Ok((
+                            [
+                                (header::CONTENT_TYPE, ct),
+                                (header::CONTENT_ENCODING, "gzip"),
+                                (header::CACHE_CONTROL, "public, max-age=300"),
+                            ],
+                            data,
+                        )
+                            .into_response())
+                    } else {
+                        Ok((
+                            [
+                                (header::CONTENT_TYPE, ct),
+                                (header::CACHE_CONTROL, "public, max-age=300"),
+                            ],
+                            data,
+                        )
+                            .into_response())
+                    }
                 }
-            }
-            Ok(None) => {
-                return Ok(StatusCode::NO_CONTENT.into_response());
-            }
-            Err(e) => {
-                return Err(internal_error(format!("Failed to read MBTiles: {}", e)));
+                Ok(None) => Ok(StatusCode::NO_CONTENT.into_response()),
+                Err(e) => Err(internal_error(format!("Failed to read MBTiles: {}", e))),
             }
         }
-    }
-
-    if meta.minzoom.is_some_and(|min| z < min) || meta.maxzoom.is_some_and(|max| z > max) {
-        drop(conn);
-        return Ok(StatusCode::NO_CONTENT.into_response());
-    }
-
-    if meta.tile_source == TILE_SOURCE_POSTGIS {
-        let source = fetch_postgis_source_config(&conn, &file_id)
-            .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
-            .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
-        let properties = build_property_columns_for_query(&conn, &file_id)
-            .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
-        drop(conn);
-
-        let mvt_blob = query_mvt_tile(&source, &properties, z, x, y, meta.use_aliases)
-            .await
-            .map_err(|e| internal_error(format!("PostGIS tile generation failed: {e}")))?;
-        return match mvt_blob {
-            Some(blob) => Ok((
-                [
-                    (header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile"),
-                    (header::CACHE_CONTROL, "public, max-age=300"),
-                ],
-                blob,
-            )
-                .into_response()),
-            None => Ok(StatusCode::NO_CONTENT.into_response()),
-        };
-    }
-
-    let table_name = meta.table_name.ok_or_else(|| {
-        (
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "File is not ready".to_string(),
-            }),
-        )
-    })?;
-
-    let tile_params = TileParams {
-        source_crs: resolve_transform_source_crs(meta.crs.as_deref()),
-        crs_type: meta
-            .crs_type
-            .clone()
-            .unwrap_or_else(|| "standard".to_string()),
-        data_bounds: meta
-            .data_bounds_json
-            .as_ref()
-            .and_then(|j| DataBounds::from_json(j)),
-    };
-
-    let select_sql = build_mvt_select_sql(
-        &conn,
-        &file_id,
-        &table_name,
-        &tile_params,
-        z,
-        x,
-        y,
-        meta.use_aliases,
-    )
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Tile generation error: {}", e.0),
-            }),
-        )
-    })?;
-
-    let query_params = build_mvt_query_params(&tile_params, z, x, y);
-    let params_slice: Vec<&dyn duckdb::ToSql> = query_params.iter().map(|p| p.as_ref()).collect();
-
-    let mvt_blob: Option<Vec<u8>> =
-        match conn.query_row(&select_sql, params_slice.as_slice(), |row| row.get(0)) {
-            Ok(blob) => Some(blob),
-            Err(e) => {
-                error!(z, x, y, slug = %slug, error = %e, "Public tile generation failed");
-                return Err(internal_error(format!("Tile generation failed: {}", e)));
+        "postgis" => {
+            if meta.minzoom.is_some_and(|min| z < min) || meta.maxzoom.is_some_and(|max| z > max) {
+                drop(conn);
+                return Ok(StatusCode::NO_CONTENT.into_response());
             }
-        };
 
-    match mvt_blob {
-        Some(blob) if !blob.is_empty() => Ok((
-            [
-                (header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile"),
-                (header::CACHE_CONTROL, "public, max-age=300"),
-            ],
-            blob,
-        )
-            .into_response()),
-        _ => Ok(StatusCode::NO_CONTENT.into_response()),
+            let source = fetch_postgis_source_config(&conn, &file_id)
+                .map_err(|e| internal_error(format!("Failed to load PostGIS source: {e}")))?
+                .ok_or_else(|| internal_error("PostGIS source metadata not found"))?;
+            let properties = build_property_columns_for_query(&conn, &file_id)
+                .map_err(|e| internal_error(format!("Failed to load PostGIS columns: {e}")))?;
+            drop(conn);
+
+            let mvt_blob = query_mvt_tile(&source, &properties, z, x, y, meta.use_aliases)
+                .await
+                .map_err(|e| internal_error(format!("PostGIS tile generation failed: {e}")))?;
+            match mvt_blob {
+                Some(blob) => Ok((
+                    [
+                        (header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile"),
+                        (header::CACHE_CONTROL, "public, max-age=300"),
+                    ],
+                    blob,
+                )
+                    .into_response()),
+                None => Ok(StatusCode::NO_CONTENT.into_response()),
+            }
+        }
+        _ => {
+            if meta.minzoom.is_some_and(|min| z < min) || meta.maxzoom.is_some_and(|max| z > max) {
+                drop(conn);
+                return Ok(StatusCode::NO_CONTENT.into_response());
+            }
+
+            let table_name = meta.table_name.ok_or_else(|| {
+                (
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "File is not ready".to_string(),
+                    }),
+                )
+            })?;
+
+            let tile_params = TileParams {
+                source_crs: resolve_transform_source_crs(meta.crs.as_deref()),
+                crs_type: meta
+                    .crs_type
+                    .clone()
+                    .unwrap_or_else(|| "standard".to_string()),
+                data_bounds: meta
+                    .data_bounds_json
+                    .as_ref()
+                    .and_then(|j| DataBounds::from_json(j)),
+            };
+
+            let select_sql = build_mvt_select_sql(
+                &conn,
+                &file_id,
+                &table_name,
+                &tile_params,
+                z,
+                x,
+                y,
+                meta.use_aliases,
+            )
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: format!("Tile generation error: {}", e.0),
+                    }),
+                )
+            })?;
+
+            let query_params = build_mvt_query_params(&tile_params, z, x, y);
+            let params_slice: Vec<&dyn duckdb::ToSql> =
+                query_params.iter().map(|p| p.as_ref()).collect();
+
+            let mvt_blob: Option<Vec<u8>> =
+                match conn.query_row(&select_sql, params_slice.as_slice(), |row| row.get(0)) {
+                    Ok(blob) => Some(blob),
+                    Err(e) => {
+                        error!(z, x, y, slug = %slug, error = %e, "Public tile generation failed");
+                        return Err(internal_error(format!("Tile generation failed: {}", e)));
+                    }
+                };
+
+            match mvt_blob {
+                Some(blob) if !blob.is_empty() => Ok((
+                    [
+                        (header::CONTENT_TYPE, "application/vnd.mapbox-vector-tile"),
+                        (header::CACHE_CONTROL, "public, max-age=300"),
+                    ],
+                    blob,
+                )
+                    .into_response()),
+                _ => Ok(StatusCode::NO_CONTENT.into_response()),
+            }
+        }
     }
 }
 

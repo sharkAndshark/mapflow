@@ -473,6 +473,17 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
         [],
     );
 
+    // Defensive migration: existing MBTiles records have tile_format IS NOT NULL
+    // but tile_source = 'duckdb'. Update them to tile_source = 'mbtiles'.
+    let _ = conn.execute(
+        "UPDATE files SET tile_source = 'mbtiles' WHERE tile_format IS NOT NULL AND tile_source = 'duckdb'",
+        [],
+    );
+    let _ = conn.execute(
+        "UPDATE published_files SET tile_source = 'mbtiles' WHERE tile_source = 'duckdb' AND file_id IN (SELECT id FROM files WHERE tile_format IS NOT NULL AND tile_source = 'mbtiles')",
+        [],
+    );
+
     conn.execute_batch(
         r"
         CREATE TABLE IF NOT EXISTS dataset_columns (
@@ -559,7 +570,7 @@ pub fn init_database(db_path: &Path) -> duckdb::Connection {
             schema_name VARCHAR NOT NULL,
             object_name VARCHAR NOT NULL,
             geom_column VARCHAR NOT NULL,
-            fid_column VARCHAR NOT NULL,
+            fid_column VARCHAR,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (file_id) REFERENCES files(id),

@@ -280,8 +280,6 @@
     "sslMode": "SSL Mode",
     "schema": "Schema",
     "object": "Table/View",
-    "geometryColumn": "Geometry Column",
-    "fidColumn": "FID Column",
     "testConnection": "Test Connection",
     "testing": "Testing...",
     "testSuccess": "Connection successful",
@@ -298,9 +296,8 @@
     "import": "Import",
     "importing": "Importing...",
     "imported": "Imported",
-    "confirmImport": "Confirm Import",
-    "noUniqueConstraint": "no unique constraint",
-    "noValidFid": "No valid FID column"
+    "update": "Update",
+    "rowCount": "{{count}} rows"
   },
   "preview": {
     "title": "Preview",
