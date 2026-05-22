@@ -10,7 +10,13 @@ function buildSingleColorPaint(layerType, color) {
   const opacityKey = `${layerType}-opacity`;
   if (layerType === 'fill') return { 'fill-color': color, 'fill-opacity': 0.7 };
   if (layerType === 'line') return { 'line-color': color, 'line-width': 2 };
-  if (layerType === 'circle') return { 'circle-color': color, 'circle-radius': 6, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1 };
+  if (layerType === 'circle')
+    return {
+      'circle-color': color,
+      'circle-radius': 6,
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 1,
+    };
   return {};
 }
 
@@ -73,11 +79,21 @@ export default function ClassificationWizard({ sourceId, layerType, paint, onPai
       .then((data) => {
         if (!cancelled && data.layers?.length > 0) {
           const f = data.layers[0].fields || [];
-          setFields(f.filter((x) => x.type !== 'Geometry' && x.type !== 'Point' && x.type !== 'LineString' && x.type !== 'Polygon'));
+          setFields(
+            f.filter(
+              (x) =>
+                x.type !== 'Geometry' &&
+                x.type !== 'Point' &&
+                x.type !== 'LineString' &&
+                x.type !== 'Polygon',
+            ),
+          );
         }
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sourceId]);
 
   useEffect(() => {
@@ -92,12 +108,15 @@ export default function ClassificationWizard({ sourceId, layerType, paint, onPai
       .finally(() => {
         if (!cancelled) setIsLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sourceId, selectedField, mode]);
 
   useEffect(() => {
     if (mode === 'single') {
-      const propKey = layerType === 'fill' ? 'fill-color' : layerType === 'line' ? 'line-color' : 'circle-color';
+      const propKey =
+        layerType === 'fill' ? 'fill-color' : layerType === 'line' ? 'line-color' : 'circle-color';
       const existing = paint?.[propKey];
       if (typeof existing === 'string') setSingleColor(existing);
       onPaintChange(buildSingleColorPaint(layerType, singleColor));
@@ -111,7 +130,9 @@ export default function ClassificationWizard({ sourceId, layerType, paint, onPai
       const values = fieldData.values.map((v) => (typeof v === 'string' ? v : String(v)));
       const colors = resolveRampColors(rampName, values.length);
       const map = {};
-      values.forEach((v, i) => { map[v] = colors[i] || '#888888'; });
+      values.forEach((v, i) => {
+        map[v] = colors[i] || '#888888';
+      });
       onPaintChange(buildUniqueValuePaint(layerType, selectedField, map));
     } else if (mode === 'graduated' && fieldData?.min != null && fieldData?.max != null) {
       const { min, max } = fieldData;
@@ -161,7 +182,9 @@ export default function ClassificationWizard({ sourceId, layerType, paint, onPai
       {mode !== 'single' && (
         <>
           <div>
-            <label style={{ fontSize: '11px', color: '#666', display: 'block', marginBottom: '4px' }}>
+            <label
+              style={{ fontSize: '11px', color: '#666', display: 'block', marginBottom: '4px' }}
+            >
               {t('map.classifyField')}
             </label>
             <select
@@ -180,7 +203,9 @@ export default function ClassificationWizard({ sourceId, layerType, paint, onPai
 
           {selectedField && (
             <div>
-              <label style={{ fontSize: '11px', color: '#666', display: 'block', marginBottom: '4px' }}>
+              <label
+                style={{ fontSize: '11px', color: '#666', display: 'block', marginBottom: '4px' }}
+              >
                 {t('map.colorRamp')}
               </label>
               <ColorRampSelector
@@ -193,7 +218,9 @@ export default function ClassificationWizard({ sourceId, layerType, paint, onPai
 
           {mode === 'graduated' && selectedField && (
             <div>
-              <label style={{ fontSize: '11px', color: '#666', display: 'block', marginBottom: '4px' }}>
+              <label
+                style={{ fontSize: '11px', color: '#666', display: 'block', marginBottom: '4px' }}
+              >
                 {t('map.classCount')}
               </label>
               <input
@@ -212,7 +239,9 @@ export default function ClassificationWizard({ sourceId, layerType, paint, onPai
             </div>
           )}
 
-          {isLoading && <span style={{ fontSize: '11px', color: '#888' }}>{t('common.loading')}</span>}
+          {isLoading && (
+            <span style={{ fontSize: '11px', color: '#888' }}>{t('common.loading')}</span>
+          )}
 
           {selectedField && !isLoading && (
             <button

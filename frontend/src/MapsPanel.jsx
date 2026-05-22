@@ -41,7 +41,9 @@ export default function MapsPanel() {
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [t]);
 
   async function handleCreate(e) {
@@ -94,7 +96,11 @@ export default function MapsPanel() {
         </div>
       </div>
 
-      {error && <div className="alert" style={{ margin: '8px 16px' }}>{error}</div>}
+      {error && (
+        <div className="alert" style={{ margin: '8px 16px' }}>
+          {error}
+        </div>
+      )}
 
       {showCreate && (
         <form
@@ -128,7 +134,10 @@ export default function MapsPanel() {
               type="button"
               className="btn-secondary"
               style={{ fontSize: '12px', padding: '4px 12px' }}
-              onClick={() => { setShowCreate(false); setNewName(''); }}
+              onClick={() => {
+                setShowCreate(false);
+                setNewName('');
+              }}
               disabled={isCreating}
             >
               {t('common.cancel')}
@@ -174,9 +183,7 @@ export default function MapsPanel() {
               >
                 <span style={{ fontSize: '14px', fontWeight: 500 }}>{map.name}</span>
                 <span style={{ fontSize: '11px', color: '#888' }}>
-                  {map.updatedAt
-                    ? dateTimeFormatter.format(new Date(map.updatedAt))
-                    : ''}
+                  {map.updatedAt ? dateTimeFormatter.format(new Date(map.updatedAt)) : ''}
                   {map.isPublic && (
                     <span style={{ color: '#4caf50', marginLeft: '8px' }}>
                       {t('map.published')}

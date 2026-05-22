@@ -167,6 +167,19 @@ export async function registerPostgisSource(payload) {
   return res.json();
 }
 
+export async function connectPostgis(connection) {
+  const res = await fetchWithAuth('/api/postgis/connections/connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
 export async function discoverPostgisSchemas(connection) {
   const res = await fetchWithAuth('/api/postgis/connections/discover-schemas', {
     method: 'POST',
