@@ -498,9 +498,6 @@ function buildRulesPaint(layerType, r) {
   const rules = (r.rules || []).filter((rule) => rule.enabled !== false);
   if (rules.length === 0) return buildSinglePaint(layerType, r);
 
-  const colorProp =
-    layerType === 'fill' ? 'fill-color' : layerType === 'line' ? 'line-color' : 'circle-color';
-
   const cases = [];
   for (const rule of rules) {
     const filterExpr = filterToExpr(rule.filter);

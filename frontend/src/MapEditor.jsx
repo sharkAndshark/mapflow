@@ -147,6 +147,7 @@ export default function MapEditor() {
     load();
     return () => {
       cancelled = true;
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [id, t]);
 
