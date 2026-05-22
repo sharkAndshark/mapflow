@@ -1,4 +1,4 @@
-import { Fill, Stroke, Style, Circle as CircleStyle } from 'ol/style';
+import { Fill, Stroke, Style, Circle as CircleStyle, Text } from 'ol/style';
 
 const LAYER_TYPE_MAP = {
   fill: 'polygon',
@@ -18,43 +18,83 @@ const DEFAULT_PAINT = {
   },
 };
 
+const LINE_DASH_MAP = {
+  solid: null,
+  dashed: [10, 5],
+  dotted: [2, 5],
+  dashdot: [10, 5, 2, 5],
+};
+
 function isExpression(val) {
   return Array.isArray(val) && val.length > 0 && typeof val[0] === 'string';
 }
 
-function evalExpr(expr, feature) {
+function evalExpr(expr, feature, resolution) {
   if (!Array.isArray(expr)) return expr;
   const op = expr[0];
 
   if (op === 'get') return feature.get(expr[1]);
   if (op === 'literal') return expr[1];
 
-  if (op === '==') return evalExpr(expr[1], feature) == evalExpr(expr[2], feature);
-  if (op === '!=') return evalExpr(expr[1], feature) != evalExpr(expr[2], feature);
-  if (op === '<') return evalExpr(expr[1], feature) < evalExpr(expr[2], feature);
-  if (op === '<=') return evalExpr(expr[1], feature) <= evalExpr(expr[2], feature);
-  if (op === '>') return evalExpr(expr[1], feature) > evalExpr(expr[2], feature);
-  if (op === '>=') return evalExpr(expr[1], feature) >= evalExpr(expr[2], feature);
+  if (op === 'zoom') {
+    if (resolution == null) return 0;
+    return resolutionToZoom(resolution);
+  }
+
+  if (op === '==')
+    return evalExpr(expr[1], feature, resolution) === evalExpr(expr[2], feature, resolution);
+  if (op === '!=')
+    return evalExpr(expr[1], feature, resolution) !== evalExpr(expr[2], feature, resolution);
+  if (op === '<')
+    return evalExpr(expr[1], feature, resolution) < evalExpr(expr[2], feature, resolution);
+  if (op === '<=')
+    return evalExpr(expr[1], feature, resolution) <= evalExpr(expr[2], feature, resolution);
+  if (op === '>')
+    return evalExpr(expr[1], feature, resolution) > evalExpr(expr[2], feature, resolution);
+  if (op === '>=')
+    return evalExpr(expr[1], feature, resolution) >= evalExpr(expr[2], feature, resolution);
+
+  if (op === 'all') {
+    for (let i = 1; i < expr.length; i++) {
+      if (!evalExpr(expr[i], feature, resolution)) return false;
+    }
+    return true;
+  }
+  if (op === 'any') {
+    for (let i = 1; i < expr.length; i++) {
+      if (evalExpr(expr[i], feature, resolution)) return true;
+    }
+    return false;
+  }
+  if (op === '!') return !evalExpr(expr[1], feature, resolution);
+
+  if (op === 'in') {
+    const val = evalExpr(expr[1], feature, resolution);
+    for (let i = 2; i < expr.length; i++) {
+      if (val === expr[i]) return true;
+    }
+    return false;
+  }
 
   if (op === 'case') {
     for (let i = 1; i < expr.length - 1; i += 2) {
-      if (evalExpr(expr[i], feature)) return evalExpr(expr[i + 1], feature);
+      if (evalExpr(expr[i], feature, resolution)) return evalExpr(expr[i + 1], feature, resolution);
     }
-    return evalExpr(expr[expr.length - 1], feature);
+    return evalExpr(expr[expr.length - 1], feature, resolution);
   }
 
   if (op === 'match') {
-    const input = evalExpr(expr[1], feature);
+    const input = evalExpr(expr[1], feature, resolution);
     for (let i = 2; i < expr.length - 1; i += 2) {
       const labels = Array.isArray(expr[i]) ? expr[i] : [expr[i]];
-      if (labels.includes(input)) return evalExpr(expr[i + 1], feature);
+      if (labels.includes(input)) return evalExpr(expr[i + 1], feature, resolution);
     }
-    return evalExpr(expr[expr.length - 1], feature);
+    return evalExpr(expr[expr.length - 1], feature, resolution);
   }
 
   if (op === 'interpolate') {
     const type = expr[1];
-    const input = evalExpr(expr[2], feature);
+    const input = evalExpr(expr[2], feature, resolution);
     const stops = expr.slice(3);
     for (let i = 0; i < stops.length - 3; i += 2) {
       const lo = stops[i];
@@ -66,18 +106,38 @@ function evalExpr(expr, feature) {
         if (type[0] === 'linear') return loVal + t * (hiVal - loVal);
       }
     }
-    return stops.length >= 2 ? stops[stops.length - 1] : input;
+    return stops.length >= 2 ? (input <= stops[0] ? stops[1] : stops[stops.length - 1]) : input;
   }
 
   if (op === 'coalesce') {
     for (let i = 1; i < expr.length; i++) {
-      const v = evalExpr(expr[i], feature);
+      const v = evalExpr(expr[i], feature, resolution);
       if (v != null) return v;
     }
     return null;
   }
 
+  if (op === 'concat') {
+    let result = '';
+    for (let i = 1; i < expr.length; i++) {
+      const v = evalExpr(expr[i], feature, resolution);
+      result += v != null ? String(v) : '';
+    }
+    return result;
+  }
+
+  if (op === 'to-string') {
+    const v = evalExpr(expr[1], feature, resolution);
+    return v != null ? String(v) : '';
+  }
+
   return expr;
+}
+
+function resolutionToZoom(resolution) {
+  if (resolution == null || resolution <= 0) return 0;
+  const z = Math.log2(156543.03392804097 / resolution);
+  return Math.max(0, Math.round(z));
 }
 
 function hasExpression(paint) {
@@ -128,7 +188,12 @@ function resolveColor(raw, opacityProp) {
   return raw;
 }
 
-function staticFillStyle(p) {
+function resolveLineDash(lineStyle) {
+  if (!lineStyle || lineStyle === 'solid') return undefined;
+  return LINE_DASH_MAP[lineStyle] || undefined;
+}
+
+function buildFillStyle(p) {
   const fillColor = resolveColor(
     p['fill-color'] || DEFAULT_PAINT.fill['fill-color'],
     p['fill-opacity'] ?? DEFAULT_PAINT.fill['fill-opacity'],
@@ -140,26 +205,27 @@ function staticFillStyle(p) {
   });
 }
 
-function staticLineStyle(p) {
+function buildLineStyle(p) {
   const lineColor = resolveColor(
     p['line-color'] || DEFAULT_PAINT.line['line-color'],
     p['line-opacity'],
   );
+  const lineCap = p['line-cap'] || 'butt';
+  const lineJoin = p['line-join'] || 'mitre';
   return new Style({
     stroke: new Stroke({
       color: lineColor,
       width: p['line-width'] ?? DEFAULT_PAINT.line['line-width'],
-      lineDash: p['line-dasharray'] || undefined,
+      lineDash: resolveLineDash(p['_lineStyle']) || p['line-dasharray'] || undefined,
+      lineCap,
+      lineJoin,
     }),
   });
 }
 
-function staticCircleStyle(p) {
+function buildCircleStyle(p) {
   const dp = DEFAULT_PAINT.circle;
-  const circleColor = resolveColor(
-    p['circle-color'] || dp['circle-color'],
-    p['circle-opacity'],
-  );
+  const circleColor = resolveColor(p['circle-color'] || dp['circle-color'], p['circle-opacity']);
   return new Style({
     image: new CircleStyle({
       radius: p['circle-radius'] ?? dp['circle-radius'],
@@ -172,69 +238,298 @@ function staticCircleStyle(p) {
   });
 }
 
+function resolvePaintProperties(paint, feature, resolution) {
+  const resolved = {};
+  for (const [key, val] of Object.entries(paint)) {
+    if (key.startsWith('_')) continue;
+    resolved[key] = isExpression(val) ? evalExpr(val, feature, resolution) : val;
+  }
+  if (paint['_lineStyle']) {
+    resolved['_lineStyle'] = paint['_lineStyle'];
+  }
+  return resolved;
+}
+
 function paintToOlStyle(layerType, paint) {
   const p = paint || {};
 
   if (!hasExpression(p)) {
-    if (layerType === 'fill') return staticFillStyle(p);
-    if (layerType === 'line') return staticLineStyle(p);
-    if (layerType === 'circle') return staticCircleStyle(p);
-    return staticFillStyle(p);
+    if (layerType === 'fill') return buildFillStyle(p);
+    if (layerType === 'line') return buildLineStyle(p);
+    if (layerType === 'circle') return buildCircleStyle(p);
+    return buildFillStyle(p);
   }
 
-  return (feature) => {
-    const resolved = {};
-    for (const [key, val] of Object.entries(p)) {
-      resolved[key] = isExpression(val) ? evalExpr(val, feature) : val;
-    }
+  return (feature, resolution) => {
+    const resolved = resolvePaintProperties(p, feature, resolution);
 
     if (layerType === 'fill') {
-      const fillColor = resolveColor(
-        resolved['fill-color'] || DEFAULT_PAINT.fill['fill-color'],
-        resolved['fill-opacity'] ?? DEFAULT_PAINT.fill['fill-opacity'],
-      );
-      return new Style({
-        fill: new Fill({ color: fillColor }),
-        stroke: resolved['fill-outline-color']
-          ? new Stroke({ color: resolved['fill-outline-color'], width: 1 })
-          : undefined,
-      });
+      return buildFillStyle(resolved);
     }
-
     if (layerType === 'line') {
-      const lineColor = resolveColor(
-        resolved['line-color'] || DEFAULT_PAINT.line['line-color'],
-        resolved['line-opacity'],
-      );
-      return new Style({
-        stroke: new Stroke({
-          color: lineColor,
-          width: resolved['line-width'] ?? DEFAULT_PAINT.line['line-width'],
-          lineDash: resolved['line-dasharray'] || undefined,
-        }),
-      });
+      return buildLineStyle(resolved);
     }
-
     if (layerType === 'circle') {
-      const dp = DEFAULT_PAINT.circle;
-      const circleColor = resolveColor(
-        resolved['circle-color'] || dp['circle-color'],
-        resolved['circle-opacity'],
-      );
-      return new Style({
-        image: new CircleStyle({
-          radius: resolved['circle-radius'] ?? dp['circle-radius'],
-          fill: new Fill({ color: circleColor }),
-          stroke: new Stroke({
-            color: resolved['circle-stroke-color'] || dp['circle-stroke-color'],
-            width: resolved['circle-stroke-width'] ?? dp['circle-stroke-width'],
-          }),
-        }),
-      });
+      return buildCircleStyle(resolved);
+    }
+    return buildFillStyle(resolved);
+  };
+}
+
+function rendererToOlStyle(renderer, layerType) {
+  if (!renderer || renderer.type === 'none') return null;
+
+  const paint = rendererToPaint(renderer, layerType);
+  return paintToOlStyle(layerType, paint);
+}
+
+function labelToOlStyle(label) {
+  if (!label || !label.enabled || !label.field) return null;
+
+  const font = label.font || 'sans-serif';
+  const size = label.size || 12;
+  const color = label.color || '#333333';
+  const haloColor = label.haloColor || '#ffffff';
+  const haloWidth = label.haloWidth ?? 1;
+  const offsetX = label.offsetX ?? 0;
+  const offsetY = label.offsetY ?? 0;
+  const maxAngle = label.maxAngle ?? 0;
+
+  return (feature, resolution) => {
+    const textVal = feature.get(label.field);
+    if (textVal == null || textVal === '') return null;
+
+    let fontSize = size;
+    if (label.sizeByZoom && resolution != null) {
+      const zoom = resolutionToZoom(resolution);
+      for (let i = label.sizeByZoom.length - 1; i >= 0; i--) {
+        if (zoom >= label.sizeByZoom[i][0]) {
+          fontSize = label.sizeByZoom[i][1];
+          break;
+        }
+      }
     }
 
-    return staticFillStyle(resolved);
+    const text = String(textVal);
+    return new Style({
+      text: new Text({
+        text,
+        font: `${fontSize}px ${font}`,
+        fill: new Fill({ color }),
+        stroke: new Stroke({ color: haloColor, width: haloWidth }),
+        offsetX,
+        offsetY,
+        placement: label.placement === 'line' ? 'line' : 'point',
+        maxAngle,
+        overflow: true,
+      }),
+    });
   };
+}
+
+function rendererToPaint(renderer, layerType) {
+  if (!renderer || renderer.type === 'none') return null;
+
+  if (renderer.type === 'single') {
+    return buildSinglePaint(layerType, renderer);
+  }
+  if (renderer.type === 'categorized') {
+    return buildCategorizedPaint(layerType, renderer);
+  }
+  if (renderer.type === 'graduated') {
+    return buildGraduatedPaint(layerType, renderer);
+  }
+  if (renderer.type === 'proportional') {
+    return buildProportionalPaint(layerType, renderer);
+  }
+  if (renderer.type === 'rules') {
+    return buildRulesPaint(layerType, renderer);
+  }
+  return buildSinglePaint(layerType, renderer);
+}
+
+function buildSinglePaint(layerType, r) {
+  const color = r.color || (layerType === 'circle' ? '#ff0040' : '#0080ff');
+  const opacity = r.opacity ?? 1;
+  const paint = {};
+
+  if (layerType === 'fill') {
+    paint['fill-color'] = color;
+    paint['fill-opacity'] = opacity;
+  } else if (layerType === 'line') {
+    paint['line-color'] = color;
+    paint['line-width'] = r.width ?? 2;
+    paint['line-opacity'] = opacity;
+    if (r.lineStyle && r.lineStyle !== 'solid') {
+      paint['_lineStyle'] = r.lineStyle;
+    }
+    if (r.lineCap) paint['line-cap'] = r.lineCap;
+    if (r.lineJoin) paint['line-join'] = r.lineJoin;
+  } else if (layerType === 'circle') {
+    paint['circle-color'] = color;
+    paint['circle-radius'] = r.radius ?? 6;
+    paint['circle-opacity'] = opacity;
+    paint['circle-stroke-color'] = r.strokeColor || '#ffffff';
+    paint['circle-stroke-width'] = r.strokeWidth ?? 1;
+  }
+  return paint;
+}
+
+function buildCategorizedPaint(layerType, r) {
+  const fieldName = r.field;
+  const classes = r.classes || [];
+  if (!fieldName || classes.length === 0) return buildSinglePaint(layerType, r);
+
+  const matchExpr = ['match', ['get', fieldName]];
+  for (const c of classes) {
+    matchExpr.push(c.value);
+    matchExpr.push(c.color);
+  }
+  const fallback = classes[classes.length - 1]?.color || '#888888';
+  matchExpr.push(fallback);
+
+  const opacity = r.opacity ?? 1;
+  const paint = {};
+  if (layerType === 'fill') {
+    paint['fill-color'] = matchExpr;
+    paint['fill-opacity'] = opacity;
+  } else if (layerType === 'line') {
+    paint['line-color'] = matchExpr;
+    paint['line-width'] = r.width ?? 2;
+    paint['line-opacity'] = opacity;
+    if (r.lineStyle && r.lineStyle !== 'solid') paint['_lineStyle'] = r.lineStyle;
+    if (r.lineCap) paint['line-cap'] = r.lineCap;
+    if (r.lineJoin) paint['line-join'] = r.lineJoin;
+  } else if (layerType === 'circle') {
+    paint['circle-color'] = matchExpr;
+    paint['circle-radius'] = r.radius ?? 6;
+    paint['circle-opacity'] = opacity;
+  }
+  return paint;
+}
+
+function buildGraduatedPaint(layerType, r) {
+  const fieldName = r.field;
+  const stops = r.stops || [];
+  if (!fieldName || stops.length === 0) return buildSinglePaint(layerType, r);
+
+  const cases = [];
+  for (const stop of stops) {
+    cases.push(['<=', ['get', fieldName], stop.value]);
+    cases.push(stop.color);
+  }
+  const fallback = stops[stops.length - 1]?.color || '#888888';
+  const opacity = r.opacity ?? 1;
+  const paint = {};
+
+  if (layerType === 'fill') {
+    paint['fill-color'] = ['case', ...cases, fallback];
+    paint['fill-opacity'] = opacity;
+  } else if (layerType === 'line') {
+    paint['line-color'] = ['case', ...cases, fallback];
+    paint['line-width'] = r.width ?? 2;
+    paint['line-opacity'] = opacity;
+    if (r.lineStyle && r.lineStyle !== 'solid') paint['_lineStyle'] = r.lineStyle;
+    if (r.lineCap) paint['line-cap'] = r.lineCap;
+    if (r.lineJoin) paint['line-join'] = r.lineJoin;
+  } else if (layerType === 'circle') {
+    paint['circle-color'] = ['case', ...cases, fallback];
+    paint['circle-radius'] = r.radius ?? 6;
+    paint['circle-opacity'] = opacity;
+  }
+  return paint;
+}
+
+function buildProportionalPaint(layerType, r) {
+  const fieldName = r.field;
+  if (!fieldName || r.minVal == null || r.maxVal == null) return buildSinglePaint(layerType, r);
+
+  const minR = r.minRadius ?? 3;
+  const maxR = r.maxRadius ?? 25;
+  const color = r.color || '#ff0040';
+  const opacity = r.opacity ?? 0.8;
+
+  const radiusExpr = [
+    'interpolate',
+    ['linear'],
+    ['get', fieldName],
+    r.minVal,
+    minR,
+    r.maxVal,
+    maxR,
+  ];
+  const paint = {};
+
+  if (layerType === 'circle') {
+    paint['circle-color'] = color;
+    paint['circle-radius'] = radiusExpr;
+    paint['circle-opacity'] = opacity;
+    paint['circle-stroke-color'] = '#ffffff';
+    paint['circle-stroke-width'] = 1;
+  } else if (layerType === 'fill') {
+    paint['fill-color'] = color;
+    paint['fill-opacity'] = opacity;
+  } else if (layerType === 'line') {
+    paint['line-color'] = color;
+    paint['line-width'] = radiusExpr;
+    paint['line-opacity'] = opacity;
+  }
+  return paint;
+}
+
+function filterToExpr(filterConfig) {
+  if (!filterConfig?.conditions?.length) return null;
+  const exprs = filterConfig.conditions
+    .filter((c) => c.field && c.value !== '')
+    .map((c) => {
+      const fieldExpr = ['get', c.field];
+      const val = isNaN(Number(c.value)) ? c.value : Number(c.value);
+      if (c.operator === 'contains') {
+        return ['in', val, ['to-string', fieldExpr]];
+      }
+      return [c.operator, fieldExpr, val];
+    });
+  if (exprs.length === 0) return null;
+  if (exprs.length === 1) return exprs[0];
+  return ['all', ...exprs];
+}
+
+function buildRulesPaint(layerType, r) {
+  const rules = (r.rules || []).filter((rule) => rule.enabled !== false);
+  if (rules.length === 0) return buildSinglePaint(layerType, r);
+
+  const colorProp =
+    layerType === 'fill' ? 'fill-color' : layerType === 'line' ? 'line-color' : 'circle-color';
+
+  const cases = [];
+  for (const rule of rules) {
+    const filterExpr = filterToExpr(rule.filter);
+    if (filterExpr) {
+      cases.push(filterExpr);
+      cases.push(rule.color || '#888888');
+    }
+  }
+  const elseColor = r.elseColor || '#cccccc';
+
+  const paint = {};
+  const opacity = r.opacity ?? 0.7;
+
+  if (layerType === 'fill') {
+    paint['fill-color'] = cases.length > 0 ? ['case', ...cases, elseColor] : elseColor;
+    paint['fill-opacity'] = opacity;
+  } else if (layerType === 'line') {
+    paint['line-color'] = cases.length > 0 ? ['case', ...cases, elseColor] : elseColor;
+    paint['line-width'] = r.width ?? 2;
+    paint['line-opacity'] = opacity;
+    if (r.lineStyle && r.lineStyle !== 'solid') paint['_lineStyle'] = r.lineStyle;
+    if (r.lineCap) paint['line-cap'] = r.lineCap;
+    if (r.lineJoin) paint['line-join'] = r.lineJoin;
+  } else if (layerType === 'circle') {
+    paint['circle-color'] = cases.length > 0 ? ['case', ...cases, elseColor] : elseColor;
+    paint['circle-radius'] = r.radius ?? 6;
+    paint['circle-opacity'] = opacity;
+  }
+  return paint;
 }
 
 function createTileUrl(sourceId) {
@@ -250,7 +545,44 @@ function parseDataBounds(boundsStr) {
   return null;
 }
 
-export { DEFAULT_PAINT, LAYER_TYPE_MAP, paintToOlStyle };
+export {
+  DEFAULT_PAINT,
+  LAYER_TYPE_MAP,
+  paintToOlStyle,
+  rendererToOlStyle,
+  rendererToPaint,
+  filterToExpr,
+};
+
+function wrapStyleWithFilter(baseStyle, filter) {
+  if (!filter || !baseStyle) return baseStyle;
+
+  const isStyleFn = typeof baseStyle === 'function';
+
+  return (feature, resolution) => {
+    if (filter && !evalExpr(filter, feature, resolution)) return null;
+    return isStyleFn ? baseStyle(feature, resolution) : baseStyle;
+  };
+}
+
+function composeStyles(symbolStyle, labelStyle) {
+  if (!symbolStyle) return labelStyle;
+  if (!labelStyle) return symbolStyle;
+
+  const symIsFn = typeof symbolStyle === 'function';
+  const lblIsFn = typeof labelStyle === 'function';
+
+  if (!symIsFn && !lblIsFn) return [symbolStyle, labelStyle];
+
+  return (feature, resolution) => {
+    const sym = symIsFn ? symbolStyle(feature, resolution) : symbolStyle;
+    const lbl = lblIsFn ? labelStyle(feature, resolution) : labelStyle;
+    if (!sym && !lbl) return null;
+    if (!sym) return lbl;
+    if (!lbl) return sym;
+    return [sym, lbl];
+  };
+}
 
 export function styleJsonToOlLayers(styleJson, sourceMeta) {
   if (!styleJson || !styleJson.layers) return [];
@@ -258,7 +590,22 @@ export function styleJsonToOlLayers(styleJson, sourceMeta) {
   return styleJson.layers.map((layer) => {
     const sourceId = layer.source;
     const geomType = LAYER_TYPE_MAP[layer.type] || 'polygon';
-    const olStyle = paintToOlStyle(layer.type, layer.paint);
+
+    const renderer = layer['_mapflow:renderer'];
+    let olStyle;
+    if (renderer) {
+      olStyle = rendererToOlStyle(renderer, layer.type);
+    } else {
+      olStyle = paintToOlStyle(layer.type, layer.paint);
+    }
+
+    const labelConfig = layer['_mapflow:label'];
+    const labelStyle = labelToOlStyle(labelConfig);
+    olStyle = composeStyles(olStyle, labelStyle);
+
+    if (olStyle && layer.filter) {
+      olStyle = wrapStyleWithFilter(olStyle, layer.filter);
+    }
 
     const meta = sourceMeta?.[sourceId];
     const dataBounds = meta?.dataBounds ? parseDataBounds(meta.dataBounds) : null;
@@ -273,6 +620,9 @@ export function styleJsonToOlLayers(styleJson, sourceMeta) {
       isCustomCRS,
       customCRS: isCustomCRS ? meta.crs : null,
       dataBounds: isCustomCRS ? dataBounds : null,
+      opacity: renderer?.opacity ?? null,
+      minzoom: layer.minzoom,
+      maxzoom: layer.maxzoom,
     };
   });
 }
@@ -337,9 +687,7 @@ export function updateLayerPaint(styleJson, layerId, paintUpdates) {
   return {
     ...styleJson,
     layers: styleJson.layers.map((l) =>
-      l.id === layerId
-        ? { ...l, paint: { ...(l.paint || {}), ...paintUpdates } }
-        : l,
+      l.id === layerId ? { ...l, paint: { ...(l.paint || {}), ...paintUpdates } } : l,
     ),
   };
 }

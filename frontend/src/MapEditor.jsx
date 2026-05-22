@@ -2,17 +2,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getMap, updateMap, listPreviewSources } from './api.js';
-import ClassificationWizard from './ClassificationWizard.jsx';
+import LayerStylePanel from './LayerStylePanel.jsx';
 import {
   styleJsonToOlLayers,
   buildEmptyStyleJson,
   addSourceToStyle,
   addLayerToStyle,
   removeLayerFromStyle,
-  updateLayerPaint,
   moveLayer,
   setLayerVisibility,
   DEFAULT_PAINT,
+  rendererToPaint,
 } from './styleJsonToOl.js';
 
 import 'ol/ol.css';
@@ -23,6 +23,8 @@ import VectorTileSource from 'ol/source/VectorTile';
 import MVT from 'ol/format/MVT';
 import Projection from 'ol/proj/Projection';
 import TileGrid from 'ol/tilegrid/TileGrid';
+import TileLayer from 'ol/layer/Tile';
+import OSMSource from 'ol/source/OSM';
 import { fromLonLat, transformExtent } from 'ol/proj';
 
 function calculateCustomResolutions(dataBounds, maxZoom = 20) {
@@ -57,7 +59,11 @@ function fitToDataBounds(map, sourceMeta, styleJson) {
   if (!meta?.dataBounds) return;
   let bounds = meta.dataBounds;
   if (typeof bounds === 'string') {
-    try { bounds = JSON.parse(bounds); } catch { return; }
+    try {
+      bounds = JSON.parse(bounds);
+    } catch {
+      return;
+    }
   }
   if (Array.isArray(bounds) && bounds.length === 4) {
     // ok
@@ -88,12 +94,19 @@ export default function MapEditor() {
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [editingLayerId, setEditingLayerId] = useState(null);
+  const [showOsmBasemap, setShowOsmBasemap] = useState(false);
 
   const mapElement = useRef(null);
   const olMapRef = useRef(null);
   const layersRef = useRef({});
+  const osmLayerRef = useRef(null);
   const dirtyRef = useRef(false);
   const saveTimeoutRef = useRef(null);
+
+  const hasCustomCRS = useMemo(() => {
+    if (!styleJson?.sources) return false;
+    return Object.values(styleJson.sources).some((s) => s['_mapflow:crsType'] === 'custom');
+  }, [styleJson]);
 
   const sourceMeta = useMemo(() => {
     const meta = {};
@@ -132,7 +145,9 @@ export default function MapEditor() {
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [id, t]);
 
   const debouncedSave = useCallback(
@@ -180,6 +195,7 @@ export default function MapEditor() {
       olMap.setTarget(null);
       olMapRef.current = null;
       layersRef.current = {};
+      osmLayerRef.current = null;
     };
   }, [isLoading, mapData]);
 
@@ -190,8 +206,23 @@ export default function MapEditor() {
     Object.values(layersRef.current).forEach((l) => map.removeLayer(l));
     layersRef.current = {};
 
+    if (osmLayerRef.current) {
+      map.removeLayer(osmLayerRef.current);
+      osmLayerRef.current = null;
+    }
+
     const olLayers = styleJsonToOlLayers(styleJson, sourceMeta);
     let firstCustomCRS = null;
+
+    if (showOsmBasemap && !hasCustomCRS) {
+      const osm = new TileLayer({
+        source: new OSMSource(),
+        visible: true,
+        zIndex: 0,
+      });
+      osmLayerRef.current = osm;
+      map.addLayer(osm);
+    }
 
     for (const layerDef of olLayers) {
       const meta = sourceMeta[layerDef.sourceId];
@@ -216,7 +247,7 @@ export default function MapEditor() {
       }
 
       const tileUrl = `${window.location.origin}/api/files/${layerDef.sourceId}/tiles/{z}/{x}/{y}`;
-      const vtLayer = new VectorTileLayer({
+      const vtOpts = {
         source: new VectorTileSource({
           format: new MVT(),
           url: tileUrl,
@@ -225,7 +256,26 @@ export default function MapEditor() {
         }),
         visible: layerDef.visible,
         style: layerDef.olStyle,
-      });
+      };
+
+      if (layerDef.opacity != null) {
+        vtOpts.opacity = layerDef.opacity;
+      }
+
+      if (layerDef.minzoom != null || layerDef.maxzoom != null) {
+        const view = map.getView();
+        const resolutions = view.getResolutions();
+        if (resolutions) {
+          if (layerDef.maxzoom != null && layerDef.maxzoom < resolutions.length - 1) {
+            vtOpts.minResolution = resolutions[layerDef.maxzoom + 1] || undefined;
+          }
+          if (layerDef.minzoom != null && layerDef.minzoom > 0) {
+            vtOpts.maxResolution = resolutions[layerDef.minzoom] || undefined;
+          }
+        }
+      }
+
+      const vtLayer = new VectorTileLayer(vtOpts);
 
       vtLayer.setZIndex(olLayers.length - olLayers.indexOf(layerDef) + 10);
       layersRef.current[layerDef.id] = vtLayer;
@@ -249,7 +299,7 @@ export default function MapEditor() {
         fitToDataBounds(map, sourceMeta, styleJson);
       }, 300);
     }
-  }, [styleJson, sourceMeta]);
+  }, [styleJson, sourceMeta, showOsmBasemap, hasCustomCRS]);
 
   const usedSourceIds = useMemo(() => {
     if (!styleJson?.sources) return new Set();
@@ -271,9 +321,69 @@ export default function MapEditor() {
     if (editingLayerId === layerId) setEditingLayerId(null);
   }
 
-  function handleLayerPaintChange(layerId, paintUpdates) {
-    const newStyle = updateLayerPaint(styleJson, layerId, paintUpdates);
+  function handleRendererChange(layerId, renderer) {
+    const layer = styleJson.layers.find((l) => l.id === layerId);
+    const paint = rendererToPaint(renderer, layer?.type);
+    const newStyle = {
+      ...styleJson,
+      layers: styleJson.layers.map((l) => {
+        if (l.id !== layerId) return l;
+        const updated = { ...l, '_mapflow:renderer': renderer };
+        if (renderer.type === 'none') {
+          updated.paint = {};
+          updated.layout = { ...(l.layout || {}), visibility: 'none' };
+        } else {
+          updated.paint = paint;
+          const prevVis = l.layout?.visibility;
+          updated.layout = prevVis === 'none' ? l.layout : l.layout || {};
+        }
+        return updated;
+      }),
+    };
     handleStyleChange(newStyle);
+  }
+
+  function handleMetaChange(layerId, meta) {
+    const newStyle = {
+      ...styleJson,
+      layers: styleJson.layers.map((l) => {
+        if (l.id !== layerId) return l;
+        const updated = { ...l };
+        if (meta.minzoom !== undefined) updated.minzoom = meta.minzoom;
+        if (meta.maxzoom !== undefined) updated.maxzoom = meta.maxzoom;
+        if (meta.filter !== undefined) {
+          if (meta.filter) {
+            updated['_mapflow:filter'] = meta.filter;
+            updated.filter = buildMapboxFilter(meta.filter);
+          } else {
+            delete updated['_mapflow:filter'];
+            delete updated.filter;
+          }
+        }
+        if (meta.label !== undefined) {
+          updated['_mapflow:label'] = meta.label;
+        }
+        return updated;
+      }),
+    };
+    handleStyleChange(newStyle);
+  }
+
+  function buildMapboxFilter(filterConfig) {
+    if (!filterConfig?.conditions?.length) return undefined;
+    const exprs = filterConfig.conditions
+      .filter((c) => c.field && c.value !== '')
+      .map((c) => {
+        const fieldExpr = ['get', c.field];
+        const val = isNaN(Number(c.value)) ? c.value : Number(c.value);
+        if (c.operator === 'contains') {
+          return ['in', val, ['to-string', fieldExpr]];
+        }
+        return [c.operator, fieldExpr, val];
+      });
+    if (exprs.length === 0) return undefined;
+    if (exprs.length === 1) return exprs[0];
+    return ['all', ...exprs];
   }
 
   function handleMoveLayer(layerId, direction) {
@@ -283,7 +393,7 @@ export default function MapEditor() {
   function handleToggleVisibility(layerId) {
     const layer = styleJson.layers.find((l) => l.id === layerId);
     if (!layer) return;
-    const visible = layer.layout?.visibility !== 'visible' || layer.layout?.visibility === undefined;
+    const visible = layer.layout?.visibility !== 'none';
     handleStyleChange(setLayerVisibility(styleJson, layerId, !visible));
   }
 
@@ -296,7 +406,9 @@ export default function MapEditor() {
 
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <div
+        style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}
+      >
         {t('common.loading')}
       </div>
     );
@@ -329,11 +441,38 @@ export default function MapEditor() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button type="button" className="btn-secondary" style={{ fontSize: '13px' }} onClick={() => navigate('/')}>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ fontSize: '13px' }}
+            onClick={() => navigate('/')}
+          >
             {t('common.back')}
           </button>
           <span style={{ fontWeight: 600, fontSize: '15px' }}>{mapData?.name || ''}</span>
-          {isSaving && <span style={{ fontSize: '11px', color: '#888' }}>{t('common.saving')}</span>}
+          {isSaving && (
+            <span style={{ fontSize: '11px', color: '#888' }}>{t('common.saving')}</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label
+            style={{
+              fontSize: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              color: hasCustomCRS ? '#bbb' : '#555',
+              cursor: hasCustomCRS ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showOsmBasemap}
+              disabled={hasCustomCRS}
+              onChange={(e) => setShowOsmBasemap(e.target.checked)}
+            />
+            {t('map.osmBasemap')}
+          </label>
         </div>
       </header>
 
@@ -376,7 +515,10 @@ export default function MapEditor() {
                   <button
                     type="button"
                     title={isVisible ? t('map.hideLayer') : t('map.showLayer')}
-                    onClick={(e) => { e.stopPropagation(); handleToggleVisibility(layer.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleVisibility(layer.id);
+                    }}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -403,7 +545,10 @@ export default function MapEditor() {
                   <button
                     type="button"
                     title={t('map.layerDown')}
-                    onClick={(e) => { e.stopPropagation(); handleMoveLayer(layer.id, 'down'); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMoveLayer(layer.id, 'down');
+                    }}
                     disabled={idx === 0}
                     style={{
                       background: 'none',
@@ -419,7 +564,10 @@ export default function MapEditor() {
                   <button
                     type="button"
                     title={t('map.layerUp')}
-                    onClick={(e) => { e.stopPropagation(); handleMoveLayer(layer.id, 'up'); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMoveLayer(layer.id, 'up');
+                    }}
                     disabled={idx === layers.length - 1}
                     style={{
                       background: 'none',
@@ -435,7 +583,10 @@ export default function MapEditor() {
                   <button
                     type="button"
                     title={t('common.delete')}
-                    onClick={(e) => { e.stopPropagation(); handleRemoveLayer(layer.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveLayer(layer.id);
+                    }}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -454,7 +605,9 @@ export default function MapEditor() {
 
           {availableSources.length > 0 && (
             <div style={{ padding: '12px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: '#555', marginBottom: '8px' }}>
+              <div
+                style={{ fontSize: '12px', fontWeight: 600, color: '#555', marginBottom: '8px' }}
+              >
                 {t('map.addDataSource')}
               </div>
               {availableSources.map((source) => (
@@ -462,7 +615,13 @@ export default function MapEditor() {
                   key={source.id}
                   type="button"
                   className="btn-text"
-                  style={{ display: 'block', fontSize: '12px', marginBottom: '4px', textAlign: 'left', width: '100%' }}
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    marginBottom: '4px',
+                    textAlign: 'left',
+                    width: '100%',
+                  }}
                   onClick={() => handleAddSource(source)}
                 >
                   + {source.name}
@@ -477,24 +636,63 @@ export default function MapEditor() {
         {editingLayer && (
           <div
             style={{
-              width: '260px',
-              minWidth: '260px',
+              width: '280px',
+              minWidth: '280px',
               borderLeft: '1px solid #e0e0e0',
               overflow: 'auto',
-              padding: '12px',
+              display: 'flex',
+              flexDirection: 'column',
             }}
           >
-            <div style={{ fontSize: '12px', fontWeight: 600, color: '#555', marginBottom: '12px' }}>
-              {t('map.symbolization')}
+            <div
+              style={{
+                padding: '8px 12px',
+                borderBottom: '1px solid #e0e0e0',
+                background: '#fafafa',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <span
+                style={{
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {editingLayer.id}
+              </span>
+              <span
+                style={{
+                  fontSize: '10px',
+                  color: '#999',
+                  background: '#f0f0f0',
+                  padding: '1px 6px',
+                  borderRadius: '3px',
+                }}
+              >
+                {editingLayer.type}
+              </span>
             </div>
-            <ClassificationWizard
-              sourceId={editingSourceId}
-              layerType={editingLayer.type}
-              paint={editingLayer.paint || {}}
-              onPaintChange={(paintUpdates) =>
-                handleLayerPaintChange(editingLayer.id, paintUpdates)
-              }
-            />
+            <div style={{ padding: '8px 12px', flex: 1, overflow: 'auto' }}>
+              <LayerStylePanel
+                sourceId={editingSourceId}
+                layerType={editingLayer.type}
+                paint={editingLayer.paint || {}}
+                renderer={editingLayer['_mapflow:renderer']}
+                layerMeta={{
+                  minzoom: editingLayer.minzoom,
+                  maxzoom: editingLayer.maxzoom,
+                  filter: editingLayer['_mapflow:filter'],
+                  label: editingLayer['_mapflow:label'],
+                }}
+                onRendererChange={(renderer) => handleRendererChange(editingLayer.id, renderer)}
+                onMetaChange={(meta) => handleMetaChange(editingLayer.id, meta)}
+              />
+            </div>
           </div>
         )}
       </div>
