@@ -21,10 +21,10 @@ use crate::{
     models::{
         ConnectPostgisResponse, DiscoverColumnsRequest, DiscoverColumnsResponse,
         DiscoverObjectsRequest, DiscoverObjectsResponse, DiscoverSchemasRequest,
-        DiscoverSchemasResponse, DiscoverTablesRequest, DiscoverTablesResponse,
-        DiscoverableObject, ErrorResponse, GeometryColumnInfo, PostgisConnectionConfig,
-        PostgisConnectionTestRequest, PostgisConnectionTestResponse,
-        RegisterPostgisSourceRequest, RegisterPostgisSourceResponse, TableInfo,
+        DiscoverSchemasResponse, DiscoverTablesRequest, DiscoverTablesResponse, DiscoverableObject,
+        ErrorResponse, GeometryColumnInfo, PostgisConnectionConfig, PostgisConnectionTestRequest,
+        PostgisConnectionTestResponse, RegisterPostgisSourceRequest, RegisterPostgisSourceResponse,
+        TableInfo,
     },
     AppState,
 };
@@ -253,42 +253,42 @@ pub async fn register_postgis_source(
     let schema_name = validate_identifier(req.schema.trim(), "schema")?;
     let object_name = validate_identifier(req.object.trim(), "object")?;
     let geom_column = validate_identifier(req.geometry_column.trim(), "geometryColumn")?;
-    let fid_column: Option<String> = req
-        .fid_column
-        .and_then(|f| {
-            let trimmed = f.trim().to_string();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        });
+    let fid_column: Option<String> = req.fid_column.and_then(|f| {
+        let trimmed = f.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
     let fid_column_validated = match &fid_column {
         Some(f) => Some(validate_identifier(f, "fidColumn")?),
         None => None,
     };
     let display_name = object_name.clone();
 
-    let connection_name = req
-        .connection_name
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let connection_name = req.connection_name.unwrap_or_default().trim().to_string();
     let connection_name = if connection_name.is_empty() {
         format!("{}:{}", cfg.host, cfg.port)
     } else {
         connection_name
     };
 
-    let relation =
-        introspect_relation(&cfg, &schema_name, &object_name, &geom_column, fid_column_validated.as_deref()).await?;
+    let relation = introspect_relation(
+        &cfg,
+        &schema_name,
+        &object_name,
+        &geom_column,
+        fid_column_validated.as_deref(),
+    )
+    .await?;
 
     let row_count: i64 = {
         let client = connect_postgis_client_from_connection(&cfg)
             .await
             .map_err(|e| internal_error(format!("Cannot connect to count rows: {e}")))?;
-        let relation = qualified_relation_name(&schema_name, &object_name)
-            .map_err(|e| internal_error(e))?;
+        let relation =
+            qualified_relation_name(&schema_name, &object_name).map_err(|e| internal_error(e))?;
         let count_sql = format!("SELECT COUNT(*) FROM {relation}");
         let row = client
             .query_one(&count_sql, &[])
@@ -312,9 +312,9 @@ pub async fn register_postgis_source(
         )
         .ok();
 
-    let connection_id = existing_connection_id.clone().unwrap_or_else(|| {
-        Uuid::new_v4().to_string()
-    });
+    let connection_id = existing_connection_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     let file_id = Uuid::new_v4().to_string();
     let now = Utc::now().naive_utc();
     let tile_bounds_json = relation
@@ -357,8 +357,11 @@ pub async fn register_postgis_source(
                 duckdb::params![old_file_id],
             )
             .map_err(|e| e.to_string())?;
-            conn.execute("DELETE FROM files WHERE id = ?", duckdb::params![old_file_id])
-                .map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM files WHERE id = ?",
+                duckdb::params![old_file_id],
+            )
+            .map_err(|e| e.to_string())?;
         }
 
         conn.execute(

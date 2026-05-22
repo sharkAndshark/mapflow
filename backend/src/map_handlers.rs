@@ -11,9 +11,7 @@ use tracing::info;
 
 use crate::{
     http_errors::{bad_request, internal_error},
-    models::{
-        CreateMapRequest, ErrorResponse, MapItem, PreviewSourceItem, UpdateMapRequest,
-    },
+    models::{CreateMapRequest, ErrorResponse, MapItem, PreviewSourceItem, UpdateMapRequest},
     storage::create_id,
     workspace::get_active_workspace_id,
     AppState, AuthBackend,
@@ -295,11 +293,7 @@ pub async fn get_field_values(
 
     let conn = state.db.lock().await;
 
-    let (status, table_name, tile_source): (
-        String,
-        Option<String>,
-        Option<String>,
-    ) = conn
+    let (status, table_name, tile_source): (String, Option<String>, Option<String>) = conn
         .query_row(
             "SELECT status, table_name, tile_source FROM files WHERE id = ? AND workspace_id = ?",
             duckdb::params![&source_id, &workspace_id],
@@ -360,7 +354,8 @@ pub async fn get_field_values(
         .map_err(internal_error)?;
 
     let col_type = mvt_type.unwrap_or_else(|| "unknown".to_string());
-    let is_numeric = col_type.contains("Int") || col_type.contains("Float") || col_type.contains("Double");
+    let is_numeric =
+        col_type.contains("Int") || col_type.contains("Float") || col_type.contains("Double");
 
     let safe_field = format!("\"{}\"", field.replace('"', "\"\""));
 
@@ -396,10 +391,12 @@ pub async fn get_field_values(
             ))
             .map_err(internal_error)?;
 
-        let rows = stmt.query_map(duckdb::params![], |row| {
-            let val: f64 = row.get(0)?;
-            Ok(val)
-        }).map_err(internal_error)?;
+        let rows = stmt
+            .query_map(duckdb::params![], |row| {
+                let val: f64 = row.get(0)?;
+                Ok(val)
+            })
+            .map_err(internal_error)?;
 
         let mut all_vals = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -419,10 +416,12 @@ pub async fn get_field_values(
             ))
             .map_err(internal_error)?;
 
-        let rows = stmt.query_map(duckdb::params![], |row| {
-            let val: Option<String> = row.get(0)?;
-            Ok(val)
-        }).map_err(internal_error)?;
+        let rows = stmt
+            .query_map(duckdb::params![], |row| {
+                let val: Option<String> = row.get(0)?;
+                Ok(val)
+            })
+            .map_err(internal_error)?;
 
         for r in rows {
             if let Some(v) = r.map_err(internal_error)? {

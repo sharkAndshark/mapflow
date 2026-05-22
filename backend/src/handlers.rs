@@ -573,14 +573,17 @@ pub async fn get_tile(
             let params_slice: Vec<&dyn duckdb::ToSql> =
                 query_params.iter().map(|p| p.as_ref()).collect();
 
-            let mvt_blob: Option<Vec<u8>> =
-                match conn.query_row(&select_sql, params_slice.as_slice(), |row| row.get(0)) {
-                    Ok(blob) => Some(blob),
-                    Err(e) => {
-                        tracing::error!(z, x, y, error = %e, sql = %select_sql, "Tile generation failed");
-                        return Err(internal_error(format!("Tile generation failed: {}", e)));
-                    }
-                };
+            let mvt_blob: Option<Vec<u8>> = match conn.query_row(
+                &select_sql,
+                params_slice.as_slice(),
+                |row| row.get(0),
+            ) {
+                Ok(blob) => Some(blob),
+                Err(e) => {
+                    tracing::error!(z, x, y, error = %e, sql = %select_sql, "Tile generation failed");
+                    return Err(internal_error(format!("Tile generation failed: {}", e)));
+                }
+            };
 
             tracing::debug!(
                 z,
@@ -610,11 +613,7 @@ pub async fn get_feature_properties(
     let workspace_id = get_workspace_id(&auth_session, &state).await?;
     let conn = state.db.lock().await;
 
-    let (status, table_name, tile_source): (
-        String,
-        Option<String>,
-        Option<String>,
-    ) = conn
+    let (status, table_name, tile_source): (String, Option<String>, Option<String>) = conn
         .query_row(
             "SELECT status, table_name, tile_source FROM files WHERE id = ? AND workspace_id = ?",
             duckdb::params![id, workspace_id],
@@ -745,7 +744,9 @@ pub async fn get_feature_properties(
                     ValueRef::Text(bytes) => {
                         serde_json::Value::String(String::from_utf8_lossy(bytes).to_string())
                     }
-                    ValueRef::Blob(bytes) => serde_json::Value::String(format!("0x{}", hex::encode(bytes))),
+                    ValueRef::Blob(bytes) => {
+                        serde_json::Value::String(format!("0x{}", hex::encode(bytes)))
+                    }
                     other => serde_json::Value::String(format!("{other:?}")),
                 };
                 properties.push(FeatureProperty {
@@ -802,9 +803,7 @@ pub async fn get_file_schema(
             if format == "mvt" {
                 let full_path = mbtiles::resolve_mbtiles_path(&file_path);
                 match mbtiles::extract_mbtiles_layers_async(&full_path).await {
-                    Ok(layers) => {
-                        Ok(Json(crate::models::FileSchemaResponse { layers }))
-                    }
+                    Ok(layers) => Ok(Json(crate::models::FileSchemaResponse { layers })),
                     Err(e) => {
                         tracing::warn!(file_id = %id, path = %full_path.display(), format = %format, error = %e, "Failed to extract MBTiles layers, returning empty");
                         Ok(Json(crate::models::FileSchemaResponse { layers: vec![] }))

@@ -17,9 +17,7 @@ use crate::{
     http_errors::internal_error,
     mbtiles,
     models::{ErrorResponse, PublicTileMeta},
-    postgis::{
-        build_property_columns_for_query, fetch_postgis_source_config, query_mvt_tile,
-    },
+    postgis::{build_property_columns_for_query, fetch_postgis_source_config, query_mvt_tile},
     tiles::{build_mvt_query_params, build_mvt_select_sql, TileParams},
     AppState,
 };
