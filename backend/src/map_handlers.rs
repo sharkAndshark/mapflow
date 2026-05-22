@@ -281,6 +281,8 @@ pub struct FieldValuesResponse {
     pub min: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sorted_values: Option<Vec<f64>>,
 }
 
 pub async fn get_field_values(
@@ -293,16 +295,15 @@ pub async fn get_field_values(
 
     let conn = state.db.lock().await;
 
-    let (status, table_name, tile_format, _tile_source): (
+    let (status, table_name, tile_source): (
         String,
-        Option<String>,
         Option<String>,
         Option<String>,
     ) = conn
         .query_row(
-            "SELECT status, table_name, tile_format, tile_source FROM files WHERE id = ? AND workspace_id = ?",
+            "SELECT status, table_name, tile_source FROM files WHERE id = ? AND workspace_id = ?",
             duckdb::params![&source_id, &workspace_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|_| {
             (
@@ -332,7 +333,8 @@ pub async fn get_field_values(
         )
     })?;
 
-    if tile_format.is_some() {
+    let tile_source = tile_source.unwrap_or_else(|| "duckdb".to_string());
+    if tile_source != "duckdb" {
         drop(conn);
         return Err((
             StatusCode::BAD_REQUEST,
@@ -370,6 +372,7 @@ pub async fn get_field_values(
         r#type: col_type,
         min: None,
         max: None,
+        sorted_values: None,
     };
 
     if is_numeric {
@@ -389,20 +392,26 @@ pub async fn get_field_values(
 
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT DISTINCT {safe_field} FROM \"{table_name}\" WHERE {safe_field} IS NOT NULL ORDER BY {safe_field} LIMIT {limit}"
+                "SELECT {safe_field}::DOUBLE AS v FROM \"{table_name}\" WHERE {safe_field} IS NOT NULL ORDER BY v"
             ))
             .map_err(internal_error)?;
 
         let rows = stmt.query_map(duckdb::params![], |row| {
-            let val: Option<f64> = row.get(0)?;
+            let val: f64 = row.get(0)?;
             Ok(val)
         }).map_err(internal_error)?;
 
+        let mut all_vals = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         for r in rows {
-            if let Some(v) = r.map_err(internal_error)? {
+            let v = r.map_err(internal_error)?;
+            all_vals.push(v);
+            if seen.len() < limit as usize && !seen.contains(&v.to_string()) {
+                seen.insert(v.to_string());
                 resp.values.push(serde_json::Value::from(v));
             }
         }
+        resp.sorted_values = Some(all_vals);
     } else {
         let mut stmt = conn
             .prepare(&format!(

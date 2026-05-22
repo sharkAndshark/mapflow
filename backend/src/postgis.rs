@@ -128,7 +128,14 @@ pub async fn connect_postgis(
         .map_err(|e| internal_error(format!("Failed to discover objects: {e}")))?;
 
     let conn = state.db.lock().await;
-    let workspace_id = user.current_workspace_id.clone().unwrap_or_default();
+    let workspace_id = user.current_workspace_id.clone().ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "No active workspace available, please switch workspace".to_string(),
+            }),
+        )
+    })?;
 
     let mut existing_sources: Vec<(String, String, String)> = Vec::new();
     if let Ok(mut stmt) = conn.prepare(
@@ -280,12 +287,9 @@ pub async fn register_postgis_source(
         let client = connect_postgis_client_from_connection(&cfg)
             .await
             .map_err(|e| internal_error(format!("Cannot connect to count rows: {e}")))?;
-        let quoted_schema = schema_name.replace('"', "\"\"");
-        let quoted_table = object_name.replace('"', "\"\"");
-        let count_sql = format!(
-            "SELECT COUNT(*) FROM \"{}\".\"{}\"",
-            quoted_schema, quoted_table
-        );
+        let relation = qualified_relation_name(&schema_name, &object_name)
+            .map_err(|e| internal_error(e))?;
+        let count_sql = format!("SELECT COUNT(*) FROM {relation}");
         let row = client
             .query_one(&count_sql, &[])
             .await
