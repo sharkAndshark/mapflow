@@ -46,9 +46,8 @@ const GEOM_TYPE_HINTS = {
 
 function guessGeomType(source) {
   const name = (source.name || '').toLowerCase();
-  if (name.includes('build') || name.includes('建筑')) return 'polygon';
-  if (name.includes('road') || name.includes('路') || name.includes('river') || name.includes('河'))
-    return 'line';
+  if (name.includes('build') || name.includes('polygon')) return 'polygon';
+  if (name.includes('road') || name.includes('line') || name.includes('river')) return 'line';
   return 'polygon';
 }
 
