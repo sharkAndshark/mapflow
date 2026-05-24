@@ -435,7 +435,7 @@ jobs:
           path: release-assets
 
       - name: Create Nightly Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.meta.outputs.release_tag }}
           name: ${{ needs.meta.outputs.release_name }}
