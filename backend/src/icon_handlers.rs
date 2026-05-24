@@ -413,11 +413,7 @@ pub async fn get_icon_file(
     };
 
     match fs::read(&canonical_path).await {
-        Ok(data) => Ok((
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, content_type)],
-            data,
-        )),
+        Ok(data) => Ok((StatusCode::OK, [(header::CONTENT_TYPE, content_type)], data)),
         Err(_) => Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
