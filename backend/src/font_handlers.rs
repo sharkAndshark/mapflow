@@ -182,7 +182,10 @@ pub async fn upload_font(
         let font_id_for_blocking = font_id_clone.clone();
         let cleanup_dir = fonts_dir_clone.clone();
 
-        let result = tokio::task::spawn_blocking(move || process_font(&original_path_clone, &glyphs_dir_clone)).await;
+        let result = tokio::task::spawn_blocking(move || {
+            process_font(&original_path_clone, &glyphs_dir_clone)
+        })
+        .await;
 
         match result {
             Ok(Ok((metadata, ranges))) => {

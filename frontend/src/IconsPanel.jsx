@@ -159,11 +159,7 @@ export default function IconsPanel() {
                 data-testid={`icon-card-${icon.id}`}
               >
                 <div className="icon-thumbnail">
-                  <img
-                    src={`/api/icons/${icon.id}/file`}
-                    alt={icon.name}
-                    loading="lazy"
-                  />
+                  <img src={`/api/icons/${icon.id}/file`} alt={icon.name} loading="lazy" />
                 </div>
                 <div className="icon-card-name" title={icon.name}>
                   {icon.name}
@@ -199,7 +195,10 @@ export default function IconsPanel() {
 
               <div className="detail-group">
                 <div className="detail-label">{t('icon.name')}</div>
-                <div className="detail-value" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div
+                  className="detail-value"
+                  style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
+                >
                   <input
                     type="text"
                     value={editingName}
