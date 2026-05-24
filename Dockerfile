@@ -1,5 +1,5 @@
 # Stage 1: Build Frontend
-FROM node:25-alpine AS frontend-builder
+FROM node:26-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Build Backend
-FROM rust:1.94-slim-bookworm AS backend-builder
+FROM rust:1.95-slim-bookworm AS backend-builder
 WORKDIR /app
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev g++ curl gzip && rm -rf /var/lib/apt/lists/*
