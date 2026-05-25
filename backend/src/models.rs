@@ -69,6 +69,8 @@ pub struct PreviewMeta {
     pub data_bounds: Option<[f64; 4]>,
     #[serde(rename = "tileFormat", skip_serializing_if = "Option::is_none")]
     pub tile_format: Option<String>,
+    #[serde(rename = "tileSource", skip_serializing_if = "Option::is_none")]
+    pub tile_source: Option<String>,
     #[serde(rename = "minZoom", skip_serializing_if = "Option::is_none")]
     pub minzoom: Option<i32>,
     #[serde(rename = "maxZoom", skip_serializing_if = "Option::is_none")]
@@ -229,17 +231,15 @@ pub struct PostgisConnectionTestResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterPostgisSourceRequest {
-    #[serde(rename = "connectionName")]
-    pub connection_name: String,
+    #[serde(rename = "connectionName", default)]
+    pub connection_name: Option<String>,
     pub connection: PostgisConnectionConfig,
     pub schema: String,
     pub object: String,
     #[serde(rename = "geometryColumn")]
     pub geometry_column: String,
-    #[serde(rename = "fidColumn")]
-    pub fid_column: String,
-    #[serde(rename = "displayName")]
-    pub display_name: Option<String>,
+    #[serde(rename = "fidColumn", default)]
+    pub fid_column: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -247,4 +247,134 @@ pub struct RegisterPostgisSourceResponse {
     #[serde(rename = "fileId")]
     pub file_id: String,
     pub status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MapItem {
+    pub id: String,
+    pub name: String,
+    pub style_json: Option<String>,
+    pub slug: Option<String>,
+    pub is_public: bool,
+    pub published_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMapRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMapRequest {
+    pub name: Option<String>,
+    pub style_json: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewSourceItem {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crs: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crs_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_bounds: Option<String>,
+    pub status: String,
+}
+
+// PostGIS auto-discovery API structures
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoverSchemasRequest {
+    pub connection: PostgisConnectionConfig,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverSchemasResponse {
+    pub schemas: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoverTablesRequest {
+    pub connection: PostgisConnectionConfig,
+    pub schema: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TableInfo {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub table_type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverTablesResponse {
+    pub tables: Vec<TableInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoverColumnsRequest {
+    pub connection: PostgisConnectionConfig,
+    pub schema: String,
+    pub table: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GeometryColumnInfo {
+    #[serde(rename = "columnName")]
+    pub column_name: String,
+    pub srid: i32,
+    #[serde(rename = "geometryType")]
+    pub geometry_type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverColumnsResponse {
+    #[serde(rename = "geometryColumns")]
+    pub geometry_columns: Vec<GeometryColumnInfo>,
+    #[serde(rename = "fidCandidates")]
+    pub fid_candidates: Vec<String>,
+}
+
+// PostGIS discover-all-objects API
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoverObjectsRequest {
+    pub connection: PostgisConnectionConfig,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverableObject {
+    pub schema: String,
+    pub table: String,
+    #[serde(rename = "tableType")]
+    pub table_type: String,
+    #[serde(rename = "geometryColumns")]
+    pub geometry_columns: Vec<GeometryColumnInfo>,
+    #[serde(rename = "existingFileId", skip_serializing_if = "Option::is_none")]
+    pub existing_file_id: Option<String>,
+    #[serde(rename = "rowCount")]
+    pub row_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoverObjectsResponse {
+    pub objects: Vec<DiscoverableObject>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConnectPostgisResponse {
+    pub success: bool,
+    #[serde(rename = "serverVersion")]
+    pub server_version: String,
+    #[serde(rename = "postgisVersion")]
+    pub postgis_version: String,
+    pub objects: Vec<DiscoverableObject>,
 }

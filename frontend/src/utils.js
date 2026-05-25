@@ -6,6 +6,13 @@ export function formatSize(bytes) {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[index]}`;
 }
 
+export function formatFileSize(file, t) {
+  if (file && file.tileSource === 'postgis') {
+    return t ? t('postgis.rowCount', { count: file.size || 0 }) : `${file.size || 0} rows`;
+  }
+  return formatSize(file ? file.size || 0 : 0);
+}
+
 export function parseType(fileName) {
   const lower = fileName.toLowerCase();
   if (lower.endsWith('.zip')) return 'shapefile';

@@ -23,7 +23,11 @@ use crate::{
         update_tile_zoom,
     },
     icon_handlers::{delete_icon, get_icon_file, list_icons, update_icon, upload_icon},
-    postgis::{register_postgis_source, test_postgis_connection},
+    map_handlers::{
+        create_map, delete_map, get_field_values, get_map, list_maps, list_preview_sources,
+        update_map,
+    },
+    postgis::{connect_postgis, register_postgis_source, test_postgis_connection},
     public::{get_public_pmtiles, get_public_tile, get_public_tile_meta, head_public_pmtiles},
     upload::upload_file,
     workspace_handlers::{
@@ -98,9 +102,26 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
             "/api/postgis/connections/test",
             post(test_postgis_connection),
         )
+        .route("/api/postgis/connections/connect", post(connect_postgis))
         .route(
             "/api/postgis/sources/register",
             post(register_postgis_source),
+        )
+        .route(
+            "/api/postgis/connections/discover-schemas",
+            post(crate::postgis::discover_schemas),
+        )
+        .route(
+            "/api/postgis/connections/discover-tables",
+            post(crate::postgis::discover_tables),
+        )
+        .route(
+            "/api/postgis/connections/discover-columns",
+            post(crate::postgis::discover_columns),
+        )
+        .route(
+            "/api/postgis/connections/discover-objects",
+            post(crate::postgis::discover_objects),
         )
         .route("/api/files/{id}/preview", get(get_preview_meta))
         .route(
@@ -153,7 +174,17 @@ fn build_api_router_with_auth(state: AppState, with_auth: bool) -> Router {
         .route("/api/fonts/{id}/unpublish", post(unpublish_font))
         .route("/api/icons", get(list_icons).post(upload_icon))
         .route("/api/icons/{id}", patch(update_icon).delete(delete_icon))
-        .route("/api/icons/{id}/file", get(get_icon_file));
+        .route("/api/icons/{id}/file", get(get_icon_file))
+        .route("/api/maps", get(list_maps).post(create_map))
+        .route("/api/maps/preview-sources", get(list_preview_sources))
+        .route(
+            "/api/maps/preview-sources/{sourceId}/field-values",
+            get(get_field_values),
+        )
+        .route(
+            "/api/maps/{id}",
+            get(get_map).put(update_map).delete(delete_map),
+        );
 
     if with_auth {
         api_router = api_router.route_layer(axum_login::login_required!(crate::AuthBackend));

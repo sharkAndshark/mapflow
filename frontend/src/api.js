@@ -167,6 +167,71 @@ export async function registerPostgisSource(payload) {
   return res.json();
 }
 
+export async function connectPostgis(connection) {
+  const res = await fetchWithAuth('/api/postgis/connections/connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function discoverPostgisSchemas(connection) {
+  const res = await fetchWithAuth('/api/postgis/connections/discover-schemas', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function discoverPostgisTables(connection, schema) {
+  const res = await fetchWithAuth('/api/postgis/connections/discover-tables', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection, schema }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function discoverPostgisColumns(connection, schema, table) {
+  const res = await fetchWithAuth('/api/postgis/connections/discover-columns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection, schema, table }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function discoverPostgisObjects(connection) {
+  const res = await fetchWithAuth('/api/postgis/connections/discover-objects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
 export async function listWorkspaces() {
   const res = await fetchWithAuth('/api/workspaces');
   if (!res.ok) {
@@ -433,4 +498,88 @@ export async function deleteIcon(iconId) {
     throw new Error(extractBackendError(data));
   }
   return null;
+}
+
+export async function listMaps() {
+  const res = await fetchWithAuth('/api/maps');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function createMap(name) {
+  const res = await fetchWithAuth('/api/maps', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function getMap(mapId) {
+  const res = await fetchWithAuth(`/api/maps/${mapId}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function updateMap(mapId, updates) {
+  const res = await fetchWithAuth(`/api/maps/${mapId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function deleteMap(mapId) {
+  const res = await fetchWithAuth(`/api/maps/${mapId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return null;
+}
+
+export async function listPreviewSources() {
+  const res = await fetchWithAuth('/api/maps/preview-sources');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function getFieldValues(sourceId, field, limit = 50) {
+  const res = await fetchWithAuth(
+    `/api/maps/preview-sources/${sourceId}/field-values?field=${encodeURIComponent(field)}&limit=${limit}`,
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
+}
+
+export async function getSchema(fileId) {
+  const res = await fetchWithAuth(`/api/files/${fileId}/schema`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(extractBackendError(data));
+  }
+  return res.json();
 }

@@ -19,8 +19,12 @@ use crate::{
     ensure_app_secret,
     http_errors::{bad_request, internal_error},
     models::{
-        ErrorResponse, PostgisConnectionConfig, PostgisConnectionTestRequest,
+        ConnectPostgisResponse, DiscoverColumnsRequest, DiscoverColumnsResponse,
+        DiscoverObjectsRequest, DiscoverObjectsResponse, DiscoverSchemasRequest,
+        DiscoverSchemasResponse, DiscoverTablesRequest, DiscoverTablesResponse, DiscoverableObject,
+        ErrorResponse, GeometryColumnInfo, PostgisConnectionConfig, PostgisConnectionTestRequest,
         PostgisConnectionTestResponse, RegisterPostgisSourceRequest, RegisterPostgisSourceResponse,
+        TableInfo,
     },
     AppState,
 };
@@ -38,7 +42,7 @@ pub struct PostgisSourceConfig {
     pub schema_name: String,
     pub object_name: String,
     pub geom_column: String,
-    pub fid_column: String,
+    pub fid_column: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +80,128 @@ pub async fn test_postgis_connection(
         success: true,
         server_version,
         postgis_version,
+    }))
+}
+
+pub async fn connect_postgis(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(state): State<AppState>,
+    Json(req): Json<PostgisConnectionTestRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let user = require_postgis_admin(&auth_session)?;
+
+    let cfg = validate_connection_config(req.connection).map_err(|e| bad_request(&e))?;
+    let (server_version, postgis_version) = probe_postgis_versions(&cfg).await.map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("PostGIS connection test failed: {e}"),
+            }),
+        )
+    })?;
+
+    let client = connect_postgis_client_from_connection(&cfg)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    let rows = client
+        .query(
+            "SELECT gc.f_table_schema, gc.f_table_name, t.table_type,
+                    array_agg(gc.f_geometry_column ORDER BY gc.f_geometry_column),
+                    array_agg(gc.srid ORDER BY gc.f_geometry_column),
+                    array_agg(gc.type ORDER BY gc.f_geometry_column),
+                    GREATEST(COALESCE(c.reltuples, 0), 0)::bigint
+             FROM geometry_columns gc
+             JOIN information_schema.tables t
+               ON t.table_schema = gc.f_table_schema AND t.table_name = gc.f_table_name
+             LEFT JOIN pg_class c ON c.oid = (
+               SELECT oid FROM pg_class WHERE relname = gc.f_table_name
+               AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = gc.f_table_schema)
+             )
+             WHERE gc.f_table_schema NOT LIKE 'pg_%'
+               AND gc.f_table_schema != 'information_schema'
+             GROUP BY gc.f_table_schema, gc.f_table_name, t.table_type, c.reltuples
+             ORDER BY gc.f_table_schema, gc.f_table_name",
+            &[],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover objects: {e}")))?;
+
+    let conn = state.db.lock().await;
+    let workspace_id = user.current_workspace_id.clone().ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "No active workspace available, please switch workspace".to_string(),
+            }),
+        )
+    })?;
+
+    let mut existing_sources: Vec<(String, String, String)> = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT ps.schema_name, ps.object_name, ps.file_id
+         FROM postgis_sources ps
+         JOIN files f ON f.id = ps.file_id
+         WHERE f.workspace_id = ?",
+    ) {
+        if let Ok(mut rows) = stmt.query(duckdb::params![&workspace_id]) {
+            while let Ok(Some(row)) = rows.next() {
+                existing_sources.push((
+                    row.get::<_, String>(0).unwrap_or_default(),
+                    row.get::<_, String>(1).unwrap_or_default(),
+                    row.get::<_, String>(2).unwrap_or_default(),
+                ));
+            }
+        }
+    }
+
+    drop(conn);
+
+    let mut objects = Vec::new();
+    for row in &rows {
+        let schema: String = row.get(0);
+        let table: String = row.get(1);
+        let table_type_raw: String = row.get(2);
+        let geom_names: Vec<String> = row.get(3);
+        let geom_srids: Vec<i32> = row.get(4);
+        let geom_types: Vec<String> = row.get(5);
+        let row_count: i64 = row.get(6);
+
+        let geometry_columns: Vec<GeometryColumnInfo> = geom_names
+            .into_iter()
+            .zip(geom_srids)
+            .zip(geom_types)
+            .map(|((column_name, srid), geometry_type)| GeometryColumnInfo {
+                column_name,
+                srid,
+                geometry_type,
+            })
+            .collect();
+
+        let existing_file_id = existing_sources
+            .iter()
+            .find(|(s, t, _)| *s == schema && *t == table)
+            .map(|(_, _, fid)| fid.clone());
+
+        objects.push(DiscoverableObject {
+            schema,
+            table,
+            table_type: if table_type_raw == "BASE TABLE" {
+                "table".to_string()
+            } else {
+                "view".to_string()
+            },
+            geometry_columns,
+            existing_file_id,
+            row_count,
+        });
+    }
+
+    Ok(Json(ConnectPostgisResponse {
+        success: true,
+        server_version,
+        postgis_version,
+        objects,
     }))
 }
 
@@ -123,28 +249,72 @@ pub async fn register_postgis_source(
         }
     }
 
-    let connection_name = req.connection_name.trim().to_string();
-    if connection_name.is_empty() {
-        return Err(bad_request("connectionName is required"));
-    }
-
     let cfg = validate_connection_config(req.connection).map_err(|e| bad_request(&e))?;
     let schema_name = validate_identifier(req.schema.trim(), "schema")?;
     let object_name = validate_identifier(req.object.trim(), "object")?;
     let geom_column = validate_identifier(req.geometry_column.trim(), "geometryColumn")?;
-    let fid_column = validate_identifier(req.fid_column.trim(), "fidColumn")?;
-    let display_name = req
-        .display_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| object_name.clone());
+    let fid_column: Option<String> = req.fid_column.and_then(|f| {
+        let trimmed = f.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+    let fid_column_validated = match &fid_column {
+        Some(f) => Some(validate_identifier(f, "fidColumn")?),
+        None => None,
+    };
+    let display_name = object_name.clone();
 
-    let relation =
-        introspect_relation(&cfg, &schema_name, &object_name, &geom_column, &fid_column).await?;
+    let connection_name = req.connection_name.unwrap_or_default().trim().to_string();
+    let connection_name = if connection_name.is_empty() {
+        format!("{}:{}", cfg.host, cfg.port)
+    } else {
+        connection_name
+    };
 
-    let connection_id = Uuid::new_v4().to_string();
+    let relation = introspect_relation(
+        &cfg,
+        &schema_name,
+        &object_name,
+        &geom_column,
+        fid_column_validated.as_deref(),
+    )
+    .await?;
+
+    let row_count: i64 = {
+        let client = connect_postgis_client_from_connection(&cfg)
+            .await
+            .map_err(|e| internal_error(format!("Cannot connect to count rows: {e}")))?;
+        let relation =
+            qualified_relation_name(&schema_name, &object_name).map_err(internal_error)?;
+        let count_sql = format!("SELECT COUNT(*) FROM {relation}");
+        let row = client
+            .query_one(&count_sql, &[])
+            .await
+            .map_err(|e| internal_error(format!("Failed to count rows: {e}")))?;
+        row.get::<_, i64>(0)
+    };
+
+    let conn = state.db.lock().await;
+    let app_secret = ensure_app_secret(&conn).map_err(internal_error)?;
+    let encrypted_password =
+        encrypt_secret(&app_secret, &cfg.password).map_err(|e| internal_error(e.as_str()))?;
+
+    let existing_connection_id: Option<String> = conn
+        .query_row(
+            "SELECT id FROM postgis_connections
+             WHERE host = ? AND port = ? AND database_name = ? AND username = ?
+             LIMIT 1",
+            duckdb::params![&cfg.host, i64::from(cfg.port), &cfg.database, &cfg.username],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let connection_id = existing_connection_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     let file_id = Uuid::new_v4().to_string();
     let now = Utc::now().naive_utc();
     let tile_bounds_json = relation
@@ -156,21 +326,51 @@ pub async fn register_postgis_source(
         connection_name, schema_name, object_name
     );
 
-    let conn = state.db.lock().await;
-    let app_secret = ensure_app_secret(&conn).map_err(internal_error)?;
-    let encrypted_password =
-        encrypt_secret(&app_secret, &cfg.password).map_err(|e| internal_error(e.as_str()))?;
-
     conn.execute_batch("BEGIN TRANSACTION")
         .map_err(internal_error)?;
 
     let register_result: Result<(), String> = (|| {
+        let stale_file: Option<String> = conn
+            .query_row(
+                "SELECT ps.file_id
+                 FROM postgis_sources ps
+                 JOIN files f ON f.id = ps.file_id
+                 WHERE ps.schema_name = ? AND ps.object_name = ? AND f.workspace_id = ?
+                 LIMIT 1",
+                duckdb::params![&schema_name, &object_name, &workspace_id],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(old_file_id) = &stale_file {
+            conn.execute(
+                "DELETE FROM dataset_columns WHERE source_id = ?",
+                duckdb::params![old_file_id],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM postgis_sources WHERE file_id = ?",
+                duckdb::params![old_file_id],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM published_files WHERE file_id = ?",
+                duckdb::params![old_file_id],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM files WHERE id = ?",
+                duckdb::params![old_file_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
         conn.execute(
             "INSERT INTO files (id, name, type, size, uploaded_at, status, crs, path, table_name, error, is_public, tile_source, crs_type, tile_bounds, workspace_id)
-             VALUES (?, ?, 'postgis', 0, ?, 'ready', ?, ?, NULL, NULL, FALSE, ?, 'standard', ?, ?)",
+             VALUES (?, ?, 'postgis', ?, ?, 'ready', ?, ?, NULL, NULL, FALSE, ?, 'standard', ?, ?)",
             duckdb::params![
                 &file_id,
                 &display_name,
+                row_count,
                 &now,
                 &crs,
                 &source_path,
@@ -181,23 +381,25 @@ pub async fn register_postgis_source(
         )
         .map_err(|e| e.to_string())?;
 
-        conn.execute(
-            "INSERT INTO postgis_connections (id, name, host, port, database_name, username, password_encrypted, ssl_mode, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            duckdb::params![
-                &connection_id,
-                &connection_name,
-                &cfg.host,
-                i64::from(cfg.port),
-                &cfg.database,
-                &cfg.username,
-                &encrypted_password,
-                &cfg.ssl_mode,
-                &now,
-                &now
-            ],
-        )
-        .map_err(|e| e.to_string())?;
+        if existing_connection_id.is_none() {
+            conn.execute(
+                "INSERT INTO postgis_connections (id, name, host, port, database_name, username, password_encrypted, ssl_mode, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                duckdb::params![
+                    &connection_id,
+                    &connection_name,
+                    &cfg.host,
+                    i64::from(cfg.port),
+                    &cfg.database,
+                    &cfg.username,
+                    &encrypted_password,
+                    &cfg.ssl_mode,
+                    &now,
+                    &now
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        }
 
         conn.execute(
             "INSERT INTO postgis_sources (file_id, connection_id, schema_name, object_name, geom_column, fid_column, created_at, updated_at)
@@ -208,7 +410,7 @@ pub async fn register_postgis_source(
                 &schema_name,
                 &object_name,
                 &geom_column,
-                &fid_column,
+                &fid_column_validated,
                 &now,
                 &now
             ],
@@ -308,7 +510,7 @@ pub fn fetch_postgis_source_config(
                     row.get::<_, String>(6)?,
                     row.get::<_, String>(7)?,
                     row.get::<_, String>(8)?,
-                    row.get::<_, String>(9)?,
+                    row.get::<_, Option<String>>(9)?,
                 ))
             },
         )
@@ -363,7 +565,6 @@ pub async fn query_mvt_tile(
     let client = connect_postgis_client(config).await?;
     let relation = qualified_relation_name(&config.schema_name, &config.object_name)?;
     let geom = quote_ident(&config.geom_column)?;
-    let fid = quote_ident(&config.fid_column)?;
 
     let mut property_sql = Vec::new();
     for prop in properties {
@@ -385,24 +586,48 @@ pub async fn query_mvt_tile(
         format!(", {}", property_sql.join(", "))
     };
 
-    let sql = format!(
-        "SELECT ST_AsMVT(tile, 'layer', 4096, 'geom', 'fid')
-         FROM (
-            SELECT
-                ST_AsMVTGeom(
-                    ST_Transform({geom}, 3857),
-                    ST_TileEnvelope($1, $2, $3),
-                    4096, 256, true
-                ) AS geom,
-                {fid} AS fid
-                {extra_props}
-            FROM {relation}
-            WHERE ST_Intersects(
-                ST_Transform({geom}, 3857),
-                ST_TileEnvelope($1, $2, $3)
+    let sql = match &config.fid_column {
+        Some(fid_col) => {
+            let fid = quote_ident(fid_col)?;
+            format!(
+                "SELECT ST_AsMVT(tile, 'layer', 4096, 'geom', 'fid')
+                 FROM (
+                    SELECT
+                        ST_AsMVTGeom(
+                            ST_Transform({geom}, 3857),
+                            ST_TileEnvelope($1, $2, $3),
+                            4096, 256, true
+                        ) AS geom,
+                        {fid} AS fid
+                        {extra_props}
+                    FROM {relation}
+                    WHERE ST_Intersects(
+                        ST_Transform({geom}, 3857),
+                        ST_TileEnvelope($1, $2, $3)
+                    )
+                 ) tile"
             )
-         ) tile"
-    );
+        }
+        None => {
+            format!(
+                "SELECT ST_AsMVT(tile, 'layer', 4096, 'geom')
+                 FROM (
+                    SELECT
+                        ST_AsMVTGeom(
+                            ST_Transform({geom}, 3857),
+                            ST_TileEnvelope($1, $2, $3),
+                            4096, 256, true
+                        ) AS geom
+                        {extra_props}
+                    FROM {relation}
+                    WHERE ST_Intersects(
+                        ST_Transform({geom}, 3857),
+                        ST_TileEnvelope($1, $2, $3)
+                    )
+                 ) tile"
+            )
+        }
+    };
 
     let row = client
         .query_opt(&sql, &[&z, &x, &y])
@@ -418,9 +643,13 @@ pub async fn query_feature_properties_json(
     properties: &[PostgisPropertyColumn],
     fid: i64,
 ) -> Result<Option<serde_json::Map<String, serde_json::Value>>, String> {
+    let Some(fid_col_name) = &config.fid_column else {
+        return Ok(None);
+    };
+
     let client = connect_postgis_client(config).await?;
     let relation = qualified_relation_name(&config.schema_name, &config.object_name)?;
-    let fid_col = quote_ident(&config.fid_column)?;
+    let fid_col = quote_ident(fid_col_name)?;
 
     let mut select_columns = Vec::new();
     for prop in properties {
@@ -429,7 +658,7 @@ pub async fn query_feature_properties_json(
     }
 
     let select_sql = if select_columns.is_empty() {
-        format!("{} AS _placeholder", quote_ident(&config.fid_column)?)
+        format!("{} AS _placeholder", quote_ident(fid_col_name)?)
     } else {
         select_columns.join(", ")
     };
@@ -528,7 +757,7 @@ async fn introspect_relation(
     schema_name: &str,
     object_name: &str,
     geom_column: &str,
-    fid_column: &str,
+    fid_column: Option<&str>,
 ) -> Result<IntrospectedRelation, (StatusCode, Json<ErrorResponse>)> {
     let client = connect_postgis_client_from_connection(config)
         .await
@@ -576,92 +805,95 @@ async fn introspect_relation(
         ));
     }
 
-    let fid_type_row = client
-        .query_opt(
-            "SELECT t.typname
-             FROM pg_attribute a
-             JOIN pg_type t ON t.oid = a.atttypid
-             WHERE a.attrelid = $1::OID
-               AND a.attnum > 0
-               AND NOT a.attisdropped
-               AND a.attname = $2",
-            &[&relation_oid, &fid_column],
-        )
-        .await
-        .map_err(|e| internal_error(format!("Failed to inspect fid column: {e}")))?;
-
-    let Some(fid_type_row) = fid_type_row else {
-        return Err(bad_request("fidColumn not found"));
-    };
-    let fid_type: String = fid_type_row.get(0);
-    if !matches!(fid_type.as_str(), "int2" | "int4" | "int8") {
-        return Err(bad_request("fidColumn must be int2/int4/int8"));
-    }
-
     let relation_name =
         qualified_relation_name(schema_name, object_name).map_err(|e| bad_request(&e))?;
     let geom_ident = quote_ident(geom_column).map_err(|e| bad_request(&e))?;
-    let fid_ident = quote_ident(fid_column).map_err(|e| bad_request(&e))?;
 
-    if matches!(relation_kind.as_str(), "r" | "p") {
-        let fid_unique_row = client
-            .query_one(
-                "SELECT EXISTS(
-                    SELECT 1
-                    FROM pg_index i
-                    JOIN LATERAL unnest(i.indkey::INT2[]) WITH ORDINALITY AS idx(attnum, ord)
-                      ON idx.ord <= i.indnkeyatts
-                    JOIN pg_attribute a
-                      ON a.attrelid = i.indrelid
-                     AND a.attnum = idx.attnum
-                    WHERE i.indrelid = $1::OID
-                      AND (i.indisunique OR i.indisprimary)
-                      AND i.indnkeyatts = 1
-                      AND i.indpred IS NULL
-                      AND a.attname = $2
-                )",
-                &[&relation_oid, &fid_column],
+    if let Some(fid_col) = fid_column {
+        let fid_type_row = client
+            .query_opt(
+                "SELECT t.typname
+                 FROM pg_attribute a
+                 JOIN pg_type t ON t.oid = a.atttypid
+                 WHERE a.attrelid = $1::OID
+                   AND a.attnum > 0
+                   AND NOT a.attisdropped
+                   AND a.attname = $2",
+                &[&relation_oid, &fid_col],
             )
             .await
-            .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
-        let fid_has_single_unique_index: bool = fid_unique_row.get(0);
-        if !fid_has_single_unique_index {
-            return Err(bad_request(
-                "fidColumn must be backed by a single-column UNIQUE/PRIMARY KEY index",
-            ));
+            .map_err(|e| internal_error(format!("Failed to inspect fid column: {e}")))?;
+
+        let Some(fid_type_row) = fid_type_row else {
+            return Err(bad_request("fidColumn not found"));
+        };
+        let fid_type: String = fid_type_row.get(0);
+        if !matches!(fid_type.as_str(), "int2" | "int4" | "int8") {
+            return Err(bad_request("fidColumn must be int2/int4/int8"));
         }
-    }
 
-    let fid_data_sql = format!(
-        "SELECT
-            EXISTS(SELECT 1 FROM {relation_name} WHERE {fid_ident} IS NULL LIMIT 1),
-            EXISTS(
-                SELECT 1
-                FROM (
-                    SELECT {fid_ident}
-                    FROM {relation_name}
-                    GROUP BY {fid_ident}
-                    HAVING COUNT(*) > 1
-                    LIMIT 1
-                ) d
-            )"
-    );
+        let fid_ident = quote_ident(fid_col).map_err(|e| bad_request(&e))?;
 
-    let fid_data_row = client
-        .query_one(&fid_data_sql, &[])
-        .await
-        .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
-    let has_null_fid: bool = fid_data_row.get(0);
-    let has_duplicate_fid: bool = fid_data_row.get(1);
-    if has_null_fid || has_duplicate_fid {
         if matches!(relation_kind.as_str(), "r" | "p") {
+            let fid_unique_row = client
+                .query_one(
+                    "SELECT EXISTS(
+                        SELECT 1
+                        FROM pg_index i
+                        JOIN LATERAL unnest(i.indkey::INT2[]) WITH ORDINALITY AS idx(attnum, ord)
+                          ON idx.ord <= i.indnkeyatts
+                        JOIN pg_attribute a
+                          ON a.attrelid = i.indrelid
+                         AND a.attnum = idx.attnum
+                        WHERE i.indrelid = $1::OID
+                          AND (i.indisunique OR i.indisprimary)
+                          AND i.indnkeyatts = 1
+                          AND i.indpred IS NULL
+                          AND a.attname = $2
+                    )",
+                    &[&relation_oid, &fid_col],
+                )
+                .await
+                .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
+            let fid_has_single_unique_index: bool = fid_unique_row.get(0);
+            if !fid_has_single_unique_index {
+                return Err(bad_request(
+                    "fidColumn must be backed by a single-column UNIQUE/PRIMARY KEY index",
+                ));
+            }
+        }
+
+        let fid_data_sql = format!(
+            "SELECT
+                EXISTS(SELECT 1 FROM {relation_name} WHERE {fid_ident} IS NULL LIMIT 1),
+                EXISTS(
+                    SELECT 1
+                    FROM (
+                        SELECT {fid_ident}
+                        FROM {relation_name}
+                        GROUP BY {fid_ident}
+                        HAVING COUNT(*) > 1
+                        LIMIT 1
+                    ) d
+                )"
+        );
+
+        let fid_data_row = client
+            .query_one(&fid_data_sql, &[])
+            .await
+            .map_err(|e| internal_error(format!("Failed to validate fid uniqueness: {e}")))?;
+        let has_null_fid: bool = fid_data_row.get(0);
+        let has_duplicate_fid: bool = fid_data_row.get(1);
+        if has_null_fid || has_duplicate_fid {
+            if matches!(relation_kind.as_str(), "r" | "p") {
+                return Err(bad_request(
+                    "fidColumn must be unique and non-null across all rows",
+                ));
+            }
             return Err(bad_request(
-                "fidColumn must be unique and non-null across all rows",
+                "fidColumn must be unique and non-null for view/foreign sources",
             ));
         }
-        return Err(bad_request(
-            "fidColumn must be unique and non-null for view/foreign sources",
-        ));
     }
 
     let srid_metadata_row = client
@@ -708,18 +940,22 @@ async fn introspect_relation(
         return Err(bad_request("Geometry SRID must be a positive EPSG code"));
     }
 
-    let bbox_sql = format!(
+    let estimated_bbox_sql = format!(
         "SELECT ST_XMin(ext), ST_YMin(ext), ST_XMax(ext), ST_YMax(ext)
          FROM (
-            SELECT ST_Extent(ST_Transform({geom_ident}, 4326)) AS ext
-            FROM {relation_name}
+            SELECT ST_Transform(
+                ST_EstimatedExtent('{schema_name}', '{object_name}', '{geom_column}'),
+                4326
+            ) AS ext
          ) s"
     );
+    let srid_safe = srid;
 
     let bbox_row = client
-        .query_opt(&bbox_sql, &[])
+        .query_opt(&estimated_bbox_sql, &[])
         .await
-        .map_err(|e| internal_error(format!("Failed to calculate source bbox: {e}")))?;
+        .ok()
+        .flatten();
 
     let bbox_wgs84 = bbox_row.and_then(|row| {
         let minx = row.try_get::<_, Option<f64>>(0).ok().flatten();
@@ -731,6 +967,39 @@ async fn introspect_relation(
             _ => None,
         }
     });
+
+    let bbox_wgs84 = if bbox_wgs84.is_some() {
+        bbox_wgs84
+    } else {
+        let fallback_sql = if srid_safe == 4326 {
+            format!(
+                "SELECT ST_XMin(ext), ST_YMin(ext), ST_XMax(ext), ST_YMax(ext)
+                 FROM (SELECT ST_Extent({geom_ident}) AS ext FROM {relation_name}) s"
+            )
+        } else {
+            format!(
+                "SELECT ST_XMin(ext), ST_YMin(ext), ST_XMax(ext), ST_YMax(ext)
+                 FROM (
+                    SELECT ST_Extent(ST_Transform({geom_ident}, 4326)) AS ext
+                    FROM {relation_name}
+                 ) s"
+            )
+        };
+        let fallback_row = client
+            .query_opt(&fallback_sql, &[])
+            .await
+            .map_err(|e| internal_error(format!("Failed to calculate source bbox: {e}")))?;
+        fallback_row.and_then(|row| {
+            let minx = row.try_get::<_, Option<f64>>(0).ok().flatten();
+            let miny = row.try_get::<_, Option<f64>>(1).ok().flatten();
+            let maxx = row.try_get::<_, Option<f64>>(2).ok().flatten();
+            let maxy = row.try_get::<_, Option<f64>>(3).ok().flatten();
+            match (minx, miny, maxx, maxy) {
+                (Some(a), Some(b), Some(c), Some(d)) => Some([a, b, c, d]),
+                _ => None,
+            }
+        })
+    };
 
     let rows = client
         .query(
@@ -754,7 +1023,7 @@ async fn introspect_relation(
         let udt_name: String = row.get(2);
         let ordinal: i64 = row.get(3);
 
-        if original_name == geom_column || original_name == fid_column {
+        if original_name == geom_column || fid_column == Some(original_name.as_str()) {
             continue;
         }
 
@@ -1097,7 +1366,7 @@ mod tests {
                 schema_name VARCHAR NOT NULL,
                 object_name VARCHAR NOT NULL,
                 geom_column VARCHAR NOT NULL,
-                fid_column VARCHAR NOT NULL
+                fid_column VARCHAR
             );
             ",
         )
@@ -1133,4 +1402,188 @@ mod tests {
             .expect("read app_secret count");
         assert_eq!(app_secret_count, 0);
     }
+}
+
+pub async fn discover_schemas(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(_state): State<AppState>,
+    Json(req): Json<DiscoverSchemasRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let _ = require_postgis_admin(&auth_session)?;
+
+    let client = connect_postgis_client_from_connection(&req.connection)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    let rows = client
+        .query(
+            "SELECT schema_name FROM information_schema.schemata
+             WHERE schema_name NOT LIKE 'pg_%' AND schema_name != 'information_schema'
+             ORDER BY schema_name",
+            &[],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover schemas: {e}")))?;
+
+    let schemas = rows.iter().map(|row| row.get::<_, String>(0)).collect();
+    Ok(Json(DiscoverSchemasResponse { schemas }))
+}
+
+pub async fn discover_tables(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(_state): State<AppState>,
+    Json(req): Json<DiscoverTablesRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let _ = require_postgis_admin(&auth_session)?;
+
+    let client = connect_postgis_client_from_connection(&req.connection)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    let rows = client
+        .query(
+            "SELECT table_name, table_type FROM information_schema.tables
+             WHERE table_schema = $1 AND table_type IN ('BASE TABLE', 'VIEW')
+             ORDER BY table_name",
+            &[&req.schema],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover tables: {e}")))?;
+
+    let tables = rows
+        .iter()
+        .map(|row| TableInfo {
+            name: row.get(0),
+            table_type: if row.get::<_, String>(1) == "BASE TABLE" {
+                "table".to_string()
+            } else {
+                "view".to_string()
+            },
+        })
+        .collect();
+
+    Ok(Json(DiscoverTablesResponse { tables }))
+}
+
+pub async fn discover_columns(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(_state): State<AppState>,
+    Json(req): Json<DiscoverColumnsRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let _ = require_postgis_admin(&auth_session)?;
+
+    let client = connect_postgis_client_from_connection(&req.connection)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    // Query geometry columns from geometry_columns view
+    let geom_rows = client
+        .query(
+            "SELECT f_geometry_column, srid, type FROM geometry_columns
+             WHERE f_table_schema = $1 AND f_table_name = $2",
+            &[&req.schema, &req.table],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover geometry columns: {e}")))?;
+
+    let geometry_columns = geom_rows
+        .iter()
+        .map(|row| GeometryColumnInfo {
+            column_name: row.get(0),
+            srid: row.get(1),
+            geometry_type: row.get(2),
+        })
+        .collect();
+
+    // Query FID candidates (integer type columns)
+    let fid_rows = client
+        .query(
+            "SELECT column_name FROM information_schema.columns
+             WHERE table_schema = $1 AND table_name = $2
+               AND data_type IN ('smallint', 'integer', 'bigint')
+             ORDER BY ordinal_position",
+            &[&req.schema, &req.table],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover FID candidates: {e}")))?;
+
+    let fid_candidates = fid_rows.iter().map(|row| row.get::<_, String>(0)).collect();
+
+    Ok(Json(DiscoverColumnsResponse {
+        geometry_columns,
+        fid_candidates,
+    }))
+}
+
+pub async fn discover_objects(
+    auth_session: AuthSession<crate::AuthBackend>,
+    State(_state): State<AppState>,
+    Json(req): Json<DiscoverObjectsRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let _ = require_postgis_admin(&auth_session)?;
+
+    let client = connect_postgis_client_from_connection(&req.connection)
+        .await
+        .map_err(|e| bad_request(&format!("Cannot connect to PostGIS: {e}")))?;
+
+    // Find all tables/views with geometry columns across user schemas
+    let rows = client
+        .query(
+            "SELECT gc.f_table_schema, gc.f_table_name, t.table_type,
+                    array_agg(gc.f_geometry_column ORDER BY gc.f_geometry_column),
+                    array_agg(gc.srid ORDER BY gc.f_geometry_column),
+                    array_agg(gc.type ORDER BY gc.f_geometry_column),
+                    GREATEST(COALESCE(c.reltuples, 0), 0)::bigint
+             FROM geometry_columns gc
+             JOIN information_schema.tables t
+               ON t.table_schema = gc.f_table_schema AND t.table_name = gc.f_table_name
+             LEFT JOIN pg_class c ON c.oid = (
+               SELECT oid FROM pg_class WHERE relname = gc.f_table_name
+               AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = gc.f_table_schema)
+             )
+             WHERE gc.f_table_schema NOT LIKE 'pg_%'
+               AND gc.f_table_schema != 'information_schema'
+             GROUP BY gc.f_table_schema, gc.f_table_name, t.table_type, c.reltuples
+             ORDER BY gc.f_table_schema, gc.f_table_name",
+            &[],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to discover objects: {e}")))?;
+
+    let mut objects = Vec::new();
+    for row in &rows {
+        let schema: String = row.get(0);
+        let table: String = row.get(1);
+        let table_type_raw: String = row.get(2);
+        let geom_names: Vec<String> = row.get(3);
+        let geom_srids: Vec<i32> = row.get(4);
+        let geom_types: Vec<String> = row.get(5);
+        let row_count: i64 = row.get(6);
+
+        let geometry_columns: Vec<GeometryColumnInfo> = geom_names
+            .into_iter()
+            .zip(geom_srids)
+            .zip(geom_types)
+            .map(|((column_name, srid), geometry_type)| GeometryColumnInfo {
+                column_name,
+                srid,
+                geometry_type,
+            })
+            .collect();
+
+        objects.push(DiscoverableObject {
+            schema,
+            table,
+            table_type: if table_type_raw == "BASE TABLE" {
+                "table".to_string()
+            } else {
+                "view".to_string()
+            },
+            geometry_columns,
+            existing_file_id: None,
+            row_count,
+        });
+    }
+
+    Ok(Json(DiscoverObjectsResponse { objects }))
 }

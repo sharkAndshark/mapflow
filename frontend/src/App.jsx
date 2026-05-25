@@ -9,7 +9,7 @@ import {
   listFiles,
   publishFile,
   registerPostgisSource,
-  testPostgisConnection,
+  connectPostgis,
   unpublishFile,
   updateTileZoom,
   updateFieldAliases,
@@ -17,23 +17,18 @@ import {
   listWorkspaces,
   switchWorkspace,
 } from './api.js';
-import { formatSize, parseType, validateSlug } from './utils.js';
+import { formatSize, formatFileSize, parseType, validateSlug } from './utils.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
 import ResourcesPanel from './ResourcesPanel.jsx';
+import MapsPanel from './MapsPanel.jsx';
 
 const INITIAL_POSTGIS_FORM = {
-  connectionName: '',
   host: '127.0.0.1',
   port: 5432,
   database: '',
   username: '',
   password: '',
   sslMode: 'disable',
-  schema: 'public',
-  object: '',
-  geometryColumn: 'geom',
-  fidColumn: 'id',
-  displayName: '',
 };
 
 const STATUS_LABEL_KEYS = {
@@ -409,7 +404,7 @@ function DetailSidebar({ file, onZoomUpdate, onPublish, onUnpublish, onUseAliase
 
             <div className="detail-group">
               <div className="detail-label">{t('file.detail.fileSize')}</div>
-              <div className="detail-value">{formatSize(file.size || 0)}</div>
+              <div className="detail-value">{formatFileSize(file, t)}</div>
             </div>
 
             <div className="detail-group">
@@ -1379,8 +1374,12 @@ export default function App() {
   const [postgisForm, setPostgisForm] = useState(INITIAL_POSTGIS_FORM);
   const [postgisMessage, setPostgisMessage] = useState('');
   const [postgisMessageType, setPostgisMessageType] = useState('');
-  const [isTestingPostgis, setIsTestingPostgis] = useState(false);
+  const [isConnectingPostgis, setIsConnectingPostgis] = useState(false);
   const [isRegisteringPostgis, setIsRegisteringPostgis] = useState(false);
+  const [postgisDiscoveredObjects, setPostgisDiscoveredObjects] = useState(null);
+  const [postgisConnection, setPostgisConnection] = useState(null);
+  const [postgisExpanded, setPostgisExpanded] = useState(true);
+  const [registeringObject, setRegisteringObject] = useState(null);
   const [workspaces, setWorkspaces] = useState([]);
   const [currentWorkspace, setCurrentWorkspace] = useState(
     user?.current_workspace || user?.currentWorkspace || null,
@@ -1406,6 +1405,8 @@ export default function App() {
     setPostgisForm(INITIAL_POSTGIS_FORM);
     setPostgisMessage('');
     setPostgisMessageType('');
+    setPostgisDiscoveredObjects(null);
+    setPostgisConnection(null);
   }
 
   function updatePostgisField(field, value) {
@@ -1436,67 +1437,56 @@ export default function App() {
     }
   }
 
-  async function handleTestPostgisConnection() {
+  async function handleConnectPostgis() {
     setPostgisMessage('');
     setPostgisMessageType('');
-    setIsTestingPostgis(true);
+    setIsConnectingPostgis(true);
     try {
-      const payload = {
-        connection: {
-          host: postgisForm.host.trim(),
-          port: Number(postgisForm.port),
-          database: postgisForm.database.trim(),
-          username: postgisForm.username.trim(),
-          password: postgisForm.password,
-          sslMode: postgisForm.sslMode,
-        },
+      const conn = {
+        host: postgisForm.host.trim(),
+        port: Number(postgisForm.port),
+        database: postgisForm.database.trim(),
+        username: postgisForm.username.trim(),
+        password: postgisForm.password,
+        sslMode: postgisForm.sslMode,
       };
-      const result = await testPostgisConnection(payload);
-      setPostgisMessage(
-        t('postgis.connectionSuccessDetail', {
-          serverVersion: result.serverVersion,
-          postgisVersion: result.postgisVersion.split(' ').slice(0, 2).join(' '),
-        }),
-      );
-      setPostgisMessageType('success');
+      const result = await connectPostgis(conn);
+      setPostgisConnection(conn);
+      setPostgisDiscoveredObjects(result.objects || []);
+      setShowPostgisModal(false);
     } catch (error) {
       setPostgisMessage(error instanceof Error ? error.message : t('postgis.connectionTestFailed'));
       setPostgisMessageType('error');
     } finally {
-      setIsTestingPostgis(false);
+      setIsConnectingPostgis(false);
     }
   }
 
-  async function handleRegisterPostgisSource() {
-    setPostgisMessage('');
-    setPostgisMessageType('');
-    setIsRegisteringPostgis(true);
+  async function handleImportPostgisObject(obj) {
+    if (!postgisConnection) return;
+    const geomInfo =
+      obj.geometryColumns && obj.geometryColumns.length > 0 ? obj.geometryColumns[0] : null;
+    if (!geomInfo) return;
+    setRegisteringObject(`${obj.schema}.${obj.table}`);
     try {
-      const payload = {
-        connectionName: postgisForm.connectionName.trim(),
-        connection: {
-          host: postgisForm.host.trim(),
-          port: Number(postgisForm.port),
-          database: postgisForm.database.trim(),
-          username: postgisForm.username.trim(),
-          password: postgisForm.password,
-          sslMode: postgisForm.sslMode,
-        },
-        schema: postgisForm.schema.trim(),
-        object: postgisForm.object.trim(),
-        geometryColumn: postgisForm.geometryColumn.trim(),
-        fidColumn: postgisForm.fidColumn.trim(),
-        displayName: postgisForm.displayName.trim() || undefined,
-      };
-      const result = await registerPostgisSource(payload);
+      const result = await registerPostgisSource({
+        connection: postgisConnection,
+        schema: obj.schema,
+        object: obj.table,
+        geometryColumn: geomInfo.columnName,
+      });
       await refreshFiles(result.fileId);
-      setShowPostgisModal(false);
-      resetPostgisForm();
+      setPostgisDiscoveredObjects((prev) =>
+        prev.map((o) =>
+          o.schema === obj.schema && o.table === obj.table
+            ? { ...o, existingFileId: result.fileId }
+            : o,
+        ),
+      );
     } catch (error) {
-      setPostgisMessage(error instanceof Error ? error.message : t('postgis.sourceRegisterFailed'));
-      setPostgisMessageType('error');
+      alert(error instanceof Error ? error.message : t('postgis.sourceRegisterFailed'));
     } finally {
-      setIsRegisteringPostgis(false);
+      setRegisteringObject(null);
     }
   }
 
@@ -1847,6 +1837,17 @@ export default function App() {
           >
             {t('app.mainTabResources')}
           </button>
+          <button
+            type="button"
+            className={`tab-btn ${mainTab === 'maps' ? 'active' : ''}`}
+            onClick={() => setMainTab('maps')}
+            role="tab"
+            aria-selected={mainTab === 'maps'}
+            aria-controls="main-tabpanel-maps"
+            data-testid="main-tab-maps"
+          >
+            {t('app.mainTabMaps')}
+          </button>
         </div>
 
         {errorMessage ? <div className="alert">{errorMessage}</div> : null}
@@ -1885,7 +1886,7 @@ export default function App() {
                         {item.type}
                         {item.tileSource === 'postgis' ? ' · PostGIS' : ''}
                       </span>
-                      <span>{formatSize(item.size || 0)}</span>
+                      <span>{formatFileSize(item, t)}</span>
                       <span className="muted">
                         {item.uploadedAt
                           ? dateTimeFormatter.format(new Date(item.uploadedAt))
@@ -1918,6 +1919,140 @@ export default function App() {
                   ))}
                 </div>
               )}
+              {postgisDiscoveredObjects && postgisDiscoveredObjects.length > 0 && (
+                <div
+                  style={{
+                    borderTop: '1px solid #e0e0e0',
+                    marginTop: 'auto',
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '6px 8px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#555',
+                      background: '#fafafa',
+                      borderBottom: '1px solid #ececec',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        padding: 0,
+                        color: '#555',
+                      }}
+                      onClick={() => setPostgisExpanded(!postgisExpanded)}
+                    >
+                      {postgisExpanded ? '▼' : '▶'}
+                    </button>
+                    <span>
+                      PostGIS: {postgisConnection?.host}:{postgisConnection?.port}/
+                      {postgisConnection?.database}
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 400, color: '#888' }}>
+                      ({postgisDiscoveredObjects.length} {t('postgis.objects')})
+                    </span>
+                    <button
+                      type="button"
+                      style={{
+                        marginLeft: 'auto',
+                        fontSize: '11px',
+                        background: 'none',
+                        border: 'none',
+                        color: '#999',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => {
+                        setPostgisDiscoveredObjects(null);
+                        setPostgisConnection(null);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {postgisExpanded && (
+                    <div>
+                      {postgisDiscoveredObjects.map((obj) => {
+                        const key = `${obj.schema}.${obj.table}`;
+                        const isRegistering = registeringObject === key;
+                        const geomInfo =
+                          obj.geometryColumns && obj.geometryColumns.length > 0
+                            ? obj.geometryColumns[0]
+                            : null;
+                        return (
+                          <div key={key}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '5px 8px',
+                                fontSize: '12px',
+                                borderBottom: '1px solid #f0f0f0',
+                                opacity: geomInfo ? 1 : 0.5,
+                              }}
+                            >
+                              <span style={{ color: '#666', minWidth: 0 }}>
+                                {obj.schema}.{obj.table}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  color: '#999',
+                                  background: '#f5f5f5',
+                                  padding: '1px 6px',
+                                  borderRadius: '3px',
+                                }}
+                              >
+                                {obj.tableType}
+                              </span>
+                              {geomInfo && (
+                                <span style={{ fontSize: '10px', color: '#888' }}>
+                                  {geomInfo.geometryType} · SRID:{geomInfo.srid}
+                                </span>
+                              )}
+                              <span style={{ fontSize: '10px', color: '#aaa' }}>
+                                {t('postgis.rowCount', { count: obj.rowCount })}
+                              </span>
+                              <span style={{ flex: 1 }} />
+                              <button
+                                type="button"
+                                disabled={isRegistering || !geomInfo}
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '2px 10px',
+                                  border: `1px solid ${obj.existingFileId ? '#ff9800' : '#1976d2'}`,
+                                  borderRadius: '3px',
+                                  background: 'transparent',
+                                  color: obj.existingFileId ? '#ff9800' : '#1976d2',
+                                  cursor: !isRegistering && geomInfo ? 'pointer' : 'default',
+                                }}
+                                onClick={() => handleImportPostgisObject(obj)}
+                              >
+                                {isRegistering
+                                  ? t('postgis.importing')
+                                  : obj.existingFileId
+                                    ? t('postgis.update')
+                                    : t('postgis.import')}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="detail-area">
@@ -1930,30 +2065,36 @@ export default function App() {
               />
             </div>
           </div>
-        ) : (
+        ) : mainTab === 'resources' ? (
           <ResourcesPanel />
+        ) : (
+          <MapsPanel />
         )}
       </section>
 
       {showPostgisModal && (
         <div className="modal-overlay">
-          <button
-            type="button"
-            className="modal-overlay"
-            aria-label={t('common.close')}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          <div
             onClick={() => setShowPostgisModal(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowPostgisModal(false);
+            }}
             style={{
               position: 'absolute',
               inset: 0,
               background: 'transparent',
-              border: 'none',
-              padding: 0,
-              margin: 0,
             }}
           />
-          <div className="modal-content" style={{ position: 'relative' }}>
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          <div
+            className="modal-content"
+            style={{ position: 'relative' }}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h3>{t('postgis.connect')}</h3>
+              <h3>{t('app.connectPostgis')}</h3>
               <button
                 type="button"
                 className="modal-close"
@@ -1964,16 +2105,6 @@ export default function App() {
               </button>
             </div>
             <div className="modal-body">
-              <div className="form-group">
-                <label htmlFor="postgis-connection-name">{t('postgis.connectionName')}</label>
-                <input
-                  id="postgis-connection-name"
-                  className="form-input"
-                  value={postgisForm.connectionName}
-                  onChange={(e) => updatePostgisField('connectionName', e.target.value)}
-                  placeholder="local-dev"
-                />
-              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '12px' }}>
                 <div className="form-group">
                   <label htmlFor="postgis-host">{t('postgis.host')}</label>
@@ -1989,9 +2120,9 @@ export default function App() {
                   <input
                     id="postgis-port"
                     className="form-input"
-                    type="number"
                     value={postgisForm.port}
                     onChange={(e) => updatePostgisField('port', Number(e.target.value))}
+                    style={{ MozAppearance: 'textfield' }}
                   />
                 </div>
               </div>
@@ -2025,54 +2156,6 @@ export default function App() {
                   />
                 </div>
               </div>
-              <div className="form-group">
-                <label htmlFor="postgis-schema">{t('postgis.schema')}</label>
-                <input
-                  id="postgis-schema"
-                  className="form-input"
-                  value={postgisForm.schema}
-                  onChange={(e) => updatePostgisField('schema', e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="postgis-object">{t('postgis.object')}</label>
-                <input
-                  id="postgis-object"
-                  className="form-input"
-                  value={postgisForm.object}
-                  onChange={(e) => updatePostgisField('object', e.target.value)}
-                  placeholder="roads"
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="form-group">
-                  <label htmlFor="postgis-geometry-column">{t('postgis.geometryColumn')}</label>
-                  <input
-                    id="postgis-geometry-column"
-                    className="form-input"
-                    value={postgisForm.geometryColumn}
-                    onChange={(e) => updatePostgisField('geometryColumn', e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="postgis-fid-column">{t('postgis.fidColumn')}</label>
-                  <input
-                    id="postgis-fid-column"
-                    className="form-input"
-                    value={postgisForm.fidColumn}
-                    onChange={(e) => updatePostgisField('fidColumn', e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label htmlFor="postgis-display-name">{t('postgis.displayName')}</label>
-                <input
-                  id="postgis-display-name"
-                  className="form-input"
-                  value={postgisForm.displayName}
-                  onChange={(e) => updatePostgisField('displayName', e.target.value)}
-                />
-              </div>
               {postgisMessage ? (
                 <div
                   className="form-hint"
@@ -2088,19 +2171,11 @@ export default function App() {
             <div className="modal-footer">
               <button
                 type="button"
-                className="btn-secondary"
-                onClick={handleTestPostgisConnection}
-                disabled={isTestingPostgis || isRegisteringPostgis}
-              >
-                {isTestingPostgis ? t('postgis.testing') : t('postgis.testConnection')}
-              </button>
-              <button
-                type="button"
                 className="upload-button"
-                onClick={handleRegisterPostgisSource}
-                disabled={isTestingPostgis || isRegisteringPostgis}
+                onClick={handleConnectPostgis}
+                disabled={isConnectingPostgis}
               >
-                {isRegisteringPostgis ? t('postgis.registering') : t('postgis.registerAsSource')}
+                {isConnectingPostgis ? t('postgis.connecting') : t('postgis.connect')}
               </button>
             </div>
           </div>

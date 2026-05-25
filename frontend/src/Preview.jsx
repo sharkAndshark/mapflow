@@ -67,13 +67,16 @@ export default function Preview() {
   const popupRef = useRef(null);
   const requestSeqRef = useRef(0);
   const selectedFidRef = useRef(null);
+  const selectedFeatureRef = useRef(null);
   const tileFormatRef = useRef(null);
+  const tileSourceRef = useRef(null);
   const loadFeaturePropertiesRef = useRef(async () => {});
   const [showTileGrid, setShowTileGrid] = useState(false);
   const [showOsmBasemap, setShowOsmBasemap] = useState(false);
   const tileGridLayerRef = useRef(null);
   const osmLayerRef = useRef(null);
   const [tileFormat, setTileFormat] = useState(null);
+  const [tileSource, setTileSource] = useState(null);
 
   const cancelPopup = useCallback(() => {
     requestSeqRef.current += 1;
@@ -82,6 +85,7 @@ export default function Preview() {
     setPopupLoading(false);
     setPopupFid(null);
     selectedFidRef.current = null;
+    selectedFeatureRef.current = null;
     setSelectedFid(null);
   }, []);
 
@@ -143,6 +147,10 @@ export default function Preview() {
   }, [tileFormat]);
 
   useEffect(() => {
+    tileSourceRef.current = tileSource;
+  }, [tileSource]);
+
+  useEffect(() => {
     loadFeaturePropertiesRef.current = loadFeatureProperties;
   }, [loadFeatureProperties]);
 
@@ -186,8 +194,7 @@ export default function Preview() {
 
   const styleFunction = useCallback(
     (feature) => {
-      const fid = feature.getId?.() ?? feature.get('fid') ?? feature.getProperties?.()?.fid;
-      return fid === selectedFidRef.current ? selectedStyle : defaultStyle;
+      return feature === selectedFeatureRef.current ? selectedStyle : defaultStyle;
     },
     [defaultStyle, selectedStyle],
   );
@@ -212,6 +219,7 @@ export default function Preview() {
         const data = await res.json();
         setMeta(data);
         setTileFormat(data.tileFormat || null);
+        setTileSource(data.tileSource || null);
       } catch (err) {
         setError(err.message);
       }
@@ -250,10 +258,10 @@ export default function Preview() {
       if (feature) {
         const fid = getFeatureFid(feature);
         const featureHasValidFid = hasValidFid(fid);
+        const isMvtSource = tileFormatRef.current === 'mvt' || tileSourceRef.current === 'postgis';
 
-        // For MBTiles MVT, extract properties directly from feature.
-        // MBTiles features may not carry fid, so we should still render properties.
-        if (tileFormatRef.current === 'mvt') {
+        if (isMvtSource) {
+          selectedFeatureRef.current = feature;
           selectedFidRef.current = featureHasValidFid ? fid : null;
           setSelectedFid(featureHasValidFid ? fid : null);
           vectorLayerRef.current?.changed();
@@ -265,6 +273,7 @@ export default function Preview() {
           setPopupError(null);
         } else {
           if (!featureHasValidFid) {
+            selectedFeatureRef.current = null;
             selectedFidRef.current = null;
             setSelectedFid(null);
             vectorLayerRef.current?.changed();
@@ -275,17 +284,15 @@ export default function Preview() {
             return;
           }
 
+          selectedFeatureRef.current = feature;
           selectedFidRef.current = fid;
           setSelectedFid(fid);
-          // Trigger layer re-render to show highlight immediately
           vectorLayerRef.current?.changed();
 
-          // Load full row properties from DuckDB to ensure stable schema + NULL visibility.
           loadFeaturePropertiesRef.current(fid);
         }
       } else {
         cancelPopup();
-        // Trigger layer re-render to clear highlight when clicking empty space
         vectorLayerRef.current?.changed();
       }
     });
@@ -526,12 +533,9 @@ export default function Preview() {
         defaultStyle: describeStyle(defaultStyle),
       }),
       getStyleForFid: (fid) => {
-        const style = styleFunction({
-          getId: () => fid,
-          get: () => undefined,
-          getProperties: () => ({}),
-        });
-        return describeStyle(style);
+        const selected = selectedFeatureRef.current;
+        const selectedFid = getFeatureFid(selected);
+        return fid === selectedFid ? describeStyle(selectedStyle) : describeStyle(defaultStyle);
       },
     };
 
@@ -542,7 +546,7 @@ export default function Preview() {
         delete window.__MAPFLOW_PREVIEW_TEST__;
       }
     };
-  }, [defaultStyle, selectedStyle, styleFunction]);
+  }, [defaultStyle, selectedStyle]);
 
   return (
     <div

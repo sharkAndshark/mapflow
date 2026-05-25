@@ -14,6 +14,7 @@ mod handlers;
 mod http_errors;
 mod icon_handlers;
 mod import;
+mod map_handlers;
 mod mbtiles;
 mod models;
 mod password;
