@@ -288,7 +288,7 @@ pub async fn register_postgis_source(
             .await
             .map_err(|e| internal_error(format!("Cannot connect to count rows: {e}")))?;
         let relation =
-            qualified_relation_name(&schema_name, &object_name).map_err(|e| internal_error(e))?;
+            qualified_relation_name(&schema_name, &object_name).map_err(internal_error)?;
         let count_sql = format!("SELECT COUNT(*) FROM {relation}");
         let row = client
             .query_one(&count_sql, &[])
