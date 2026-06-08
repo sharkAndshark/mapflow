@@ -17,14 +17,14 @@ tower-http = { version = "0.6", features = ["cors", "fs", "trace", "request-id"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
-zip = "8.2"
+zip = "8.6"
 hex = "0.4"
-duckdb = { version = "1.10500.0", features = ["bundled", "chrono"] }
-axum-extra = { version = "0.12.5", features = ["query"] }
+duckdb = { version = "1.10503.1", features = ["bundled", "chrono"] }
+axum-extra = { version = "0.12.6", features = ["query"] }
 bcrypt = "0.19"
 regex = "1.10"
 lazy_static = "1.5"
-uuid = { version = "1.22", features = ["v4", "serde"] }
+uuid = { version = "1.23", features = ["v4", "serde"] }
 axum-login = "0.18"
 tower-sessions = "0.14"
 tower-cookies = "0.11"
@@ -54,7 +54,7 @@ tray-item = "0.10"
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile = "3"
-mvt-reader = "2.3.0"
+mvt-reader = "2.4.0"
 flate2 = "1"
 
 [target.'cfg(windows)'.build-dependencies]
