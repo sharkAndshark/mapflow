@@ -44,7 +44,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check spatial extension version sync
         run: bash scripts/ci/check_spatial_extension_version.sh
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Resolve spatial extension archive
         id: spatial
@@ -155,7 +155,7 @@ jobs:
             duckdb_platform: windows_amd64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -310,7 +310,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute image name
         id: image
@@ -463,7 +463,7 @@ jobs:
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Generate formula
         env:
