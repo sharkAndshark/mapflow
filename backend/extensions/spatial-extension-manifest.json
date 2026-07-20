@@ -1,38 +1,38 @@
 {
-  "duckdb_crate_version": "1.10500.0",
-  "duckdb_core_version": "1.5.0",
-  "duckdb_version": "1.5.0",
+  "duckdb_crate_version": "1.10504.0",
+  "duckdb_core_version": "1.5.4",
+  "duckdb_version": "1.5.4",
   "extension_name": "spatial",
   "artifacts": [
     {
       "platform": "linux_amd64",
-      "archive_url": "http://extensions.duckdb.org/v1.5.0/linux_amd64/spatial.duckdb_extension.gz",
-      "archive_sha256": "4c2a1611a70424f39883c6b5131a6ad929ebe30d9e36c6e01ccb3ddf7cda333f",
-      "local_relpath": "backend/extensions/duckdb/v1.5.0/linux_amd64/spatial.duckdb_extension"
+      "archive_url": "http://extensions.duckdb.org/v1.5.4/linux_amd64/spatial.duckdb_extension.gz",
+      "archive_sha256": "be5c95a1921d5bf66dbcee450272927a93a2839cff7c1e9c2ee815e5461616ac",
+      "local_relpath": "backend/extensions/duckdb/v1.5.4/linux_amd64/spatial.duckdb_extension"
     },
     {
       "platform": "linux_arm64",
-      "archive_url": "http://extensions.duckdb.org/v1.5.0/linux_arm64/spatial.duckdb_extension.gz",
-      "archive_sha256": "c5217656e1aae9090e6344221643db18839639b99626ef0e3fd737dbfa3247b0",
-      "local_relpath": "backend/extensions/duckdb/v1.5.0/linux_arm64/spatial.duckdb_extension"
+      "archive_url": "http://extensions.duckdb.org/v1.5.4/linux_arm64/spatial.duckdb_extension.gz",
+      "archive_sha256": "38eca92a690de960e64c749f1d8e5e0cd3d8a3f1c4af647d8d0fc66cb7c4c565",
+      "local_relpath": "backend/extensions/duckdb/v1.5.4/linux_arm64/spatial.duckdb_extension"
     },
     {
       "platform": "osx_amd64",
-      "archive_url": "http://extensions.duckdb.org/v1.5.0/osx_amd64/spatial.duckdb_extension.gz",
-      "archive_sha256": "006ef5ea26dfeb757685abbdce491ffe91af688da02f8a206bf2741c2cf1b6d4",
-      "local_relpath": "backend/extensions/duckdb/v1.5.0/osx_amd64/spatial.duckdb_extension"
+      "archive_url": "http://extensions.duckdb.org/v1.5.4/osx_amd64/spatial.duckdb_extension.gz",
+      "archive_sha256": "8db949938aa8b42e745be6deceb862e1a0bf6a3d7d74481c1805d25a1a885477",
+      "local_relpath": "backend/extensions/duckdb/v1.5.4/osx_amd64/spatial.duckdb_extension"
     },
     {
       "platform": "osx_arm64",
-      "archive_url": "http://extensions.duckdb.org/v1.5.0/osx_arm64/spatial.duckdb_extension.gz",
-      "archive_sha256": "cbe7f6ac67139b2cb1351821c32c0f0b2e80ae7c2dd46c912028fc1585523160",
-      "local_relpath": "backend/extensions/duckdb/v1.5.0/osx_arm64/spatial.duckdb_extension"
+      "archive_url": "http://extensions.duckdb.org/v1.5.4/osx_arm64/spatial.duckdb_extension.gz",
+      "archive_sha256": "212717639dd3e42a2c196d0e656e1934da6cb4b8c2db23ee702ff0aa87f73cf1",
+      "local_relpath": "backend/extensions/duckdb/v1.5.4/osx_arm64/spatial.duckdb_extension"
     },
     {
       "platform": "windows_amd64",
-      "archive_url": "http://extensions.duckdb.org/v1.5.0/windows_amd64/spatial.duckdb_extension.gz",
-      "archive_sha256": "a92fdd25952929a6e1fa5303756fa0afd3d03910e0096ff0c5e04a5e8d7ea177",
-      "local_relpath": "backend/extensions/duckdb/v1.5.0/windows_amd64/spatial.duckdb_extension"
+      "archive_url": "http://extensions.duckdb.org/v1.5.4/windows_amd64/spatial.duckdb_extension.gz",
+      "archive_sha256": "b0c7915c8d8df90579ea50e3aca5fb711ddbc8fd31ddb9313b3f7ca229e15f4d",
+      "local_relpath": "backend/extensions/duckdb/v1.5.4/windows_amd64/spatial.duckdb_extension"
     }
   ]
 }
